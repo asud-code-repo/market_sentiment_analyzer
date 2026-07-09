@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           # No `cache: npm` yet — that needs package-lock.json, which
           # doesn't exist until someone runs `npm install` once locally.
           # Once it's committed, add `cache: "npm"` back and switch the
