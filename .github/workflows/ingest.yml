@@ -19,12 +19,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # No `cache: npm` yet — that needs package-lock.json, which
-          # doesn't exist until someone runs `npm install` once locally.
-          # Once it's committed, add `cache: "npm"` back and switch the
-          # install step below to `npm ci` for reproducible installs.
+          cache: "npm"
+          cache-dependency-path: ingestion/package-lock.json
 
-      - run: npm install
+      - run: npm ci
 
       - run: npm run ingest
         env:
@@ -46,8 +44,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: rule_engine/package-lock.json
 
-      - run: npm install
+      - run: npm ci
 
       - run: npm run classify
         env:
