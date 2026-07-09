@@ -1,0 +1,28 @@
+# Local-only, personal financial data — never commit.
+# See reference_docs/rules/crash-check-rules.md for the split-storage rationale.
+local_state/*
+!local_state/*.example.yaml
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Supabase local dev
+supabase/.branches
+supabase/.temp
+
+# Node / Python / general
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/

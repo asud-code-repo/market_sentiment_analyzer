@@ -1,0 +1,61 @@
+# Template for local_state/portfolio.yaml — copy this file, rename to
+# portfolio.yaml (already gitignored), and fill in real values there.
+# portfolio.yaml is read only by the locally-running MCP server (stdio) —
+# it is never sent to Supabase, the GitHub Action, or any networked service.
+#
+# Figures below are placeholders, not real data.
+
+updated_at: "2026-01-01"
+
+accounts:
+  tactical_401k:
+    custodian: "Example Custodian"
+    value_usd: 0
+    equity_sleeve_usd: 0
+    dry_powder_usd: 0
+    holdings_pct:
+      stable_value: 0
+      international_equity: 0
+      target_date_fund: 0
+      value_income_fund: 0
+      brokerage_window: 0
+      healthcare_fund: 0
+      real_estate_fund: 0
+    long_term_target_pct:
+      target_date_fund: 0
+      international_equity: 0
+      healthcare_fund: 0
+      brokerage_window: 0
+      value_income_fund: 0
+      real_estate_fund: 0
+      stable_value: 0
+
+  passive_long_duration_account:
+    custodian: "Example Custodian"
+    value_usd: 0
+    holdings_pct:
+      us_equity: 0
+      global_equity: 0
+      emerging_markets: 0
+    crash_protocol: none  # permanent — never apply wave deployment here
+
+  monitored_secondary_401k:
+    custodian: "Example Custodian"
+    value_usd: 0
+    equity_sleeve_usd: 0
+    deployment_mechanism: none  # monitor only
+    holdings_pct:
+      fixed_income: 0
+      bond_index: 0
+      value_fund: 0
+      international_index: 0
+
+  sip_brokerage:
+    monthly_contribution_usd: 0
+    positions:
+      EXAMPLE_TICKER_1: { monthly_usd: 0, pct: 0 }
+      EXAMPLE_TICKER_2: { monthly_usd: 0, pct: 0 }
+
+combined:
+  actionable_equity_at_risk_usd: 0   # tactical + monitored 401k equity sleeves only
+  total_equity_at_risk_incl_passive_usd: 0
