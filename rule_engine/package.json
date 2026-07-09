@@ -1,0 +1,22 @@
+{
+  "name": "crash-check-rule-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stage 3 — deterministic classification. Reads data_points, applies RED/AMBER/GREEN bands and the wave-authorization gate from reference_docs/rules/crash-check-rules.md, writes a partial crash_checks row. No LLM judgment here.",
+  "type": "module",
+  "scripts": {
+    "classify": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
