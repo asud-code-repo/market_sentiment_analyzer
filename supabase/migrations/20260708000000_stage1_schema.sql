@@ -81,8 +81,12 @@ create table crash_checks (
 create index crash_checks_run_at_idx on crash_checks (run_at desc);
 
 alter table crash_checks enable row level security;
--- No policies defined yet: RLS enabled with zero policies = deny-all by default.
--- Add explicit policies scoped to the service-role key before Stage 2/3/4 write access.
+-- No policies defined: RLS enabled with zero policies = deny-all for the
+-- anon/authenticated roles. The service_role key (used by the GitHub Action
+-- and the local MCP server) bypasses RLS entirely by Supabase design, so it
+-- needs no policy to read/write here. Add anon-role policies only if you
+-- later build Stage 5's read-only dashboard and want it to query directly
+-- without a service key.
 
 -- ============================================================
 -- latest_snapshot — convenience view over crash_checks
@@ -113,4 +117,5 @@ create table data_points (
 create index data_points_series_date_idx on data_points (series_id, observation_date desc);
 
 alter table data_points enable row level security;
--- No policies defined yet: deny-all by default until Stage 2 wires up service-role writes.
+-- No policies defined: deny-all for anon/authenticated. The service_role key
+-- bypasses RLS by design — Stage 2's ingestion Action needs no policy added.

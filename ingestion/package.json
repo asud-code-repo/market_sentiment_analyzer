@@ -1,0 +1,22 @@
+{
+  "name": "crash-check-ingestion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stage 2 — pulls macro data from FRED, EIA, CBOE, and Polymarket into Supabase data_points. No LLM involved; pure fetch + normalize + write.",
+  "type": "module",
+  "scripts": {
+    "ingest": "tsx src/ingest.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}

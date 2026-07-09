@@ -1,0 +1,35 @@
+name: Daily data ingestion
+
+on:
+  schedule:
+    # 11:00 UTC daily — after FRED/EIA/CBOE typically publish the prior
+    # business day's data, before US market open.
+    - cron: "0 11 * * *"
+  workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingestion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          # No `cache: npm` yet — that needs package-lock.json, which
+          # doesn't exist until someone runs `npm install` once locally.
+          # Once it's committed, add `cache: "npm"` back and switch the
+          # install step below to `npm ci` for reproducible installs.
+
+      - run: npm install
+
+      - run: npm run ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          POLYMARKET_SLUGS: ${{ vars.POLYMARKET_SLUGS }}
