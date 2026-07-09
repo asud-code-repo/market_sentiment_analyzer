@@ -1,0 +1,335 @@
+<title>Macro Crash Check — Dashboard Template</title>
+<style>
+  .cc-root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --good-bg:        #e8f7e6;
+    --warning:        #b8790a;
+    --warning-bg:     #fdf1d8;
+    --critical:       #d03b3b;
+    --critical-bg:    #fbe7e6;
+    --neutral-blue:   #2a78d6;
+    --neutral-blue-bg:#e5eefb;
+    --meter-track:    #e1e0d9;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    padding: 24px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .cc-root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --good-bg:        #10250f;
+      --warning:        #fab219;
+      --warning-bg:     #2c2109;
+      --critical:       #e66767;
+      --critical-bg:    #2c1211;
+      --neutral-blue:   #3987e5;
+      --neutral-blue-bg:#101f30;
+      --meter-track:    #2c2c2a;
+    }
+  }
+  :root[data-theme="dark"] .cc-root {
+    --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+    --text-secondary: #c3c2b7; --text-muted: #898781; --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10); --good: #0ca30c; --good-bg: #10250f;
+    --warning: #fab219; --warning-bg: #2c2109; --critical: #e66767;
+    --critical-bg: #2c1211; --neutral-blue: #3987e5; --neutral-blue-bg: #101f30;
+    --meter-track: #2c2c2a;
+  }
+  :root[data-theme="light"] .cc-root {
+    --surface-1: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --text-muted: #898781; --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.10); --good: #0ca30c; --good-bg: #e8f7e6;
+    --warning: #b8790a; --warning-bg: #fdf1d8; --critical: #d03b3b;
+    --critical-bg: #fbe7e6; --neutral-blue: #2a78d6; --neutral-blue-bg: #e5eefb;
+    --meter-track: #e1e0d9;
+  }
+  .cc-root * { box-sizing: border-box; }
+  .cc-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .cc-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+
+  /* Alert banners */
+  .cc-banner { border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border); }
+  .cc-banner.critical { background: var(--critical-bg); color: var(--text-primary); }
+  .cc-banner.good { background: var(--good-bg); color: var(--text-primary); }
+  .cc-banner b { font-weight: 700; }
+
+  /* Hero probability */
+  .cc-hero-value { font-size: 56px; font-weight: 600; line-height: 1; display: inline-block; }
+  .cc-hero-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .cc-delta { font-size: 14px; font-weight: 600; }
+  .cc-delta.up-bad { color: var(--critical); }
+  .cc-delta.up-good { color: var(--good); }
+  .cc-delta.flat { color: var(--text-muted); }
+  .cc-pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .cc-pill.good { background: var(--good-bg); color: var(--good); }
+  .cc-pill.warning { background: var(--warning-bg); color: var(--warning); }
+  .cc-pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .cc-pill.muted { background: var(--grid); color: var(--text-muted); }
+
+  .cc-meter-track { position: relative; height: 10px; border-radius: 999px; background: var(--meter-track); margin: 14px 0 8px; overflow: hidden; }
+  .cc-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+  .cc-meter-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+
+  .cc-delta-log { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cc-delta-log li { font-size: 13px; color: var(--text-secondary); display: flex; gap: 8px; }
+  .cc-delta-log .sign { font-weight: 700; width: 28px; flex-shrink: 0; }
+  .cc-delta-log .sign.pos { color: var(--critical); }
+  .cc-delta-log .sign.neg { color: var(--good); }
+
+  /* Indicator panel grid */
+  .cc-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cc-panel-header h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .cc-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .cc-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .cc-grid-3, .cc-grid-4 { grid-template-columns: repeat(2, 1fr); } }
+  .cc-indicator { border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
+  .cc-indicator.good { background: var(--good-bg); }
+  .cc-indicator.warning { background: var(--warning-bg); }
+  .cc-indicator.critical { background: var(--critical-bg); }
+  .cc-indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .cc-indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .cc-indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+  .cc-indicator.good .status { color: var(--good); }
+  .cc-indicator.warning .status { color: var(--warning); }
+  .cc-indicator.critical .status { color: var(--critical); }
+  .cc-indicator .favourable { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  /* Stat tiles */
+  .cc-stat .label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .cc-stat .value { font-size: 18px; font-weight: 600; }
+  .cc-stat .context { font-size: 11px; margin-top: 4px; color: var(--text-secondary); }
+  .cc-stat.good { background: var(--good-bg); }
+  .cc-stat.warning { background: var(--warning-bg); }
+  .cc-stat.critical { background: var(--critical-bg); }
+  .cc-stat.good .context { color: var(--good); }
+  .cc-stat.warning .context { color: var(--warning); }
+  .cc-stat.critical .context { color: var(--critical); }
+
+  /* Scenario distribution */
+  .cc-stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
+  .cc-stackbar .seg.bull { background: var(--good); }
+  .cc-stackbar .seg.base { background: var(--neutral-blue); }
+  .cc-stackbar .seg.bear { background: var(--warning); }
+  .cc-stackbar .seg.crash { background: var(--critical); }
+  .cc-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+  .cc-legend .item { display: flex; align-items: center; gap: 6px; }
+  .cc-legend .dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .cc-legend .dot.bull { background: var(--good); }
+  .cc-legend .dot.base { background: var(--neutral-blue); }
+  .cc-legend .dot.bear { background: var(--warning); }
+  .cc-legend .dot.crash { background: var(--critical); }
+
+  /* Two-column context cards */
+  .cc-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) { .cc-grid-2 { grid-template-columns: 1fr; } }
+  .cc-context-card { border-radius: 10px; padding: 14px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border); }
+  .cc-context-card.critical { background: var(--critical-bg); }
+  .cc-context-card.good { background: var(--good-bg); }
+  .cc-context-card h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); }
+
+  /* Trigger list */
+  .cc-trigger-list { display: flex; flex-direction: column; gap: 10px; }
+  .cc-trigger { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
+  .cc-trigger .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .cc-trigger .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* Watchlist table */
+  table.cc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.cc-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--grid); }
+  table.cc-table td { padding: 10px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  table.cc-table tr:last-child td { border-bottom: none; }
+
+  .cc-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+</style>
+
+<div class="cc-root">
+<div class="cc-wrap">
+
+  <!-- ALERT BANNERS: show/hide based on live warsh_hard_rules_active / any same-day market note -->
+  <div class="cc-banner critical">
+    <b>⚠ HAWKISH REGIME ACTIVE</b> — All 401k rotation suspended. Hold fully defensive until July 30 FOMC or June CPI below 3.5%.
+  </div>
+
+  <!-- CRASH PROBABILITY HERO -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Crash Probability — July 9, 2026</p>
+    <div class="cc-hero-row">
+      <span class="cc-hero-value">10%</span>
+      <span class="cc-delta flat">— first automated run, no prior chat check to diff against</span>
+      <span class="cc-pill good">LOW</span>
+    </div>
+    <div class="cc-meter-track">
+      <div class="cc-meter-fill" style="width: 10%; background: var(--good);"></div>
+    </div>
+    <div class="cc-meter-labels"><span>0%</span><span>Range: 5–20%</span><span>100%</span></div>
+    <ul class="cc-delta-log">
+      <li><span class="sign neg">0/6</span> RED indicators — no wave-deployment pressure this run</li>
+      <li><span class="sign neg">—</span> Shiller CAPE elevated but not an active trigger; treated as vulnerability, not signal</li>
+    </ul>
+  </div>
+
+  <!-- 6-INDICATOR PANEL -->
+  <div class="cc-card">
+    <div class="cc-panel-header">
+      <h3>6-Indicator Crash Panel</h3>
+      <span class="cc-pill good">0 of 6 RED — wave not authorized</span>
+    </div>
+    <div class="cc-grid-3">
+      <div class="cc-indicator good">
+        <div class="label">1. VIX</div>
+        <div class="value">16.13</div>
+        <div class="status">GREEN</div>
+        <div class="favourable">Favourable: &lt;20 / Now: 16.13</div>
+      </div>
+      <div class="cc-indicator good">
+        <div class="label">2. HY credit spreads</div>
+        <div class="value">267 bps</div>
+        <div class="status">GREEN</div>
+        <div class="favourable">Favourable: &lt;350 / Now: 267</div>
+      </div>
+      <div class="cc-indicator good">
+        <div class="label">3. S&amp;P drawdown from ATH</div>
+        <div class="value">1.67%</div>
+        <div class="status">GREEN</div>
+        <div class="favourable">ATH 7,609.78 (6/2) / Now 7,482.71</div>
+      </div>
+      <div class="cc-indicator warning">
+        <div class="label">4. 10yr yield</div>
+        <div class="value">4.55%</div>
+        <div class="status">AMBER</div>
+        <div class="favourable">Favourable: &lt;4.3 / Now: 4.55</div>
+      </div>
+      <div class="cc-indicator good">
+        <div class="label">5. Sahm Rule</div>
+        <div class="value">0.07</div>
+        <div class="status">GREEN</div>
+        <div class="favourable">Trigger: &gt;0.5 / Now: 0.07</div>
+      </div>
+      <div class="cc-indicator good">
+        <div class="label">6. Fed pivot signal</div>
+        <div class="value">None</div>
+        <div class="status">GREEN</div>
+        <div class="favourable">No pause/cut language detected</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KEY MACRO INDICATORS (stat tile grid) -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Key Macro Indicators</p>
+    <div class="cc-grid-4">
+      <div class="cc-indicator good cc-stat">
+        <div class="label">S&amp;P 500</div>
+        <div class="value">7,482.71</div>
+        <div class="context">−1.67% from ATH</div>
+      </div>
+      <div class="cc-indicator warning cc-stat">
+        <div class="label">10yr Treasury</div>
+        <div class="value">4.55%</div>
+        <div class="context">AMBER — near 4.3% threshold</div>
+      </div>
+      <div class="cc-indicator good cc-stat">
+        <div class="label">VIX</div>
+        <div class="value">16.13</div>
+        <div class="context">Below 20 — calm</div>
+      </div>
+      <div class="cc-indicator critical cc-stat">
+        <div class="label">Warsh classification</div>
+        <div class="value">HAWKISH</div>
+        <div class="context">Hard rules active</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENARIO DISTRIBUTION -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Scenario Distribution</p>
+    <div class="cc-stackbar">
+      <div class="seg bull" style="width: 25%;"></div>
+      <div class="seg base" style="width: 45%;"></div>
+      <div class="seg bear" style="width: 22%;"></div>
+      <div class="seg crash" style="width: 8%;"></div>
+    </div>
+    <div class="cc-legend">
+      <div class="item"><span class="dot bull"></span>Bull 25% — Warsh softens Jul 30, CPI confirms disinflation</div>
+      <div class="item"><span class="dot base"></span>Base 45% — HAWKISH holds, gradual data-driven path</div>
+      <div class="item"><span class="dot bear"></span>Bear 22% — CPI surprises hot, hike odds rise</div>
+      <div class="item"><span class="dot crash"></span>Crash 8% — credit/liquidity shock or AI-capex unwind</div>
+    </div>
+  </div>
+
+  <!-- NARRATIVE CONTEXT (two-column, swap in whatever the live geopolitical/earnings read is) -->
+  <div class="cc-grid-2">
+    <div class="cc-context-card critical">
+      <h4>What to watch</h4>
+      Sticky 10yr yield (4.55%, AMBER) is the nearest indicator to flipping — a 7bps move would tighten it toward GREEN. HAWKISH regime keeps all rotation suspended regardless.
+    </div>
+    <div class="cc-context-card good">
+      <h4>What's stable</h4>
+      0 of 6 RED, VIX calm, credit spreads tight, drawdown under 2%. No wave-deployment pressure this run.
+    </div>
+  </div>
+
+  <!-- TRIGGER STATUS -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Trigger Date Status</p>
+    <div class="cc-trigger-list">
+      <div class="cc-trigger">
+        <span class="cc-pill critical">FIRED</span>
+        <div>
+          <div class="title">Warsh June 22 FOMC — HAWKISH</div>
+          <div class="desc">Hard rules active: all 401k rotation suspended until July 30 FOMC or June CPI below 3.5%.</div>
+        </div>
+      </div>
+      <div class="cc-trigger">
+        <span class="cc-pill warning">APPROACHING</span>
+        <div>
+          <div class="title">June CPI release — mid-July</div>
+          <div class="desc">Primary reclassification gate. Below 3.5% lifts HAWKISH rules; above 4.0% confirms Q3 stress.</div>
+        </div>
+      </div>
+      <div class="cc-trigger">
+        <span class="cc-pill muted">PENDING</span>
+        <div>
+          <div class="title">July 30 FOMC + Q2 earnings</div>
+          <div class="desc">Second classification gate; hyperscaler AI capex guidance also due late July.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BROKERAGELINK WATCHLIST -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">BrokerageLink Watchlist</p>
+    <table class="cc-table">
+      <thead><tr><th>Ticker</th><th>Current</th><th>Wave 1</th><th>% Above</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>EOG</td><td>$122</td><td>$115</td><td>+6%</td><td><span class="cc-pill warning">WATCH</span></td></tr>
+        <tr><td>LNG</td><td>$260</td><td>$175</td><td>+49%</td><td><span class="cc-pill muted">WAIT</span></td></tr>
+        <tr><td>CCJ</td><td>$99</td><td>$44</td><td>+125%</td><td><span class="cc-pill muted">WAIT</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="cc-disclaimer">
+    Informational only, not investment advice. Wave thresholds are guidelines, not guarantees. Consult a qualified CFP/RIA before allocation changes. Scenario dollar impacts, if shown, are estimates on equity sleeves only — stable-value/RRSP are protected in every scenario.
+  </p>
+
+</div>
+</div>

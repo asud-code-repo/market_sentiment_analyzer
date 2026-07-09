@@ -230,6 +230,16 @@ earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
 
 ## Formatting Requirements (unchanged from source doc)
 
+**Render every full crash check as an HTML artifact using `dashboard-template.html`
+(in this same folder) as the base — not as plain chat text.** Reuse its structure,
+CSS custom properties, and component classes (`.cc-card`, `.cc-indicator`,
+`.cc-pill`, `.cc-stackbar`, `.cc-trigger`, `.cc-table`, etc.); replace the example
+content with this run's live values. Keep the status-color semantics fixed:
+green = `--good`, amber = `--warning`, red = `--critical` — never repurpose them
+for anything that isn't a GREEN/AMBER/RED-style status. If a section's data isn't
+available this run (e.g. no delta because it's the first check), omit or note it
+rather than inventing a value.
+
 - KPI cards always show a color-coded benchmark pill: `"Favourable: X–Y / Now: Z"`
 - Crash probability: point %, range, delta vs prior check, visual meter.
   Color code: green 0–20%, amber 20–35%, red 35%+
