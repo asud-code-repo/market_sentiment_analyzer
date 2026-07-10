@@ -97,17 +97,21 @@
 
   /* Indicator grid */
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  @media (max-width: 640px) { .grid-3 { grid-template-columns: repeat(2, 1fr); } }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); } }
   .indicator { border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
   .indicator.good { background: var(--good-bg); }
   .indicator.warning { background: var(--warning-bg); }
   .indicator.critical { background: var(--critical-bg); }
+  .indicator.neutral { background: var(--page); }
   .indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
   .indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-primary); }
   .indicator .favourable { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .indicator .signal { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
   .indicator .indicator-info { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-top: 6px; }
   .indicator .indicator-info strong { color: var(--text-primary); font-weight: 600; }
+  .context-note { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
 
   /* Scenario distribution */
   .stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
@@ -178,6 +182,12 @@
   </div>
 
   <div id="report-view"><p class="loading">Loading…</p></div>
+
+  <div class="card">
+    <p class="eyebrow">Contextual Indicators — informational, not wave-gating</p>
+    <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
+    <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+  </div>
 
   <div class="card">
     <p class="eyebrow">Crash Probability — History</p>
@@ -253,6 +263,96 @@ const INDICATOR_INFO = {
     why: "A shift toward cut language usually means the Fed itself is acknowledging economic weakness, not just reacting to market pressure.",
   },
 };
+
+// Supplementary macro series — informational only, never part of the 6-gate
+// (see reference_docs/rules/crash-check-rules.md "Contextual Indicators").
+// Pulled from data_points directly (not crash_checks), so they always show
+// the latest available reading regardless of which historical report is
+// selected above.
+const CONTEXT_INFO = {
+  stlfsi4: {
+    label: "Financial Stress Index",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v > 0 ? "Above-average stress" : "Below-average stress"),
+  },
+  nfci: {
+    label: "Nat'l Financial Conditions",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v > 0 ? "Tighter than average" : "Looser than average"),
+  },
+  spread2s10s: {
+    label: "2s10s Yield Curve Spread",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`,
+    signal: (v) => (v < 0 ? "Inverted — historically precedes recessions" : "Normal (positive slope)"),
+  },
+  t10yie: {
+    label: "10yr Breakeven Inflation",
+    format: (v) => `${v.toFixed(1)}%`,
+    signal: (v) => (v > 2.5 ? "Above the Fed's ~2% target" : "Near the Fed's ~2% target"),
+  },
+  drtscilm: {
+    label: "Bank Lending Standards",
+    format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}%`,
+    signal: (v) => (v > 0 ? "Net tightening (credit contracting)" : "Net easing"),
+  },
+  rrpontsyd: {
+    label: "Overnight Reverse Repo",
+    format: (v) => `$${v.toFixed(0)}B`,
+    signal: () => "Context-dependent, not directional",
+  },
+  icsa: {
+    label: "Initial Jobless Claims",
+    format: (v) => `${Math.round(v / 1000)}K`,
+    signal: () => "Sustained rising trend = labor market weakening",
+  },
+  drcclacbs: {
+    label: "Credit Card Delinquency",
+    format: (v) => `${v.toFixed(1)}%`,
+    signal: () => "Rising = consumer financial stress increasing",
+  },
+  dcoilwtico: {
+    label: "WTI Crude Oil",
+    format: (v) => `$${v.toFixed(2)}/bbl`,
+    signal: (v) => (v > 100 ? "Above $100 — stagflation accelerant watch" : "Below $100"),
+  },
+  rsafs: {
+    label: "Retail Sales (Advance)",
+    format: (v) => `$${(v / 1000).toFixed(1)}B`,
+    signal: () => "Closest free proxy for consumer/card spending strength",
+  },
+};
+
+function renderContextIndicators(latest) {
+  const grid = document.getElementById("context-grid");
+  const dgs10 = latest.DGS10, dgs2 = latest.DGS2;
+  const spread = dgs10 != null && dgs2 != null ? dgs10 - dgs2 : null;
+
+  const values = {
+    stlfsi4: latest.STLFSI4,
+    nfci: latest.NFCI,
+    spread2s10s: spread,
+    t10yie: latest.T10YIE,
+    drtscilm: latest.DRTSCILM,
+    rrpontsyd: latest.RRPONTSYD,
+    icsa: latest.ICSA,
+    drcclacbs: latest.DRCCLACBS,
+    dcoilwtico: latest.DCOILWTICO,
+    rsafs: latest.RSAFS,
+  };
+
+  grid.innerHTML = Object.entries(CONTEXT_INFO)
+    .map(([key, info]) => {
+      const v = values[key];
+      return `
+        <div class="indicator neutral">
+          <div class="label">${info.label}</div>
+          <div class="value">${v != null ? info.format(v) : "—"}</div>
+          <div class="signal">${v != null ? info.signal(v) : "No data yet"}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
 
 function trendArrow(current, prior) {
   if (typeof current !== "number" || typeof prior !== "number" || current === prior) return "";
@@ -556,6 +656,24 @@ async function main() {
 
     populateDateSelect();
     selectIndex(ALL_ROWS.length - 1);
+
+    // Isolated try/catch: a data_points fetch failure shouldn't take down
+    // date navigation or the trend charts below, which depend on nothing here.
+    try {
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS"];
+      const contextRows = await fetchFromSupabase(
+        `data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&order=observation_date.desc&limit=500`,
+      );
+      // Global desc-by-date order means each series_id's first appearance here
+      // is its latest observation.
+      const latestBySeriesId = {};
+      for (const r of contextRows) {
+        if (!(r.series_id in latestBySeriesId)) latestBySeriesId[r.series_id] = r.value;
+      }
+      renderContextIndicators(latestBySeriesId);
+    } catch (err) {
+      document.getElementById("context-grid").innerHTML = `<p class="loading">Failed to load contextual indicators: ${err.message}</p>`;
+    }
 
     document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));
     document.getElementById("prev-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX - 1));
