@@ -19,7 +19,10 @@
     --warning-bg:     #fdf1d8;
     --critical:       #d03b3b;
     --critical-bg:    #fbe7e6;
+    --neutral-blue:   #2a78d6;
     --line-color:     #2a78d6;
+    --meter-track:    #e1e0d9;
+    --wave-shade:     rgba(208,59,59,0.10);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -36,7 +39,10 @@
       --warning-bg:     #2c2109;
       --critical:       #e66767;
       --critical-bg:    #2c1211;
+      --neutral-blue:   #3987e5;
       --line-color:     #3987e5;
+      --meter-track:    #2c2c2a;
+      --wave-shade:     rgba(230,103,103,0.14);
     }
   }
   * { box-sizing: border-box; }
@@ -53,6 +59,43 @@
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
 
+  /* Date selector bar */
+  .date-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+  .date-bar label { font-size: 12px; color: var(--text-muted); }
+  .date-bar select { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); }
+  .date-nav-btn { font-size: 12px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); cursor: pointer; }
+  .date-nav-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* Alert banners */
+  .banner { border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border); }
+  .banner.critical { background: var(--critical-bg); }
+  .banner.good { background: var(--good-bg); }
+  .banner b { font-weight: 700; }
+
+  /* Hero probability */
+  .hero-value { font-size: 48px; font-weight: 600; line-height: 1; display: inline-block; }
+  .hero-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .delta { font-size: 13px; font-weight: 600; }
+  .delta.up-bad { color: var(--critical); }
+  .delta.up-good { color: var(--good); }
+  .delta.flat { color: var(--text-muted); }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.warning { background: var(--warning-bg); color: var(--warning); }
+  .pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .pill.muted { background: var(--grid); color: var(--text-muted); }
+
+  .meter-track { position: relative; height: 10px; border-radius: 999px; background: var(--meter-track); margin: 14px 0 8px; overflow: hidden; }
+  .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+  .meter-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+
+  .delta-log { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .delta-log li { font-size: 13px; color: var(--text-secondary); display: flex; gap: 8px; }
+  .delta-log .sign { font-weight: 700; width: 30px; flex-shrink: 0; }
+  .delta-log .sign.pos { color: var(--critical); }
+  .delta-log .sign.neg { color: var(--good); }
+
+  /* Indicator grid */
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 640px) { .grid-3 { grid-template-columns: repeat(2, 1fr); } }
   .indicator { border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
@@ -63,19 +106,40 @@
   .indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-primary); }
 
-  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
-  .pill.good { background: var(--good-bg); color: var(--good); }
-  .pill.warning { background: var(--warning-bg); color: var(--warning); }
-  .pill.critical { background: var(--critical-bg); color: var(--critical); }
-  .pill.muted { background: var(--grid); color: var(--text-muted); }
+  /* Scenario distribution */
+  .stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
+  .stackbar .seg.bull { background: var(--good); }
+  .stackbar .seg.base { background: var(--neutral-blue); }
+  .stackbar .seg.bear { background: var(--warning); }
+  .stackbar .seg.crash { background: var(--critical); }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend .dot.bull { background: var(--good); }
+  .legend .dot.base { background: var(--neutral-blue); }
+  .legend .dot.bear { background: var(--warning); }
+  .legend .dot.crash { background: var(--critical); }
 
-  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  /* Trigger list */
+  .trigger-list { display: flex; flex-direction: column; gap: 10px; }
+  .trigger-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
+  .trigger-item .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .trigger-item .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  .notes-text { font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
+
+  /* Trend charts */
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 8px; }
   .chart-title { font-size: 13px; font-weight: 600; }
   .chart-current { font-size: 13px; color: var(--text-secondary); }
+  .range-toggle { display: flex; gap: 4px; }
+  .range-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
+  .range-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
   .table-toggle { font-size: 11px; color: var(--text-muted); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
   .chart-svg { width: 100%; height: 140px; display: block; }
   .chart-line { fill: none; stroke: var(--line-color); stroke-width: 2px; }
-  .chart-grid { stroke: var(--grid); stroke-width: 1px; }
+  .chart-grid-line { stroke: var(--grid); stroke-width: 1px; }
+  .chart-shade { fill: var(--wave-shade); }
   .chart-crosshair { stroke: var(--text-muted); stroke-width: 1px; display: none; }
   .chart-dot { fill: var(--line-color); stroke: var(--surface-1); stroke-width: 2px; display: none; }
   .chart-tooltip {
@@ -91,12 +155,6 @@
 
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
-
-  .report-entry { padding: 14px 0; border-bottom: 1px solid var(--grid); }
-  .report-entry:last-child { border-bottom: none; }
-  .report-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  .report-date { font-size: 13px; font-weight: 600; }
-  .report-notes { font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -108,10 +166,15 @@
 
   <div id="error-container"></div>
 
-  <div class="card" id="latest-card">
-    <p class="eyebrow">Latest Snapshot</p>
-    <div id="latest-content" class="loading">Loading…</div>
+  <div class="date-bar">
+    <label for="date-select">Viewing:</label>
+    <select id="date-select"></select>
+    <button class="date-nav-btn" id="prev-btn">&larr; Older</button>
+    <button class="date-nav-btn" id="next-btn">Newer &rarr;</button>
+    <button class="date-nav-btn" id="latest-btn">Jump to latest</button>
   </div>
+
+  <div id="report-view"><p class="loading">Loading…</p></div>
 
   <div class="card">
     <p class="eyebrow">Crash Probability — History</p>
@@ -126,18 +189,17 @@
     <div id="chart-10y"></div>
     <div id="chart-sahm"></div>
   </div>
-
-  <div class="card">
-    <p class="eyebrow">Report Archive</p>
-    <div id="report-archive" class="loading">Loading…</div>
-  </div>
 </div>
 
 <script>
-// ---- Config: fill these in (anon/publishable key is safe to expose client-side —
-// protected by RLS, not secrecy; see supabase/migrations/20260709000400_anon_readonly_reporting.sql) ----
+// ---- Config: anon/publishable key is safe to expose client-side — protected
+// by RLS + GRANT (see supabase/migrations/20260709000400 and 000500), not by
+// secrecy. ----
 const SUPABASE_URL = "https://jophlgbijfahmytkrjly.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_DAU2BkfrG_3-LU_fFKW1og_yVasDG6d";
+
+let ALL_ROWS = []; // all crash_checks rows, ascending by run_at
+let CURRENT_INDEX = -1;
 
 async function fetchFromSupabase(path) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -154,197 +216,296 @@ function pillClass(color) {
   return "muted";
 }
 
-function renderLatest(row) {
-  const el = document.getElementById("latest-content");
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** Renders the full rich report view for one row, diffing against the prior
+ * chronological row for the delta log — same visual language as
+ * reference_docs/rules/dashboard-template.html, driven by real stored data. */
+function renderReport(row, priorRow) {
+  const el = document.getElementById("report-view");
   if (!row) {
     el.innerHTML = '<p class="loading">No data yet.</p>';
     return;
   }
-  const runDate = new Date(row.run_at).toLocaleString();
+
+  const banner = row.warsh_hard_rules_active
+    ? `<div class="banner critical"><b>⚠ ${row.warsh_classification || "HAWKISH"} REGIME ACTIVE</b> — hard rules in effect. See trigger status below for the next reclassification gate.</div>`
+    : "";
+
+  let probSection = "";
+  if (row.crash_probability_pct != null) {
+    const meterColor = row.crash_probability_pct >= 35 ? "var(--critical)" : row.crash_probability_pct >= 20 ? "var(--warning)" : "var(--good)";
+    let deltaHtml = '<span class="delta flat">No prior full report to diff against</span>';
+    if (priorRow && priorRow.crash_probability_pct != null) {
+      const diff = row.crash_probability_pct - priorRow.crash_probability_pct;
+      const cls = diff > 0 ? "up-bad" : diff < 0 ? "up-good" : "flat";
+      const sign = diff > 0 ? "+" : "";
+      deltaHtml = `<span class="delta ${cls}">${sign}${diff} pts vs prior report (${priorRow.crash_probability_pct}%)</span>`;
+    }
+    probSection = `
+      <div class="hero-row">
+        <span class="hero-value">${row.crash_probability_pct}%</span>
+        ${deltaHtml}
+      </div>
+      <div class="meter-track"><div class="meter-fill" style="width:${row.crash_probability_pct}%; background:${meterColor};"></div></div>
+      <div class="meter-labels"><span>0%</span><span>Range: ${row.crash_probability_low_pct ?? "—"}–${row.crash_probability_high_pct ?? "—"}%</span><span>100%</span></div>
+    `;
+  }
+
+  let scenarioSection = "";
+  if (row.scenario_bull_pct != null) {
+    scenarioSection = `
+      <p class="eyebrow" style="margin-top:16px;">Scenario Distribution</p>
+      <div class="stackbar">
+        <div class="seg bull" style="width:${row.scenario_bull_pct}%;"></div>
+        <div class="seg base" style="width:${row.scenario_base_pct}%;"></div>
+        <div class="seg bear" style="width:${row.scenario_bear_pct}%;"></div>
+        <div class="seg crash" style="width:${row.scenario_crash_pct}%;"></div>
+      </div>
+      <div class="legend">
+        <div class="item"><span class="dot bull"></span>Bull ${row.scenario_bull_pct}%</div>
+        <div class="item"><span class="dot base"></span>Base ${row.scenario_base_pct}%</div>
+        <div class="item"><span class="dot bear"></span>Bear ${row.scenario_bear_pct}%</div>
+        <div class="item"><span class="dot crash"></span>Crash ${row.scenario_crash_pct}%</div>
+      </div>
+    `;
+  }
+
+  let triggerSection = "";
+  try {
+    const triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]");
+    if (triggers.length > 0) {
+      triggerSection = `
+        <p class="eyebrow" style="margin-top:16px;">Trigger Status</p>
+        <div class="trigger-list">
+          ${triggers
+            .map(
+              (t) => `
+            <div class="trigger-item">
+              <span class="pill ${t.status === "fired" ? "critical" : t.status === "approaching" ? "warning" : "muted"}">${t.status}</span>
+              <div><div class="title">${t.name} — ${t.date}</div>${t.note ? `<div class="desc">${t.note}</div>` : ""}</div>
+            </div>`,
+            )
+            .join("")}
+        </div>
+      `;
+    }
+  } catch (e) { /* malformed trigger_status, skip section */ }
+
+  const notesSection = row.notes
+    ? `<p class="eyebrow" style="margin-top:16px;">Narrative</p><div class="notes-text">${row.notes.replace(/</g, "&lt;")}</div>`
+    : `<p class="loading" style="margin-top:16px;">No narrative for this entry — this was an automated daily indicator refresh, not a full chat-triggered report.</p>`;
+
   el.innerHTML = `
-    <p class="chart-current">As of ${runDate} — <span class="pill ${pillClass(row.red_count >= 3 ? 'RED' : row.red_count > 0 ? 'AMBER' : 'GREEN')}">${row.red_count} of 6 RED</span>
-    <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
-    <div class="grid-3">
-      <div class="indicator ${pillClass(row.vix_color)}"><div class="label">VIX</div><div class="value">${row.vix_value ?? '—'}</div><div class="status">${row.vix_color ?? ''}</div></div>
-      <div class="indicator ${pillClass(row.hy_spread_color)}"><div class="label">HY Spread (bps)</div><div class="value">${row.hy_spread_bps ?? '—'}</div><div class="status">${row.hy_spread_color ?? ''}</div></div>
-      <div class="indicator ${pillClass(row.sp_drawdown_color)}"><div class="label">S&amp;P Drawdown</div><div class="value">${row.sp_drawdown_pct ?? '—'}%</div><div class="status">${row.sp_drawdown_color ?? ''}</div></div>
-      <div class="indicator ${pillClass(row.treasury_10y_color)}"><div class="label">10yr Yield</div><div class="value">${row.treasury_10y_pct ?? '—'}%</div><div class="status">${row.treasury_10y_color ?? ''}</div></div>
-      <div class="indicator ${pillClass(row.sahm_rule_color)}"><div class="label">Sahm Rule</div><div class="value">${row.sahm_rule_value ?? '—'}</div><div class="status">${row.sahm_rule_color ?? ''}</div></div>
-      <div class="indicator ${pillClass(row.fed_pivot_color)}"><div class="label">Fed Pivot Signal</div><div class="value">${row.fed_pivot_signal ?? '—'}</div><div class="status">${row.fed_pivot_color ?? ''}</div></div>
+    ${banner}
+    <div class="card">
+      <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${row.red_count >= 3 ? 'critical' : row.red_count > 0 ? 'warning' : 'good'}">${row.red_count} of 6 RED</span> <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
+      ${probSection}
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="indicator ${pillClass(row.vix_color)}"><div class="label">VIX</div><div class="value">${row.vix_value ?? '—'}</div><div class="status">${row.vix_color ?? ''}</div></div>
+        <div class="indicator ${pillClass(row.hy_spread_color)}"><div class="label">HY Spread (bps)</div><div class="value">${row.hy_spread_bps ?? '—'}</div><div class="status">${row.hy_spread_color ?? ''}</div></div>
+        <div class="indicator ${pillClass(row.sp_drawdown_color)}"><div class="label">S&amp;P Drawdown</div><div class="value">${row.sp_drawdown_pct ?? '—'}%</div><div class="status">${row.sp_drawdown_color ?? ''}</div></div>
+        <div class="indicator ${pillClass(row.treasury_10y_color)}"><div class="label">10yr Yield</div><div class="value">${row.treasury_10y_pct ?? '—'}%</div><div class="status">${row.treasury_10y_color ?? ''}</div></div>
+        <div class="indicator ${pillClass(row.sahm_rule_color)}"><div class="label">Sahm Rule</div><div class="value">${row.sahm_rule_value ?? '—'}</div><div class="status">${row.sahm_rule_color ?? ''}</div></div>
+        <div class="indicator ${pillClass(row.fed_pivot_color)}"><div class="label">Fed Pivot Signal</div><div class="value">${row.fed_pivot_signal ?? '—'}</div><div class="status">${row.fed_pivot_color ?? ''}</div></div>
+      </div>
+      ${scenarioSection}
+      ${triggerSection}
+      ${notesSection}
     </div>
-    ${row.crash_probability_pct != null ? `<p class="chart-current" style="margin-top:10px;">Crash probability: <strong>${row.crash_probability_pct}%</strong> (range ${row.crash_probability_low_pct}–${row.crash_probability_high_pct}%)</p>` : ''}
   `;
 }
 
-/**
- * Minimal single-series line chart per the dataviz skill's mark specs:
- * 2px line, hairline gridlines, 8px hover marker with a 2px surface ring,
- * crosshair + tooltip, a direct end-label, and a table-view toggle (the
- * accessibility twin). One series needs no legend — the title names it.
- */
-function renderLineChart(containerId, { title, points, unit, formatValue }) {
-  const container = document.getElementById(containerId);
-  const valid = points.filter((p) => p.value != null);
-  if (valid.length === 0) {
-    container.innerHTML = `<div class="chart-header"><span class="chart-title">${title}</span></div><p class="loading">No data yet.</p>`;
-    return;
+function populateDateSelect() {
+  const sel = document.getElementById("date-select");
+  sel.innerHTML = ALL_ROWS
+    .map((r, i) => {
+      const label = `${fmtDate(r.run_at)}${r.notes ? " — Full Report" : " — Indicator Update"}`;
+      return `<option value="${i}">${label}</option>`;
+    })
+    .reverse() // newest first in the dropdown list
+    .join("");
+}
+
+function selectIndex(i) {
+  CURRENT_INDEX = Math.max(0, Math.min(ALL_ROWS.length - 1, i));
+  document.getElementById("date-select").value = String(CURRENT_INDEX);
+  document.getElementById("prev-btn").disabled = CURRENT_INDEX === 0;
+  document.getElementById("next-btn").disabled = CURRENT_INDEX === ALL_ROWS.length - 1;
+
+  // Find the most recent prior row that was itself a full report (has a
+  // probability to diff against), not just the chronologically-adjacent
+  // row — which is usually just a daily indicator-only refresh.
+  let priorFullReport = null;
+  for (let j = CURRENT_INDEX - 1; j >= 0; j--) {
+    if (ALL_ROWS[j].crash_probability_pct != null) {
+      priorFullReport = ALL_ROWS[j];
+      break;
+    }
   }
+  renderReport(ALL_ROWS[CURRENT_INDEX], priorFullReport);
+}
 
-  const width = 900, height = 140, padL = 8, padR = 48, padT = 10, padB = 20;
-  const values = valid.map((p) => p.value);
-  const minV = Math.min(...values), maxV = Math.max(...values);
-  const span = maxV - minV || 1;
-  const x = (i) => padL + (i / Math.max(valid.length - 1, 1)) * (width - padL - padR);
-  const y = (v) => padT + (1 - (v - minV) / span) * (height - padT - padB);
+/**
+ * Single-series line chart with time-range toggle (1M/3M/1Y/All) and
+ * wave-active shading, per the dataviz skill's mark specs: 2px line,
+ * hairline gridlines, hover crosshair+tooltip, direct end-label, table-view
+ * toggle. One series needs no legend — the title names it.
+ */
+function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
+  const container = document.getElementById(containerId);
+  const ranges = { "1M": 30, "3M": 90, "1Y": 365, All: Infinity };
+  let currentRange = "All";
+  let currentTableId = null;
 
-  const pathD = valid.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
-  const last = valid[valid.length - 1];
-  const gridY = [minV, (minV + maxV) / 2, maxV];
+  function draw() {
+    const cutoff = ranges[currentRange] === Infinity ? -Infinity : Date.now() - ranges[currentRange] * 86400000;
+    const valid = allPoints.filter((p) => p.value != null && new Date(p.rawDate).getTime() >= cutoff);
+    const width = 900, height = 140, padL = 8, padR = 48, padT = 10, padB = 20;
 
-  const id = containerId + "-svg";
-  const tooltipId = containerId + "-tooltip";
-  const tableId = containerId + "-table";
+    if (valid.length === 0) {
+      container.querySelector(".chart-body").innerHTML = '<p class="loading">No data in this range.</p>';
+      return;
+    }
+
+    const values = valid.map((p) => p.value);
+    const minV = Math.min(...values), maxV = Math.max(...values);
+    const span = maxV - minV || 1;
+    const x = (i) => padL + (i / Math.max(valid.length - 1, 1)) * (width - padL - padR);
+    const y = (v) => padT + (1 - (v - minV) / span) * (height - padT - padB);
+
+    const pathD = valid.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
+    const last = valid[valid.length - 1];
+    const gridY = [minV, (minV + maxV) / 2, maxV];
+
+    const shadeRects = [];
+    let shadeStart = null;
+    valid.forEach((p, i) => {
+      if (p.waveActive && shadeStart === null) shadeStart = i;
+      if (!p.waveActive && shadeStart !== null) {
+        shadeRects.push([shadeStart, i - 1]);
+        shadeStart = null;
+      }
+    });
+    if (shadeStart !== null) shadeRects.push([shadeStart, valid.length - 1]);
+
+    const id = containerId + "-svg";
+    const tooltipId = containerId + "-tooltip";
+    const tableId = containerId + "-table";
+    currentTableId = tableId;
+
+    container.querySelector(".chart-body").innerHTML = `
+      <div class="chart-wrap">
+        <svg class="chart-svg" id="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          ${shadeRects.map(([s, e]) => `<rect class="chart-shade" x="${x(s).toFixed(1)}" y="${padT}" width="${(x(e) - x(s) + 4).toFixed(1)}" height="${height - padT - padB}" />`).join("")}
+          ${gridY.map((v) => `<line class="chart-grid-line" x1="${padL}" x2="${width - padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" />`).join("")}
+          <path class="chart-line" d="${pathD}" />
+          <circle class="chart-dot" id="${id}-dot" r="4" />
+          <line class="chart-crosshair" id="${id}-crosshair" y1="${padT}" y2="${height - padB}" />
+          <text class="chart-endlabel" x="${x(valid.length - 1) + 6}" y="${y(last.value).toFixed(1)}" dominant-baseline="middle">${formatValue(last.value)}</text>
+        </svg>
+        <div class="chart-tooltip" id="${tooltipId}"></div>
+      </div>
+      <table class="data-table" id="${tableId}">
+        <thead><tr><th>Date</th><th>Value</th></tr></thead>
+        <tbody>${valid.map((p) => `<tr><td>${p.date}</td><td>${formatValue(p.value)}${unit || ""}</td></tr>`).join("")}</tbody>
+      </table>
+    `;
+    container.querySelector(".chart-current").textContent = `${formatValue(last.value)}${unit || ""}`;
+    container.querySelector(".table-toggle").textContent = "Table view"; // fresh draw always starts in chart view
+
+    const svg = document.getElementById(id);
+    const dot = document.getElementById(id + "-dot");
+    const crosshair = document.getElementById(id + "-crosshair");
+    const tooltip = document.getElementById(tooltipId);
+
+    svg.addEventListener("mousemove", (evt) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((evt.clientX - rect.left) / rect.width) * width;
+      let nearest = 0, bestDist = Infinity;
+      valid.forEach((p, i) => {
+        const d = Math.abs(x(i) - px);
+        if (d < bestDist) { bestDist = d; nearest = i; }
+      });
+      const p = valid[nearest];
+      dot.style.display = "block";
+      dot.setAttribute("cx", x(nearest).toFixed(1));
+      dot.setAttribute("cy", y(p.value).toFixed(1));
+      crosshair.style.display = "block";
+      crosshair.setAttribute("x1", x(nearest).toFixed(1));
+      crosshair.setAttribute("x2", x(nearest).toFixed(1));
+      tooltip.style.display = "block";
+      tooltip.style.left = `${(x(nearest) / width) * 100}%`;
+      tooltip.style.top = "0px";
+      tooltip.textContent = `${p.date}: ${formatValue(p.value)}${unit || ""}`;
+    });
+    svg.addEventListener("mouseleave", () => {
+      dot.style.display = "none";
+      crosshair.style.display = "none";
+      tooltip.style.display = "none";
+    });
+  }
 
   container.innerHTML = `
     <div class="chart-header">
       <span class="chart-title">${title}</span>
-      <span class="chart-current">${formatValue(last.value)}${unit || ""} <button class="table-toggle" data-target="${tableId}">Table view</button></span>
+      <div class="range-toggle">
+        ${Object.keys(ranges).map((r) => `<button class="range-btn ${r === currentRange ? "active" : ""}" data-range="${r}">${r}</button>`).join("")}
+      </div>
+      <span class="chart-current"></span>
+      <button class="table-toggle">Table view</button>
     </div>
-    <div class="chart-wrap">
-      <svg class="chart-svg" id="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
-        ${gridY.map((v) => `<line class="chart-grid" x1="${padL}" x2="${width - padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" />`).join("")}
-        <path class="chart-line" d="${pathD}" />
-        <circle class="chart-dot" id="${id}-dot" r="4" />
-        <line class="chart-crosshair" id="${id}-crosshair" y1="${padT}" y2="${height - padB}" />
-        <text class="chart-endlabel" x="${x(valid.length - 1) + 6}" y="${y(last.value).toFixed(1)}" dominant-baseline="middle">${formatValue(last.value)}</text>
-      </svg>
-      <div class="chart-tooltip" id="${tooltipId}"></div>
-    </div>
-    <table class="data-table" id="${tableId}">
-      <thead><tr><th>Date</th><th>Value</th></tr></thead>
-      <tbody>${valid.map((p) => `<tr><td>${p.date}</td><td>${formatValue(p.value)}${unit || ""}</td></tr>`).join("")}</tbody>
-    </table>
+    <div class="chart-body"></div>
   `;
-
-  const svg = document.getElementById(id);
-  const dot = document.getElementById(id + "-dot");
-  const crosshair = document.getElementById(id + "-crosshair");
-  const tooltip = document.getElementById(tooltipId);
-
-  svg.addEventListener("mousemove", (evt) => {
-    const rect = svg.getBoundingClientRect();
-    const px = ((evt.clientX - rect.left) / rect.width) * width;
-    let nearest = 0, bestDist = Infinity;
-    valid.forEach((p, i) => {
-      const d = Math.abs(x(i) - px);
-      if (d < bestDist) { bestDist = d; nearest = i; }
+  container.querySelectorAll(".range-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      currentRange = btn.dataset.range;
+      container.querySelectorAll(".range-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      draw();
     });
-    const p = valid[nearest];
-    dot.style.display = "block";
-    dot.setAttribute("cx", x(nearest).toFixed(1));
-    dot.setAttribute("cy", y(p.value).toFixed(1));
-    crosshair.style.display = "block";
-    crosshair.setAttribute("x1", x(nearest).toFixed(1));
-    crosshair.setAttribute("x2", x(nearest).toFixed(1));
-    tooltip.style.display = "block";
-    tooltip.style.left = `${(x(nearest) / width) * 100}%`;
-    tooltip.style.top = "0px";
-    tooltip.textContent = `${p.date}: ${formatValue(p.value)}${unit || ""}`;
   });
-  svg.addEventListener("mouseleave", () => {
-    dot.style.display = "none";
-    crosshair.style.display = "none";
-    tooltip.style.display = "none";
-  });
-
-  document.querySelector(`#${containerId} .table-toggle`).addEventListener("click", (e) => {
-    const table = document.getElementById(tableId);
+  // Attached once — the button itself persists across draw() calls (only
+  // .chart-body's innerHTML is replaced), so this must not be re-attached
+  // inside draw() or listeners accumulate on every range switch.
+  container.querySelector(".table-toggle").addEventListener("click", (e) => {
+    const table = document.getElementById(currentTableId);
     const showing = table.style.display === "table";
     table.style.display = showing ? "none" : "table";
     e.target.textContent = showing ? "Table view" : "Chart view";
   });
-}
-
-function renderReportArchive(rows) {
-  const el = document.getElementById("report-archive");
-  if (rows.length === 0) {
-    el.innerHTML = '<p class="loading">No full reports yet — these come from a chat-triggered "run crash check," not the daily automated rule-engine refresh.</p>';
-    return;
-  }
-  el.innerHTML = rows
-    .map((r) => {
-      const date = new Date(r.run_at).toLocaleString();
-      const probPill =
-        r.crash_probability_pct != null
-          ? `<span class="pill ${r.crash_probability_pct >= 35 ? 'critical' : r.crash_probability_pct >= 20 ? 'warning' : 'good'}">${r.crash_probability_pct}% crash probability</span>`
-          : "";
-      const wavePill = `<span class="pill ${r.wave_active && r.wave_active !== 'NONE' ? 'critical' : 'muted'}">${r.wave_active || 'NONE'}</span>`;
-      return `
-        <div class="report-entry">
-          <div class="report-header">
-            <span class="report-date">${date}</span>
-            ${probPill}
-            ${wavePill}
-          </div>
-          <div class="report-notes">${(r.notes || "").replace(/</g, "&lt;")}</div>
-        </div>
-      `;
-    })
-    .join("");
+  draw();
 }
 
 async function main() {
   try {
-    const [latestRows, history, reports] = await Promise.all([
-      fetchFromSupabase("crash_checks?select=*&order=run_at.desc&limit=1"),
-      fetchFromSupabase(
-        "crash_checks?select=run_at,crash_probability_pct,vix_value,hy_spread_bps,sp_drawdown_pct,treasury_10y_pct,sahm_rule_value&order=run_at.asc&limit=500",
-      ),
-      fetchFromSupabase(
-        "crash_checks?select=run_at,crash_probability_pct,wave_active,notes&notes=not.is.null&order=run_at.desc&limit=100",
-      ),
-    ]);
+    ALL_ROWS = await fetchFromSupabase(
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes&order=run_at.asc&limit=1000",
+    );
 
-    renderLatest(latestRows[0]);
-    renderReportArchive(reports);
+    if (ALL_ROWS.length === 0) {
+      document.getElementById("report-view").innerHTML = '<p class="loading">No data yet.</p>';
+      return;
+    }
+
+    populateDateSelect();
+    selectIndex(ALL_ROWS.length - 1);
+
+    document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));
+    document.getElementById("prev-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX - 1));
+    document.getElementById("next-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX + 1));
+    document.getElementById("latest-btn").addEventListener("click", () => selectIndex(ALL_ROWS.length - 1));
 
     const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
-    renderLineChart("chart-crash-probability", {
-      title: "Crash Probability",
-      unit: "%",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.crash_probability_pct })),
-    });
-    renderLineChart("chart-vix", {
-      title: "VIX",
-      unit: "",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.vix_value })),
-    });
-    renderLineChart("chart-hy-spread", {
-      title: "HY Credit Spread",
-      unit: " bps",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.hy_spread_bps })),
-    });
-    renderLineChart("chart-drawdown", {
-      title: "S&P Drawdown from ATH",
-      unit: "%",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.sp_drawdown_pct })),
-    });
-    renderLineChart("chart-10y", {
-      title: "10yr Treasury Yield",
-      unit: "%",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.treasury_10y_pct })),
-    });
-    renderLineChart("chart-sahm", {
-      title: "Sahm Rule",
-      unit: "",
-      formatValue: (v) => v,
-      points: history.map((r) => ({ date: dateOf(r), value: r.sahm_rule_value })),
-    });
+    const withMeta = (valueKey) => ALL_ROWS.map((r) => ({ date: dateOf(r), rawDate: r.run_at, value: r[valueKey], waveActive: r.wave_active && r.wave_active !== "NONE" }));
+
+    renderLineChart("chart-crash-probability", { title: "Crash Probability", unit: "%", formatValue: (v) => v, allPoints: withMeta("crash_probability_pct") });
+    renderLineChart("chart-vix", { title: "VIX", unit: "", formatValue: (v) => v, allPoints: withMeta("vix_value") });
+    renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: withMeta("hy_spread_bps") });
+    renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: withMeta("sp_drawdown_pct") });
+    renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: withMeta("treasury_10y_pct") });
+    renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: withMeta("sahm_rule_value") });
   } catch (err) {
     document.getElementById("error-container").innerHTML = `<div class="error-banner">Failed to load data: ${err.message}</div>`;
   }
