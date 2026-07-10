@@ -91,6 +91,12 @@
 
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
+
+  .report-entry { padding: 14px 0; border-bottom: 1px solid var(--grid); }
+  .report-entry:last-child { border-bottom: none; }
+  .report-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .report-date { font-size: 13px; font-weight: 600; }
+  .report-notes { font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -119,6 +125,11 @@
     <div id="chart-drawdown"></div>
     <div id="chart-10y"></div>
     <div id="chart-sahm"></div>
+  </div>
+
+  <div class="card">
+    <p class="eyebrow">Report Archive</p>
+    <div id="report-archive" class="loading">Loading…</div>
   </div>
 </div>
 
@@ -254,16 +265,48 @@ function renderLineChart(containerId, { title, points, unit, formatValue }) {
   });
 }
 
+function renderReportArchive(rows) {
+  const el = document.getElementById("report-archive");
+  if (rows.length === 0) {
+    el.innerHTML = '<p class="loading">No full reports yet — these come from a chat-triggered "run crash check," not the daily automated rule-engine refresh.</p>';
+    return;
+  }
+  el.innerHTML = rows
+    .map((r) => {
+      const date = new Date(r.run_at).toLocaleString();
+      const probPill =
+        r.crash_probability_pct != null
+          ? `<span class="pill ${r.crash_probability_pct >= 35 ? 'critical' : r.crash_probability_pct >= 20 ? 'warning' : 'good'}">${r.crash_probability_pct}% crash probability</span>`
+          : "";
+      const wavePill = `<span class="pill ${r.wave_active && r.wave_active !== 'NONE' ? 'critical' : 'muted'}">${r.wave_active || 'NONE'}</span>`;
+      return `
+        <div class="report-entry">
+          <div class="report-header">
+            <span class="report-date">${date}</span>
+            ${probPill}
+            ${wavePill}
+          </div>
+          <div class="report-notes">${(r.notes || "").replace(/</g, "&lt;")}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 async function main() {
   try {
-    const [latestRows, history] = await Promise.all([
+    const [latestRows, history, reports] = await Promise.all([
       fetchFromSupabase("crash_checks?select=*&order=run_at.desc&limit=1"),
       fetchFromSupabase(
         "crash_checks?select=run_at,crash_probability_pct,vix_value,hy_spread_bps,sp_drawdown_pct,treasury_10y_pct,sahm_rule_value&order=run_at.asc&limit=500",
       ),
+      fetchFromSupabase(
+        "crash_checks?select=run_at,crash_probability_pct,wave_active,notes&notes=not.is.null&order=run_at.desc&limit=100",
+      ),
     ]);
 
     renderLatest(latestRows[0]);
+    renderReportArchive(reports);
 
     const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
     renderLineChart("chart-crash-probability", {
