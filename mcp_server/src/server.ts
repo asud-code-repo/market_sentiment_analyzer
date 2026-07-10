@@ -2,8 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/supabase.js";
-import { readPortfolio } from "./lib/portfolio.js";
+import { readPortfolio, readDryPowderUsd } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
+import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -169,6 +170,56 @@ server.registerTool(
       yield_curve_2s10s: twoTenSpread,
       initial_jobless_claims: icsa,
       credit_card_delinquency_rate_pct: drcclacbs,
+    });
+  },
+);
+
+server.registerTool(
+  "get_deployment_plan",
+  {
+    description:
+      "Computes the exact dollar breakdown for the tactical 401k's dry-powder deployment, given " +
+      "the current wave status and crash type (if diagnosed) — combining the live dry_powder_usd " +
+      "figure from the local portfolio file with the fixed % splits from crash-check-rules.md. " +
+      "This replaces doing that arithmetic yourself: read this tool's output directly rather than " +
+      "computing dollar amounts from get_indicator_panel + get_portfolio_snapshot by hand. Fund " +
+      "descriptions here are generic (matching the rules doc) — cross-reference " +
+      "get_portfolio_snapshot for the actual fund names when reporting to the user; never persist " +
+      "dollar figures via write_snapshot.",
+  },
+  async () => {
+    const [latest] = await getRecentCrashChecks(1);
+    if (!latest) {
+      return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
+    }
+
+    const waveActive = latest.wave_active as Wave | "NONE" | null;
+    if (!waveActive || waveActive === "NONE") {
+      return json({
+        wave_active: "NONE",
+        message: "No wave currently authorized — nothing to deploy. Dry powder stays fully in stable value.",
+      });
+    }
+
+    const dryPowderUsd = readDryPowderUsd();
+    const wavePlan = computeWaveDeployment(waveActive, dryPowderUsd);
+
+    const crashType = latest.crash_type as CrashType | null;
+    const crashTypeLayer = crashType ? computeCrashTypeLayer(crashType, dryPowderUsd) : null;
+
+    return json({
+      wave_active: waveActive,
+      dry_powder_usd: dryPowderUsd,
+      wave_deployment: wavePlan,
+      crash_type: crashType,
+      crash_type_layer: crashTypeLayer,
+      hard_rules: [
+        "Never sell existing equity positions on the way down",
+        "Never deploy all 3 waves in the same week",
+        "Never go 100% stable-value mid-crash",
+        "Never stop 401k paycheck contributions during a crash",
+        "Never touch the passive long-duration account (RRSP-equivalent) during a crash",
+      ],
     });
   },
 );

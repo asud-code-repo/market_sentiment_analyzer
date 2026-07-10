@@ -25,3 +25,24 @@ export function readPortfolio(): unknown {
 
   return load(raw);
 }
+
+/**
+ * Safely extracts accounts.tactical_401k.dry_powder_usd from the parsed
+ * portfolio file, without assuming its shape beyond that one path — the
+ * rest of the file is free-form and read directly by Claude via
+ * get_portfolio_snapshot, not parsed by code.
+ */
+export function readDryPowderUsd(): number {
+  const portfolio = readPortfolio();
+  const value = (portfolio as Record<string, unknown> | null)?.["accounts"];
+  const tactical401k = (value as Record<string, unknown> | undefined)?.["tactical_401k"];
+  const dryPowder = (tactical401k as Record<string, unknown> | undefined)?.["dry_powder_usd"];
+
+  if (typeof dryPowder !== "number") {
+    throw new Error(
+      "Could not find accounts.tactical_401k.dry_powder_usd in the portfolio file — " +
+        "check its structure against local_state/portfolio.example.yaml.",
+    );
+  }
+  return dryPowder;
+}
