@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, writeSnapshot } from "./lib/supabase.js";
+import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/supabase.js";
 import { readPortfolio } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 
@@ -130,6 +130,46 @@ server.registerTool(
     }
     const row = await writeSnapshot(input);
     return json({ written: row });
+  },
+);
+
+server.registerTool(
+  "get_context_indicators",
+  {
+    description:
+      "Returns supplementary macro indicators — financial stress/conditions indices, breakeven " +
+      "inflation, bank lending standards, reverse repo, the 2s10s yield curve spread, jobless " +
+      "claims, and credit card delinquencies. These are informational context only — NOT part of " +
+      "the 6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/" +
+      "Sahm/Fed pivot, per the user's own fixed rules). Use these to enrich narrative synthesis, " +
+      "never to override or supplement the RED count / wave_authorized decision.",
+  },
+  async () => {
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, drcclacbs] = await Promise.all(
+      ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS"].map(
+        getLatestDataPoint,
+      ),
+    );
+
+    const twoTenSpread =
+      dgs10 && dgs2
+        ? {
+            value_pct: Math.round((dgs10.value - dgs2.value) * 100) / 100,
+            as_of: dgs10.observation_date,
+            signal: dgs10.value - dgs2.value < 0 ? "INVERTED — historically precedes recessions" : "normal (positive slope)",
+          }
+        : null;
+
+    return json({
+      financial_stress_index: stlfsi4 && { ...stlfsi4, signal: stlfsi4.value > 0 ? "above-average stress" : "below-average stress" },
+      national_financial_conditions: nfci && { ...nfci, signal: nfci.value > 0 ? "tighter than average" : "looser than average" },
+      breakeven_inflation_10y: t10yie,
+      bank_lending_standards_tightening_pct: drtscilm && { ...drtscilm, signal: drtscilm.value > 0 ? "net tightening" : "net easing" },
+      reverse_repo_usd_billions: rrpontsyd,
+      yield_curve_2s10s: twoTenSpread,
+      initial_jobless_claims: icsa,
+      credit_card_delinquency_rate_pct: drcclacbs,
+    });
   },
 );
 

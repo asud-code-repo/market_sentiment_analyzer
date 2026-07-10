@@ -226,6 +226,27 @@ earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
 - ISM Manufacturing Prices above 65 = flag (stagflation transmission)
 - Brent/WTI above $100 = flag as stagflation accelerant
 
+## Contextual Indicators (informational only — never gate wave authorization)
+
+Exposed via the `get_context_indicators` MCP tool. These broaden situational
+awareness beyond the original 6-indicator panel, using series already free on
+FRED. **They are explicitly not part of the 3-of-6 RED wave-authorization
+gate** — that formula stays exactly VIX / HY spread / S&P drawdown / 10yr
+yield / Sahm Rule / Fed pivot signal, fixed per the build spec's own non-goal
+("wave thresholds are set by me... the rule engine does not propose or
+auto-update them"). Use these only to enrich narrative synthesis.
+
+| Indicator | Source | Signal framing (public, well-established — not a new rule) |
+|---|---|---|
+| St. Louis Fed Financial Stress Index | FRED `STLFSI4` | Positive = above-average financial stress; negative = below-average |
+| Chicago Fed National Financial Conditions Index | FRED `NFCI` | Positive = tighter than average conditions; negative = looser |
+| 10yr breakeven inflation | FRED `T10YIE` | Context vs Fed's ~2% PCE target — meaningfully above suggests unanchored expectations |
+| Senior Loan Officer Survey (C&I tightening, large/medium firms) | FRED `DRTSCILM` | Positive = net tightening lending standards (credit contracting) |
+| Overnight reverse repo | FRED `RRPONTSYD` | Liquidity parked at the Fed; declining can reflect either liquidity draining into risk assets or T-bill supply dynamics — read in context, not a single-direction signal |
+| 2s10s yield curve spread | Derived: FRED `DGS10` − `DGS2` | Below 0 = inverted, historically precedes recessions by several quarters |
+| Initial jobless claims | FRED `ICSA` | Sustained rising trend = labor market weakening |
+| Credit card delinquency rate | FRED `DRCCLACBS` | Rising = consumer financial stress increasing |
+
 ---
 
 ## Formatting Requirements (unchanged from source doc)

@@ -20,6 +20,12 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "CPIAUCSL", unit: "index" },     // CPI, all urban consumers, headline
   { id: "UNRATE", unit: "percent" },     // Unemployment rate
   { id: "SAHMREALTIME", unit: "ratio" }, // Real-time Sahm Rule recession indicator
+
+  // Track A additions — contextual/supplementary indicators (informational
+  // only, not part of the 6-indicator wave-authorization gate; see
+  // reference_docs/rules/crash-check-rules.md "Contextual Indicators").
+  { id: "ICSA", unit: "count" },         // Initial jobless claims, weekly
+  { id: "DRCCLACBS", unit: "percent" },  // Credit card delinquency rate, all commercial banks
 ];
 
 interface FredObservation {

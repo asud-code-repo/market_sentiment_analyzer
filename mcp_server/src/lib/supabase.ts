@@ -52,6 +52,28 @@ export interface CrashCheckRow {
   created_at: string;
 }
 
+export interface DataPointRow {
+  series_id: string;
+  observation_date: string;
+  value: number;
+}
+
+/** Most recent row for a series_id, or null if we've never ingested it. */
+export async function getLatestDataPoint(seriesId: string): Promise<DataPointRow | null> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("series_id, observation_date, value")
+    .eq("series_id", seriesId)
+    .order("observation_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to read latest data_point for ${seriesId}: ${error.message}`);
+  }
+  return data;
+}
+
 /** Most recent rows, newest first. `limit=2` is enough for a delta calc. */
 export async function getRecentCrashChecks(limit: number): Promise<CrashCheckRow[]> {
   const { data, error } = await supabase

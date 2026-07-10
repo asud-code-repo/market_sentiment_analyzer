@@ -102,6 +102,9 @@
   .cc-indicator.good { background: var(--good-bg); }
   .cc-indicator.warning { background: var(--warning-bg); }
   .cc-indicator.critical { background: var(--critical-bg); }
+  .cc-indicator.neutral { background: var(--page); }
+  .cc-indicator.neutral .value { color: var(--text-primary); }
+  .cc-indicator .signal { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
   .cc-indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
   .cc-indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .cc-indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -226,6 +229,55 @@
         <div class="value">None</div>
         <div class="status">GREEN</div>
         <div class="favourable">No pause/cut language detected</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEXTUAL INDICATORS — informational only, never part of the 6-gate.
+       Deliberately neutral (uncolored) styling to visually distinguish from
+       the RED/AMBER/GREEN-gated panel above. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Contextual Indicators — informational, not wave-gating</p>
+    <div class="cc-grid-4">
+      <div class="cc-indicator neutral">
+        <div class="label">Financial Stress Index</div>
+        <div class="value">−0.62</div>
+        <div class="signal">Below-average stress</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">Nat'l Financial Conditions</div>
+        <div class="value">−0.41</div>
+        <div class="signal">Looser than average</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">2s10s Spread</div>
+        <div class="value">+0.38%</div>
+        <div class="signal">Normal (positive slope)</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">10yr Breakeven Inflation</div>
+        <div class="value">2.4%</div>
+        <div class="signal">Near Fed's ~2% target</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">Bank Lending Standards</div>
+        <div class="value">+12%</div>
+        <div class="signal">Net tightening</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">Reverse Repo</div>
+        <div class="value">$142B</div>
+        <div class="signal">Context-dependent, not directional</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">Initial Jobless Claims</div>
+        <div class="value">223K</div>
+        <div class="signal">Stable, no weakening trend</div>
+      </div>
+      <div class="cc-indicator neutral">
+        <div class="label">Credit Card Delinquency</div>
+        <div class="value">3.2%</div>
+        <div class="signal">Slightly elevated vs pre-2020</div>
       </div>
     </div>
   </div>
