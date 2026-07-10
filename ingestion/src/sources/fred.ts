@@ -26,6 +26,12 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // reference_docs/rules/crash-check-rules.md "Contextual Indicators").
   { id: "ICSA", unit: "count" },         // Initial jobless claims, weekly
   { id: "DRCCLACBS", unit: "percent" },  // Credit card delinquency rate, all commercial banks
+  { id: "DCOILWTICO", unit: "usd" },     // WTI crude oil, $/barrel — automates the existing
+                                          // "Brent/WTI above $100 = stagflation accelerant" line
+                                          // in crash-check-rules.md's Recovery/Complacency bands.
+  { id: "RSAFS", unit: "usd_millions" }, // Advance retail sales, all stores — closest free proxy
+                                          // to "consumer/credit-card spending"; FRED has no public
+                                          // real-time card-swipe series, this is reported monthly.
 ];
 
 interface FredObservation {

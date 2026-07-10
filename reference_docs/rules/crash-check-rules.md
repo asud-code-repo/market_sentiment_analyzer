@@ -224,7 +224,7 @@ earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
 - VIX below 18 in an elevated-macro-risk regime = flag complacency
 - Market breadth below 55% of stocks above 200dma = flag
 - ISM Manufacturing Prices above 65 = flag (stagflation transmission)
-- Brent/WTI above $100 = flag as stagflation accelerant
+- Brent/WTI above $100 = flag as stagflation accelerant (automated via `get_context_indicators`, FRED `DCOILWTICO`)
 
 ## Contextual Indicators (informational only — never gate wave authorization)
 
@@ -246,6 +246,8 @@ auto-update them"). Use these only to enrich narrative synthesis.
 | 2s10s yield curve spread | Derived: FRED `DGS10` − `DGS2` | Below 0 = inverted, historically precedes recessions by several quarters |
 | Initial jobless claims | FRED `ICSA` | Sustained rising trend = labor market weakening |
 | Credit card delinquency rate | FRED `DRCCLACBS` | Rising = consumer financial stress increasing |
+| WTI crude oil | FRED `DCOILWTICO` | Above $100/barrel = stagflation accelerant (see Recovery/Complacency band below) |
+| Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength — FRED has no public real-time card-swipe series; deceleration or MoM declines signal consumer pullback |
 
 ---
 

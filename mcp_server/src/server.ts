@@ -140,17 +140,28 @@ server.registerTool(
     description:
       "Returns supplementary macro indicators — financial stress/conditions indices, breakeven " +
       "inflation, bank lending standards, reverse repo, the 2s10s yield curve spread, jobless " +
-      "claims, and credit card delinquencies. These are informational context only — NOT part of " +
-      "the 6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/" +
-      "Sahm/Fed pivot, per the user's own fixed rules). Use these to enrich narrative synthesis, " +
-      "never to override or supplement the RED count / wave_authorized decision.",
+      "claims, credit card delinquencies, WTI crude oil, and retail sales. These are informational " +
+      "context only — NOT part of the 6-indicator wave-authorization gate (that stays exactly " +
+      "VIX/HY spread/drawdown/10yr/Sahm/Fed pivot, per the user's own fixed rules). Use these to " +
+      "enrich narrative synthesis, never to override or supplement the RED count / wave_authorized decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, drcclacbs] = await Promise.all(
-      ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS"].map(
-        getLatestDataPoint,
-      ),
-    );
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, drcclacbs, wti, retailSales] =
+      await Promise.all(
+        [
+          "STLFSI4",
+          "NFCI",
+          "T10YIE",
+          "DRTSCILM",
+          "RRPONTSYD",
+          "DGS10",
+          "DGS2",
+          "ICSA",
+          "DRCCLACBS",
+          "DCOILWTICO",
+          "RSAFS",
+        ].map(getLatestDataPoint),
+      );
 
     const twoTenSpread =
       dgs10 && dgs2
@@ -170,6 +181,8 @@ server.registerTool(
       yield_curve_2s10s: twoTenSpread,
       initial_jobless_claims: icsa,
       credit_card_delinquency_rate_pct: drcclacbs,
+      wti_crude_usd_per_barrel: wti && { ...wti, signal: wti.value > 100 ? "above $100 — stagflation accelerant watch" : "below $100" },
+      retail_sales_usd_millions: retailSales,
     });
   },
 );
