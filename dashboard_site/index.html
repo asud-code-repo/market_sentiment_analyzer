@@ -105,6 +105,9 @@
   .indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
   .indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-primary); }
+  .indicator .favourable { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .indicator .indicator-info { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-top: 6px; }
+  .indicator .indicator-info strong { color: var(--text-primary); font-weight: 600; }
 
   /* Scenario distribution */
   .stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
@@ -209,6 +212,67 @@ async function fetchFromSupabase(path) {
   return res.json();
 }
 
+// Plain-language explanations for each of the 6 canonical indicators — fixed,
+// well-established public knowledge (not live data), matching the treatment
+// already given to the contextual indicators in crash-check-rules.md.
+const INDICATOR_INFO = {
+  vix: {
+    label: "VIX",
+    favorable: "< 20",
+    what: "Expected S&amp;P 500 volatility over the next 30 days, derived from options prices — often called the market's \"fear gauge.\"",
+    why: "Spikes when investors rush to hedge or panic-sell; sustained calm below 20 usually means genuine stability (though can also mean complacency).",
+  },
+  hySpread: {
+    label: "HY Credit Spreads",
+    favorable: "< 350 bps",
+    what: "The extra yield high-yield (\"junk\") corporate bonds pay over safe Treasuries of the same maturity.",
+    why: "Widening spreads mean investors demand more compensation for default risk — often the earliest sign of credit stress, ahead of equity markets.",
+  },
+  drawdown: {
+    label: "S&amp;P Drawdown from ATH",
+    favorable: "< 10%",
+    what: "How far the S&amp;P 500 has fallen from its most recent record closing high.",
+    why: "The simplest, most direct read on how much of a correction has actually happened — not just how nervous markets feel.",
+  },
+  treasury10y: {
+    label: "10yr Treasury Yield",
+    favorable: "< 4.3%",
+    what: "The interest rate on 10-year US government debt — the benchmark for mortgages, corporate borrowing, and stock valuation models economy-wide.",
+    why: "Rising yields raise borrowing costs and pressure equity valuations, especially rate-sensitive growth stocks.",
+  },
+  sahm: {
+    label: "Sahm Rule",
+    favorable: "< 0.3",
+    what: "Named after economist Claudia Sahm. Fires when the 3-month average unemployment rate rises 0.5 points above its low point from the past year.",
+    why: "One of the most reliable real-time recession signals historically — designed to catch a downturn early using only labor data.",
+  },
+  fedPivot: {
+    label: "Fed Pivot Signal",
+    favorable: "None (no cut signal)",
+    what: "Whether the Federal Reserve's public communication is leaning toward holding rates, pausing hikes, or actively signaling cuts.",
+    why: "A shift toward cut language usually means the Fed itself is acknowledging economic weakness, not just reacting to market pressure.",
+  },
+};
+
+function trendArrow(current, prior) {
+  if (typeof current !== "number" || typeof prior !== "number" || current === prior) return "";
+  return current > prior ? " ▲" : " ▼";
+}
+
+function renderIndicatorCard(infoKey, value, color, priorValue) {
+  const info = INDICATOR_INFO[infoKey];
+  return `
+    <div class="indicator ${pillClass(color)}">
+      <div class="label">${info.label}</div>
+      <div class="value">${value ?? "—"}${trendArrow(value, priorValue)}</div>
+      <div class="status">${color ?? ""}</div>
+      <div class="favourable">Favourable: ${info.favorable}</div>
+      <div class="indicator-info"><strong>What it measures:</strong> ${info.what}</div>
+      <div class="indicator-info"><strong>Why it matters:</strong> ${info.why}</div>
+    </div>
+  `;
+}
+
 function pillClass(color) {
   if (color === "GREEN") return "good";
   if (color === "AMBER") return "warning";
@@ -223,7 +287,7 @@ function fmtDate(iso) {
 /** Renders the full rich report view for one row, diffing against the prior
  * chronological row for the delta log — same visual language as
  * reference_docs/rules/dashboard-template.html, driven by real stored data. */
-function renderReport(row, priorRow) {
+function renderReport(row, priorFullReport, priorAnyRow) {
   const el = document.getElementById("report-view");
   if (!row) {
     el.innerHTML = '<p class="loading">No data yet.</p>';
@@ -238,11 +302,11 @@ function renderReport(row, priorRow) {
   if (row.crash_probability_pct != null) {
     const meterColor = row.crash_probability_pct >= 35 ? "var(--critical)" : row.crash_probability_pct >= 20 ? "var(--warning)" : "var(--good)";
     let deltaHtml = '<span class="delta flat">No prior full report to diff against</span>';
-    if (priorRow && priorRow.crash_probability_pct != null) {
-      const diff = row.crash_probability_pct - priorRow.crash_probability_pct;
+    if (priorFullReport && priorFullReport.crash_probability_pct != null) {
+      const diff = row.crash_probability_pct - priorFullReport.crash_probability_pct;
       const cls = diff > 0 ? "up-bad" : diff < 0 ? "up-good" : "flat";
       const sign = diff > 0 ? "+" : "";
-      deltaHtml = `<span class="delta ${cls}">${sign}${diff} pts vs prior report (${priorRow.crash_probability_pct}%)</span>`;
+      deltaHtml = `<span class="delta ${cls}">${sign}${diff} pts vs prior report (${priorFullReport.crash_probability_pct}%)</span>`;
     }
     probSection = `
       <div class="hero-row">
@@ -304,12 +368,12 @@ function renderReport(row, priorRow) {
       <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${row.red_count >= 3 ? 'critical' : row.red_count > 0 ? 'warning' : 'good'}">${row.red_count} of 6 RED</span> <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
       ${probSection}
       <div class="grid-3" style="margin-top:16px;">
-        <div class="indicator ${pillClass(row.vix_color)}"><div class="label">VIX</div><div class="value">${row.vix_value ?? '—'}</div><div class="status">${row.vix_color ?? ''}</div></div>
-        <div class="indicator ${pillClass(row.hy_spread_color)}"><div class="label">HY Spread (bps)</div><div class="value">${row.hy_spread_bps ?? '—'}</div><div class="status">${row.hy_spread_color ?? ''}</div></div>
-        <div class="indicator ${pillClass(row.sp_drawdown_color)}"><div class="label">S&amp;P Drawdown</div><div class="value">${row.sp_drawdown_pct ?? '—'}%</div><div class="status">${row.sp_drawdown_color ?? ''}</div></div>
-        <div class="indicator ${pillClass(row.treasury_10y_color)}"><div class="label">10yr Yield</div><div class="value">${row.treasury_10y_pct ?? '—'}%</div><div class="status">${row.treasury_10y_color ?? ''}</div></div>
-        <div class="indicator ${pillClass(row.sahm_rule_color)}"><div class="label">Sahm Rule</div><div class="value">${row.sahm_rule_value ?? '—'}</div><div class="status">${row.sahm_rule_color ?? ''}</div></div>
-        <div class="indicator ${pillClass(row.fed_pivot_color)}"><div class="label">Fed Pivot Signal</div><div class="value">${row.fed_pivot_signal ?? '—'}</div><div class="status">${row.fed_pivot_color ?? ''}</div></div>
+        ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value)}
+        ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps)}
+        ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct)}
+        ${renderIndicatorCard("treasury10y", row.treasury_10y_pct, row.treasury_10y_color, priorAnyRow?.treasury_10y_pct)}
+        ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value)}
+        ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal)}
       </div>
       ${scenarioSection}
       ${triggerSection}
@@ -345,7 +409,8 @@ function selectIndex(i) {
       break;
     }
   }
-  renderReport(ALL_ROWS[CURRENT_INDEX], priorFullReport);
+  const priorAnyRow = CURRENT_INDEX > 0 ? ALL_ROWS[CURRENT_INDEX - 1] : null;
+  renderReport(ALL_ROWS[CURRENT_INDEX], priorFullReport, priorAnyRow);
 }
 
 /**
