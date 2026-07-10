@@ -125,8 +125,8 @@
 <script>
 // ---- Config: fill these in (anon/publishable key is safe to expose client-side —
 // protected by RLS, not secrecy; see supabase/migrations/20260709000400_anon_readonly_reporting.sql) ----
-const SUPABASE_URL = "REPLACE_WITH_YOUR_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "REPLACE_WITH_YOUR_PUBLISHABLE_KEY";
+const SUPABASE_URL = "https://jophlgbijfahmytkrjly.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_DAU2BkfrG_3-LU_fFKW1og_yVasDG6d";
 
 async function fetchFromSupabase(path) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
