@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macro Crash Check — History</title>
+<style>
+  :root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --good-bg:        #e8f7e6;
+    --warning:        #b8790a;
+    --warning-bg:     #fdf1d8;
+    --critical:       #d03b3b;
+    --critical-bg:    #fbe7e6;
+    --line-color:     #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --good-bg:        #10250f;
+      --warning:        #fab219;
+      --warning-bg:     #2c2109;
+      --critical:       #e66767;
+      --critical-bg:    #2c1211;
+      --line-color:     #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 24px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .grid-3 { grid-template-columns: repeat(2, 1fr); } }
+  .indicator { border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
+  .indicator.good { background: var(--good-bg); }
+  .indicator.warning { background: var(--warning-bg); }
+  .indicator.critical { background: var(--critical-bg); }
+  .indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-primary); }
+
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.warning { background: var(--warning-bg); color: var(--warning); }
+  .pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .pill.muted { background: var(--grid); color: var(--text-muted); }
+
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .chart-title { font-size: 13px; font-weight: 600; }
+  .chart-current { font-size: 13px; color: var(--text-secondary); }
+  .table-toggle { font-size: 11px; color: var(--text-muted); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .chart-svg { width: 100%; height: 140px; display: block; }
+  .chart-line { fill: none; stroke: var(--line-color); stroke-width: 2px; }
+  .chart-grid { stroke: var(--grid); stroke-width: 1px; }
+  .chart-crosshair { stroke: var(--text-muted); stroke-width: 1px; display: none; }
+  .chart-dot { fill: var(--line-color); stroke: var(--surface-1); stroke-width: 2px; display: none; }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 11px; color: var(--text-primary); white-space: nowrap;
+    display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .chart-endlabel { font-size: 11px; fill: var(--text-secondary); }
+  .chart-wrap { position: relative; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; display: none; }
+  .data-table th, .data-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .data-table th { color: var(--text-muted); font-weight: 600; }
+
+  .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
+  .loading { color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Macro Crash Check — History</h1>
+    <p class="subtitle">Read-only view of macro/market state. No personal account data — see the local MCP tools for portfolio-specific figures.</p>
+  </div>
+
+  <div id="error-container"></div>
+
+  <div class="card" id="latest-card">
+    <p class="eyebrow">Latest Snapshot</p>
+    <div id="latest-content" class="loading">Loading…</div>
+  </div>
+
+  <div class="card">
+    <p class="eyebrow">Crash Probability — History</p>
+    <div id="chart-crash-probability"></div>
+  </div>
+
+  <div class="card">
+    <p class="eyebrow">6-Indicator History</p>
+    <div id="chart-vix"></div>
+    <div id="chart-hy-spread"></div>
+    <div id="chart-drawdown"></div>
+    <div id="chart-10y"></div>
+    <div id="chart-sahm"></div>
+  </div>
+</div>
+
+<script>
+// ---- Config: fill these in (anon/publishable key is safe to expose client-side —
+// protected by RLS, not secrecy; see supabase/migrations/20260709000400_anon_readonly_reporting.sql) ----
+const SUPABASE_URL = "REPLACE_WITH_YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "REPLACE_WITH_YOUR_PUBLISHABLE_KEY";
+
+async function fetchFromSupabase(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+  });
+  if (!res.ok) throw new Error(`Supabase request failed: HTTP ${res.status} — ${await res.text()}`);
+  return res.json();
+}
+
+function pillClass(color) {
+  if (color === "GREEN") return "good";
+  if (color === "AMBER") return "warning";
+  if (color === "RED") return "critical";
+  return "muted";
+}
+
+function renderLatest(row) {
+  const el = document.getElementById("latest-content");
+  if (!row) {
+    el.innerHTML = '<p class="loading">No data yet.</p>';
+    return;
+  }
+  const runDate = new Date(row.run_at).toLocaleString();
+  el.innerHTML = `
+    <p class="chart-current">As of ${runDate} — <span class="pill ${pillClass(row.red_count >= 3 ? 'RED' : row.red_count > 0 ? 'AMBER' : 'GREEN')}">${row.red_count} of 6 RED</span>
+    <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
+    <div class="grid-3">
+      <div class="indicator ${pillClass(row.vix_color)}"><div class="label">VIX</div><div class="value">${row.vix_value ?? '—'}</div><div class="status">${row.vix_color ?? ''}</div></div>
+      <div class="indicator ${pillClass(row.hy_spread_color)}"><div class="label">HY Spread (bps)</div><div class="value">${row.hy_spread_bps ?? '—'}</div><div class="status">${row.hy_spread_color ?? ''}</div></div>
+      <div class="indicator ${pillClass(row.sp_drawdown_color)}"><div class="label">S&amp;P Drawdown</div><div class="value">${row.sp_drawdown_pct ?? '—'}%</div><div class="status">${row.sp_drawdown_color ?? ''}</div></div>
+      <div class="indicator ${pillClass(row.treasury_10y_color)}"><div class="label">10yr Yield</div><div class="value">${row.treasury_10y_pct ?? '—'}%</div><div class="status">${row.treasury_10y_color ?? ''}</div></div>
+      <div class="indicator ${pillClass(row.sahm_rule_color)}"><div class="label">Sahm Rule</div><div class="value">${row.sahm_rule_value ?? '—'}</div><div class="status">${row.sahm_rule_color ?? ''}</div></div>
+      <div class="indicator ${pillClass(row.fed_pivot_color)}"><div class="label">Fed Pivot Signal</div><div class="value">${row.fed_pivot_signal ?? '—'}</div><div class="status">${row.fed_pivot_color ?? ''}</div></div>
+    </div>
+    ${row.crash_probability_pct != null ? `<p class="chart-current" style="margin-top:10px;">Crash probability: <strong>${row.crash_probability_pct}%</strong> (range ${row.crash_probability_low_pct}–${row.crash_probability_high_pct}%)</p>` : ''}
+  `;
+}
+
+/**
+ * Minimal single-series line chart per the dataviz skill's mark specs:
+ * 2px line, hairline gridlines, 8px hover marker with a 2px surface ring,
+ * crosshair + tooltip, a direct end-label, and a table-view toggle (the
+ * accessibility twin). One series needs no legend — the title names it.
+ */
+function renderLineChart(containerId, { title, points, unit, formatValue }) {
+  const container = document.getElementById(containerId);
+  const valid = points.filter((p) => p.value != null);
+  if (valid.length === 0) {
+    container.innerHTML = `<div class="chart-header"><span class="chart-title">${title}</span></div><p class="loading">No data yet.</p>`;
+    return;
+  }
+
+  const width = 900, height = 140, padL = 8, padR = 48, padT = 10, padB = 20;
+  const values = valid.map((p) => p.value);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const span = maxV - minV || 1;
+  const x = (i) => padL + (i / Math.max(valid.length - 1, 1)) * (width - padL - padR);
+  const y = (v) => padT + (1 - (v - minV) / span) * (height - padT - padB);
+
+  const pathD = valid.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
+  const last = valid[valid.length - 1];
+  const gridY = [minV, (minV + maxV) / 2, maxV];
+
+  const id = containerId + "-svg";
+  const tooltipId = containerId + "-tooltip";
+  const tableId = containerId + "-table";
+
+  container.innerHTML = `
+    <div class="chart-header">
+      <span class="chart-title">${title}</span>
+      <span class="chart-current">${formatValue(last.value)}${unit || ""} <button class="table-toggle" data-target="${tableId}">Table view</button></span>
+    </div>
+    <div class="chart-wrap">
+      <svg class="chart-svg" id="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        ${gridY.map((v) => `<line class="chart-grid" x1="${padL}" x2="${width - padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" />`).join("")}
+        <path class="chart-line" d="${pathD}" />
+        <circle class="chart-dot" id="${id}-dot" r="4" />
+        <line class="chart-crosshair" id="${id}-crosshair" y1="${padT}" y2="${height - padB}" />
+        <text class="chart-endlabel" x="${x(valid.length - 1) + 6}" y="${y(last.value).toFixed(1)}" dominant-baseline="middle">${formatValue(last.value)}</text>
+      </svg>
+      <div class="chart-tooltip" id="${tooltipId}"></div>
+    </div>
+    <table class="data-table" id="${tableId}">
+      <thead><tr><th>Date</th><th>Value</th></tr></thead>
+      <tbody>${valid.map((p) => `<tr><td>${p.date}</td><td>${formatValue(p.value)}${unit || ""}</td></tr>`).join("")}</tbody>
+    </table>
+  `;
+
+  const svg = document.getElementById(id);
+  const dot = document.getElementById(id + "-dot");
+  const crosshair = document.getElementById(id + "-crosshair");
+  const tooltip = document.getElementById(tooltipId);
+
+  svg.addEventListener("mousemove", (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((evt.clientX - rect.left) / rect.width) * width;
+    let nearest = 0, bestDist = Infinity;
+    valid.forEach((p, i) => {
+      const d = Math.abs(x(i) - px);
+      if (d < bestDist) { bestDist = d; nearest = i; }
+    });
+    const p = valid[nearest];
+    dot.style.display = "block";
+    dot.setAttribute("cx", x(nearest).toFixed(1));
+    dot.setAttribute("cy", y(p.value).toFixed(1));
+    crosshair.style.display = "block";
+    crosshair.setAttribute("x1", x(nearest).toFixed(1));
+    crosshair.setAttribute("x2", x(nearest).toFixed(1));
+    tooltip.style.display = "block";
+    tooltip.style.left = `${(x(nearest) / width) * 100}%`;
+    tooltip.style.top = "0px";
+    tooltip.textContent = `${p.date}: ${formatValue(p.value)}${unit || ""}`;
+  });
+  svg.addEventListener("mouseleave", () => {
+    dot.style.display = "none";
+    crosshair.style.display = "none";
+    tooltip.style.display = "none";
+  });
+
+  document.querySelector(`#${containerId} .table-toggle`).addEventListener("click", (e) => {
+    const table = document.getElementById(tableId);
+    const showing = table.style.display === "table";
+    table.style.display = showing ? "none" : "table";
+    e.target.textContent = showing ? "Table view" : "Chart view";
+  });
+}
+
+async function main() {
+  try {
+    const [latestRows, history] = await Promise.all([
+      fetchFromSupabase("crash_checks?select=*&order=run_at.desc&limit=1"),
+      fetchFromSupabase(
+        "crash_checks?select=run_at,crash_probability_pct,vix_value,hy_spread_bps,sp_drawdown_pct,treasury_10y_pct,sahm_rule_value&order=run_at.asc&limit=500",
+      ),
+    ]);
+
+    renderLatest(latestRows[0]);
+
+    const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
+    renderLineChart("chart-crash-probability", {
+      title: "Crash Probability",
+      unit: "%",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.crash_probability_pct })),
+    });
+    renderLineChart("chart-vix", {
+      title: "VIX",
+      unit: "",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.vix_value })),
+    });
+    renderLineChart("chart-hy-spread", {
+      title: "HY Credit Spread",
+      unit: " bps",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.hy_spread_bps })),
+    });
+    renderLineChart("chart-drawdown", {
+      title: "S&P Drawdown from ATH",
+      unit: "%",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.sp_drawdown_pct })),
+    });
+    renderLineChart("chart-10y", {
+      title: "10yr Treasury Yield",
+      unit: "%",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.treasury_10y_pct })),
+    });
+    renderLineChart("chart-sahm", {
+      title: "Sahm Rule",
+      unit: "",
+      formatValue: (v) => v,
+      points: history.map((r) => ({ date: dateOf(r), value: r.sahm_rule_value })),
+    });
+  } catch (err) {
+    document.getElementById("error-container").innerHTML = `<div class="error-banner">Failed to load data: ${err.message}</div>`;
+  }
+}
+
+main();
+</script>
+</body>
+</html>
