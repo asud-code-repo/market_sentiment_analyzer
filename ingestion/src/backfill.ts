@@ -1,6 +1,6 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
-import { fetchAlphaVantageBackfill } from "./sources/alphavantage.js";
+import { fetchMassiveBackfill } from "./sources/massive.js";
 
 // One-time historical backfill for data_points — NOT part of the daily
 // ingestion run (see ingest.ts), which only ever needs the latest reading.
@@ -15,9 +15,9 @@ async function main() {
   const fredPoints = await fetchFredBackfill();
   console.log(`FRED backfill: ${fredPoints.length} total observations.`);
 
-  console.log("Backfilling watchlist ticker prices (free-tier ceiling: ~100 trading days)...");
-  const tickerPoints = await fetchAlphaVantageBackfill();
-  console.log(`Alpha Vantage backfill: ${tickerPoints.length} total observations.`);
+  console.log("Backfilling watchlist ticker prices (2yr via Massive)...");
+  const tickerPoints = await fetchMassiveBackfill();
+  console.log(`Massive backfill: ${tickerPoints.length} total observations.`);
 
   const allPoints = [...fredPoints, ...tickerPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);

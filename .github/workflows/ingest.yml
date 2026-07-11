@@ -31,7 +31,7 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           POLYMARKET_SLUGS: ${{ vars.POLYMARKET_SLUGS }}
-          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
 
   classify:
     needs: ingest # only runs if ingest's required sources (FRED, EIA) succeeded
