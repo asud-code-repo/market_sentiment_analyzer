@@ -271,6 +271,16 @@ rather than inventing a value.
   (e.g. "1 of 6 RED — wave deployment not yet authorized")
 - Brokerage-window watchlist: ticker | current price | Wave 1 target | % distance |
   status pill (WAIT >20% above target / WATCH 5–20% above / BUY ZONE at or below)
+
+**Render every Portfolio Opportunity Review as an HTML artifact using
+`portfolio-review-template.html` (in this same folder) as the base** — same rule
+as the crash check, not plain chat text. Reuse its component classes (`.cc-verdict-headline`,
+`.cc-alloc-row`/`.cc-alloc-target`, `.cc-flag-card`, `.cc-ticker-card`/`.cc-prox-track`,
+`.cc-source-card`, etc.); replace the example content with this run's live values.
+The tactical 401k's allocation bars are informational context (it's wave-gated, not
+drift-scored) — never color them as a drift alarm. The ticker proximity meter's
+BUY/WATCH/WAIT zone widths and marker position should reflect each ticker's actual
+price relative to its Wave 1/2/3 targets, not be evenly spaced by default.
 - Radar chart comparing current vs prior check across: Geopolitical, Policy/Fed,
   Inflation, Valuation, Labor Market, Earnings
 - No excessive prose inside dashboard widgets — explanatory text goes outside them

@@ -1,0 +1,269 @@
+<title>Portfolio Opportunity Review — Dashboard Template</title>
+<style>
+  .cc-root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --good-bg:        #e8f7e6;
+    --warning:        #b8790a;
+    --warning-bg:     #fdf1d8;
+    --critical:       #d03b3b;
+    --critical-bg:    #fbe7e6;
+    --neutral-blue:   #2a78d6;
+    --neutral-blue-bg:#e5eefb;
+    --meter-track:    #e1e0d9;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    padding: 24px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .cc-root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --good-bg:        #10250f;
+      --warning:        #fab219;
+      --warning-bg:     #2c2109;
+      --critical:       #e66767;
+      --critical-bg:    #2c1211;
+      --neutral-blue:   #3987e5;
+      --neutral-blue-bg:#101f30;
+      --meter-track:    #2c2c2a;
+    }
+  }
+  :root[data-theme="dark"] .cc-root {
+    --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+    --text-secondary: #c3c2b7; --text-muted: #898781; --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10); --good: #0ca30c; --good-bg: #10250f;
+    --warning: #fab219; --warning-bg: #2c2109; --critical: #e66767;
+    --critical-bg: #2c1211; --neutral-blue: #3987e5; --neutral-blue-bg: #101f30;
+    --meter-track: #2c2c2a;
+  }
+  :root[data-theme="light"] .cc-root {
+    --surface-1: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --text-muted: #898781; --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.10); --good: #0ca30c; --good-bg: #e8f7e6;
+    --warning: #b8790a; --warning-bg: #fdf1d8; --critical: #d03b3b;
+    --critical-bg: #fbe7e6; --neutral-blue: #2a78d6; --neutral-blue-bg: #e5eefb;
+    --meter-track: #e1e0d9;
+  }
+  .cc-root * { box-sizing: border-box; }
+  .cc-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .cc-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 12px; }
+  .cc-num { font-variant-numeric: tabular-nums; }
+
+  .cc-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .cc-pill.good { background: var(--good-bg); color: var(--good); }
+  .cc-pill.warning { background: var(--warning-bg); color: var(--warning); }
+  .cc-pill.critical { background: var(--critical-bg); color: var(--critical); }
+  .cc-pill.muted { background: var(--grid); color: var(--text-muted); }
+
+  /* Verdict hero */
+  .cc-verdict-headline { font-size: 22px; font-weight: 600; line-height: 1.3; margin: 0 0 10px; }
+  .cc-verdict-sub { font-size: 13px; color: var(--text-secondary); line-height: 1.6; max-width: 62ch; margin: 0 0 4px; }
+  .cc-verdict-stats { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
+  .cc-verdict-stat .n { font-size: 20px; font-weight: 600; }
+  .cc-verdict-stat .l { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* Allocation bar — target-vs-actual, informational not alarm-toned */
+  .cc-alloc-note { font-size: 12px; color: var(--text-muted); margin: -6px 0 12px; }
+  .cc-alloc-row { display: grid; grid-template-columns: 150px 1fr 90px; gap: 12px; align-items: center; padding: 7px 0; }
+  .cc-alloc-row .name { font-size: 12px; color: var(--text-secondary); }
+  .cc-alloc-track { position: relative; height: 8px; border-radius: 999px; background: var(--meter-track); }
+  .cc-alloc-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--neutral-blue); }
+  .cc-alloc-target { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); opacity: 0.55; }
+  .cc-alloc-target::after {
+    content: attr(data-label); position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: var(--text-muted); white-space: nowrap;
+  }
+  .cc-alloc-val { font-size: 12px; text-align: right; color: var(--text-secondary); }
+  .cc-alloc-legend { display: flex; gap: 16px; font-size: 11px; color: var(--text-muted); margin-top: 10px; }
+  .cc-alloc-legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+  /* Standing flag */
+  .cc-flag-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 10px; background: var(--warning-bg); border: 1px solid var(--border); }
+  .cc-flag-card .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .cc-flag-card .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+  /* Watchlist ticker card with proximity meter */
+  .cc-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .cc-grid-3 { grid-template-columns: 1fr; } }
+  .cc-ticker-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .cc-ticker-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+  .cc-ticker-sym { font-size: 14px; font-weight: 700; }
+  .cc-ticker-theme { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+  .cc-ticker-price-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .cc-ticker-price-row .price { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .cc-prox-track { position: relative; height: 10px; border-radius: 999px; overflow: hidden; display: flex; }
+  .cc-prox-zone.buy { background: var(--good-bg); }
+  .cc-prox-zone.watch { background: var(--warning-bg); }
+  .cc-prox-zone.wait { background: var(--meter-track); }
+  .cc-prox-marker { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: 2px; background: var(--text-primary); }
+  .cc-prox-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+  .cc-thesis-note { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .cc-thesis-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+  .cc-thesis-chip.up { color: var(--good); }
+  .cc-thesis-chip.flat { color: var(--text-muted); }
+  .cc-thesis-chip.watch { color: var(--warning); }
+
+  /* Macro cross-reference source card */
+  .cc-source-card { border: 1px solid var(--border); border-radius: 10px; padding: 13px; }
+  .cc-source-card .org { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .cc-source-card .point { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+
+  .cc-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+</style>
+
+<div class="cc-root">
+<div class="cc-wrap">
+
+  <!-- VERDICT HERO — lead with the overall read + the small number of
+       things that actually need a decision, not a full data dump. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Portfolio Opportunity Review — July 10, 2026</p>
+    <p class="cc-verdict-headline">Still well-positioned for the current climate — one target worth revisiting, one standing item unresolved.</p>
+    <p class="cc-verdict-sub">Mechanically clean on drift, defensively postured under the HAWKISH / 0-of-6-RED backdrop. Watchlist themes (energy/Hormuz, AI-power/uranium, infrastructure) still map to BlackRock's and WEF's current top risks.</p>
+    <div class="cc-verdict-stats">
+      <div class="cc-verdict-stat"><div class="n cc-num" style="color:var(--good);">Clean</div><div class="l">Portfolio drift</div></div>
+      <div class="cc-verdict-stat"><div class="n cc-num">1 of 7</div><div class="l">watchlist near entry</div></div>
+      <div class="cc-verdict-stat"><div class="n cc-num" style="color:var(--warning);">1</div><div class="l">target worth revisiting</div></div>
+      <div class="cc-verdict-stat"><div class="n cc-num" style="color:var(--warning);">1</div><div class="l">standing flag (unrelated)</div></div>
+    </div>
+  </div>
+
+  <!-- PORTFOLIO DRIFT — target-vs-actual bars for accounts that get
+       drift-scored; the tactical 401k is wave-gated and shown as context
+       only (never as a drift alarm — its pacing is deliberate). -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Portfolio Drift</p>
+    <p class="cc-alloc-note">Tactical 401k is wave-gated (deliberately staged deployment, not neglect) — shown as context, not a drift alarm. Wave status: <b style="color:var(--text-primary);">NONE</b>, 0 of 6 RED.</p>
+
+    <div class="cc-alloc-row">
+      <div class="name">NYL Anchor (dry powder)</div>
+      <div class="cc-alloc-track"><div class="cc-alloc-fill" style="width:65.5%; background:var(--text-muted);"></div><div class="cc-alloc-target" data-label="target 5%" style="left:5%;"></div></div>
+      <div class="cc-alloc-val cc-num">65.5%</div>
+    </div>
+    <div class="cc-alloc-row">
+      <div class="name">Freedom 2050</div>
+      <div class="cc-alloc-track"><div class="cc-alloc-fill" style="width:12%;"></div><div class="cc-alloc-target" data-label="target 30%" style="left:30%;"></div></div>
+      <div class="cc-alloc-val cc-num">12%</div>
+    </div>
+    <div class="cc-alloc-row">
+      <div class="name">VG Intl Stock</div>
+      <div class="cc-alloc-track"><div class="cc-alloc-fill" style="width:15%;"></div><div class="cc-alloc-target" data-label="target 20%" style="left:20%;"></div></div>
+      <div class="cc-alloc-val cc-num">15%</div>
+    </div>
+    <div class="cc-alloc-row">
+      <div class="name">BrokerageLink</div>
+      <div class="cc-alloc-track"><div class="cc-alloc-fill" style="width:0.5%;"></div><div class="cc-alloc-target" data-label="target 15%" style="left:15%;"></div></div>
+      <div class="cc-alloc-val cc-num">0%</div>
+    </div>
+    <div class="cc-alloc-legend">
+      <span><span class="sw" style="background:var(--neutral-blue);"></span>Current allocation</span>
+      <span><span class="sw" style="background:var(--text-primary);opacity:0.55;"></span>Long-term target</span>
+    </div>
+
+    <div style="margin-top:16px;">
+      <div class="cc-flag-card">
+        <span class="cc-pill warning" style="flex-shrink:0;">Standing flag</span>
+        <div>
+          <div class="title">Spouse 401k — still ~80% bonds/stable value</div>
+          <div class="desc">Age 41, 24-year horizon — the projected opportunity-cost gap by 65 (~$133k) is unchanged since last review. Rebalance decision pending, unrelated to the crash protocol.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BROKERAGELINK WATCHLIST — each card: price, a proximity meter
+       (BUY/WATCH/WAIT zones with a marker for current price vs the Wave 1
+       target), and a thesis-direction chip from this run's re-underwrite. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">BrokerageLink Watchlist</p>
+    <div class="cc-grid-3">
+
+      <div class="cc-ticker-card">
+        <div class="cc-ticker-head"><span class="cc-ticker-sym">EOG</span><span class="cc-pill good">Watch</span></div>
+        <div class="cc-ticker-theme">Energy / stagflation hedge</div>
+        <div class="cc-ticker-price-row"><span class="price cc-num">$134.10</span><span class="cc-num">+16.6% above target</span></div>
+        <div class="cc-prox-track">
+          <div class="cc-prox-zone buy" style="width:38%;"></div>
+          <div class="cc-prox-zone watch" style="width:24%;"></div>
+          <div class="cc-prox-zone wait" style="width:38%;"></div>
+          <div class="cc-prox-marker" style="left:52%;"></div>
+        </div>
+        <div class="cc-prox-labels"><span>W1 $115</span><span>now $134.10</span></div>
+        <div class="cc-thesis-note"><span class="cc-thesis-chip up">&#9650; Strengthening</span><br>Hormuz risk live, Buy consensus $134&ndash;175. No change.</div>
+      </div>
+
+      <div class="cc-ticker-card">
+        <div class="cc-ticker-head"><span class="cc-ticker-sym">CCJ</span><span class="cc-pill muted">Wait</span></div>
+        <div class="cc-ticker-theme">Uranium / AI power demand</div>
+        <div class="cc-ticker-price-row"><span class="price cc-num">$95.99</span><span class="cc-num">+118.2% above target</span></div>
+        <div class="cc-prox-track">
+          <div class="cc-prox-zone buy" style="width:22%;"></div>
+          <div class="cc-prox-zone watch" style="width:14%;"></div>
+          <div class="cc-prox-zone wait" style="width:64%;"></div>
+          <div class="cc-prox-marker" style="left:96%;"></div>
+        </div>
+        <div class="cc-prox-labels"><span>W1 $44</span><span>now $95.99</span></div>
+        <div class="cc-thesis-note"><span class="cc-thesis-chip watch">&#9670; Needs review</span><br>Secular re-rate &mdash; $44 target may no longer be realistic outside an actual crash.</div>
+      </div>
+
+      <div class="cc-ticker-card">
+        <div class="cc-ticker-head"><span class="cc-ticker-sym">NVDA</span><span class="cc-pill muted">Wait</span></div>
+        <div class="cc-ticker-theme">AI trough bet &mdash; Wave 3 only</div>
+        <div class="cc-ticker-price-row"><span class="price cc-num">$210.96</span><span class="cc-num">+20.5% above target</span></div>
+        <div class="cc-prox-track">
+          <div class="cc-prox-zone buy" style="width:30%;"></div>
+          <div class="cc-prox-zone watch" style="width:18%;"></div>
+          <div class="cc-prox-zone wait" style="width:52%;"></div>
+          <div class="cc-prox-marker" style="left:58%;"></div>
+        </div>
+        <div class="cc-prox-labels"><span>W3 $175</span><span>now $210.96</span></div>
+        <div class="cc-thesis-note"><span class="cc-thesis-chip flat">&#9679; Steady</span><br>Correctly gated to Wave 3, smallest size. No wave active &mdash; not actionable regardless.</div>
+      </div>
+
+    </div>
+    <p style="font-size:11px;color:var(--text-muted);margin:14px 0 0;">Repeat the ticker card pattern above for every entry in local_state/brokeragelink_watchlist.yaml — 3-column grid shown here for space; wraps to 1 column on narrow viewports.</p>
+  </div>
+
+  <!-- MACRO / GEOPOLITICAL CROSS-REFERENCE — short attributed reads from
+       the sources checked this run (BlackRock's dashboard, WEF's report,
+       a bank/asset-manager outlook), each tagged with which watchlist
+       position it supports or cautions. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Macro / Geopolitical Cross-Reference</p>
+    <div class="cc-grid-3">
+      <div class="cc-source-card">
+        <div class="org">BlackRock <span class="cc-pill good" style="font-size:9px;">Supports EOG/LNG</span></div>
+        <div class="point">Geopolitical Risk Dashboard centers on the Iran/Hormuz conflict &mdash; framed as the most significant energy crisis since the 1970s.</div>
+      </div>
+      <div class="cc-source-card">
+        <div class="org">WEF <span class="cc-pill warning" style="font-size:9px;">Watch NVDA</span></div>
+        <div class="point">Global Risks Report 2026: geoeconomic confrontation ranks #1; asset-bubble-burst risk rose 7 places &mdash; relevant to the AI-trough position.</div>
+      </div>
+      <div class="cc-source-card">
+        <div class="org">JPMorgan <span class="cc-pill warning" style="font-size:9px;">Tension w/ EOG</span></div>
+        <div class="point">Mid-year outlook: AI capex offsetting Iran War drag; commodities desk still projects a Brent oversupply, ~$58/bbl.</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cc-disclaimer">
+    Informational only, not investment advice. Wave thresholds and watchlist targets are guidelines, not guarantees. Consult a qualified CFP/RIA before allocation changes. This report omits account dollar figures by design; drift/watchlist position-sizing details are chat-only and never persisted to Supabase (see reference_docs/rules/crash-check-rules.md's split-storage architecture note).
+  </p>
+
+</div>
+</div>
