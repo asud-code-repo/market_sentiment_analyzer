@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -18,14 +18,23 @@ server.registerTool(
   {
     description:
       "Returns the most recent crash_checks row (indicator panel, wave status, and — if a chat " +
-      "run has happened — crash probability/scenario distribution/notes) plus a delta vs the prior row.",
+      "run has happened — crash probability/scenario distribution/notes) plus a delta vs the last " +
+      "row that actually had a probability (i.e. the last full report, not just the last row of any " +
+      "kind — most rows are bare automated refreshes with a null probability). Only call this after " +
+      "you've already committed to this run's probability estimate independently — it's for building " +
+      "the delta-log framing, not for forming the estimate itself.",
   },
   async () => {
-    const [latest, prior] = await getRecentCrashChecks(2);
+    const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
     }
-    return json({ latest, delta: computeDelta(latest, prior) });
+    const prior = await getLatestCrashCheckWithProbability();
+    // Exclude latest itself if it's already the row with the probability
+    // (e.g. this tool called twice in one session) — delta should compare
+    // against a genuinely prior report, not itself.
+    const priorForDelta = prior && prior.id !== latest.id ? prior : undefined;
+    return json({ latest, delta: computeDelta(latest, priorForDelta) });
   },
 );
 

@@ -119,6 +119,30 @@ export async function getRecentCrashChecks(limit: number): Promise<CrashCheckRow
 }
 
 /**
+ * The most recent row that actually has a crash_probability_pct — i.e. the
+ * last full chat-triggered report, not just the last row of any kind. Most
+ * rows are bare automated rule-engine refreshes with a null probability (see
+ * classify.ts, which never sets this field), so naively using "the previous
+ * row" for a delta comparison frequently diffs against null instead of a
+ * real prior estimate. Mirrors the same backward-search dashboard_site's
+ * selectIndex() already does client-side for its delta log.
+ */
+export async function getLatestCrashCheckWithProbability(): Promise<CrashCheckRow | null> {
+  const { data, error } = await supabase
+    .from("crash_checks")
+    .select("*")
+    .not("crash_probability_pct", "is", null)
+    .order("run_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to read latest crash_checks row with a probability: ${error.message}`);
+  }
+  return data;
+}
+
+/**
  * Inserts a new crash_checks row combining the latest row's mechanical
  * fields (indicator panel, wave status, S&P level/ATH — read fresh here,
  * not trusted from caller input) with the qualitative fields Claude
