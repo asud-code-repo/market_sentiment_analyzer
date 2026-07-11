@@ -1,4 +1,4 @@
-import type { DataPoint } from "../lib/supabase.js";
+import { type DataPoint, readWatchlistTickers } from "../lib/supabase.js";
 
 // Alpha Vantage GLOBAL_QUOTE — daily close price for a single ticker.
 // Free tier: 25 requests/day, well within reach for a handful of watchlist
@@ -7,11 +7,10 @@ import type { DataPoint } from "../lib/supabase.js";
 // Ingestion runs in GitHub Actions and has no access to the local, gitignored
 // local_state/brokeragelink_watchlist.yaml (that file only exists on the
 // user's machine — see mcp_server for the read/write side). So the ticker
-// *list* itself is configured via the WATCHLIST_TICKERS repo variable
-// (comma-separated symbols, same optional-config pattern as
-// POLYMARKET_SLUGS) — only the resulting *prices* land in Supabase's
-// data_points, same as any other public market series (e.g. SP500). Price
-// targets, thesis notes, and position sizing stay local-only.
+// *list* itself (symbols only — no targets/thesis/position sizing, which
+// stay local-only) lives in Supabase's watchlist_tickers table instead,
+// kept in sync by mcp_server's write_watchlist tool whenever the list
+// changes — no manual step needed here.
 const GLOBAL_QUOTE_URL = "https://www.alphavantage.co/query";
 
 interface AlphaVantageQuote {
@@ -54,17 +53,16 @@ async function fetchQuote(symbol: string, apiKey: string): Promise<DataPoint | n
 }
 
 export async function fetchAlphaVantage(): Promise<DataPoint[]> {
-  const tickersRaw = process.env.WATCHLIST_TICKERS?.trim();
-  if (!tickersRaw) {
+  const tickers = await readWatchlistTickers();
+  if (tickers.length === 0) {
     return []; // optional source — nothing configured, nothing to fetch
   }
 
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) {
-    throw new Error("WATCHLIST_TICKERS is set but ALPHA_VANTAGE_API_KEY is not");
+    throw new Error("watchlist_tickers has entries but ALPHA_VANTAGE_API_KEY is not set");
   }
 
-  const tickers = tickersRaw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
   const points: DataPoint[] = [];
   for (const symbol of tickers) {
     const point = await fetchQuote(symbol, apiKey);

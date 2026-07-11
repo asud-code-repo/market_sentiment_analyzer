@@ -74,6 +74,36 @@ export async function getLatestDataPoint(seriesId: string): Promise<DataPointRow
   return data;
 }
 
+/**
+ * Full-replacement sync of the watchlist ticker *list* (symbols only) in
+ * Supabase — deletes any symbol no longer present, inserts any new one.
+ * Keeps ingestion's watchlist_tickers table in step with whatever
+ * write_watchlist just wrote locally, in the same call, so there's no
+ * separate manual step to remember. Symbols alone aren't personal data —
+ * see supabase/migrations/20260711000000_watchlist_tickers.sql.
+ */
+export async function syncWatchlistTickers(symbols: string[]): Promise<void> {
+  const { data: existing, error: readError } = await supabase.from("watchlist_tickers").select("symbol");
+  if (readError) {
+    throw new Error(`Failed to read watchlist_tickers: ${readError.message}`);
+  }
+
+  const existingSymbols = new Set((existing ?? []).map((row) => row.symbol as string));
+  const desiredSymbols = new Set(symbols);
+
+  const toInsert = symbols.filter((s) => !existingSymbols.has(s));
+  const toDelete = [...existingSymbols].filter((s) => !desiredSymbols.has(s));
+
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from("watchlist_tickers").insert(toInsert.map((symbol) => ({ symbol })));
+    if (error) throw new Error(`Failed to insert into watchlist_tickers: ${error.message}`);
+  }
+  if (toDelete.length > 0) {
+    const { error } = await supabase.from("watchlist_tickers").delete().in("symbol", toDelete);
+    if (error) throw new Error(`Failed to delete from watchlist_tickers: ${error.message}`);
+  }
+}
+
 /** Most recent rows, newest first. `limit=2` is enough for a delta calc. */
 export async function getRecentCrashChecks(limit: number): Promise<CrashCheckRow[]> {
   const { data, error } = await supabase

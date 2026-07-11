@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/supabase.js";
+import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -143,13 +143,12 @@ server.registerTool(
   "write_watchlist",
   {
     description:
-      "Persists an updated BrokerageLink watchlist to the local file — full replacement of the " +
-      "ticker list, not a merge. Use this after an on-demand 'run portfolio review' session once " +
-      "the user has approved specific changes (new/removed tickers, updated targets, revised thesis " +
-      "notes). Never call this to record a routine price check — only for actual reviewed changes " +
-      "to the list itself. If tickers were added or removed (not just targets changed), also tell " +
-      "the user to update the WATCHLIST_TICKERS GitHub repo variable to match, since ingestion runs " +
-      "in CI and can't read this local file directly.",
+      "Persists an updated BrokerageLink watchlist — full replacement of the ticker list, not a " +
+      "merge. Writes targets/thesis/position sizing to the local file, and syncs just the ticker " +
+      "symbols to Supabase's watchlist_tickers table (public data, no dollar figures) so ingestion " +
+      "picks up new/removed tickers automatically on the next run — no separate manual step. Use " +
+      "this after an on-demand 'run portfolio review' session once the user has approved specific " +
+      "changes. Never call this to record a routine price check — only for actual reviewed changes.",
     inputSchema: {
       tickers: z.array(
         z.object({
@@ -169,6 +168,7 @@ server.registerTool(
   },
   async (input) => {
     const written = writeWatchlist(input.tickers, `Claude (portfolio review): ${input.change_summary}`);
+    await syncWatchlistTickers(input.tickers.map((t) => t.symbol));
     return json({ written });
   },
 );

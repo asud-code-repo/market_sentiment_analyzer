@@ -39,3 +39,18 @@ export async function writeDataPoints(points: DataPoint[]): Promise<void> {
     throw new Error(`Supabase upsert failed for data_points: ${error.message}`);
   }
 }
+
+/**
+ * The BrokerageLink watchlist ticker *list* (symbols only) lives in Supabase
+ * so CI can read it without access to the gitignored local watchlist file —
+ * see supabase/migrations/20260711000000_watchlist_tickers.sql. Returns []
+ * (not an error) if the table is empty, so this source degrades to a no-op
+ * rather than failing the run when nothing's configured yet.
+ */
+export async function readWatchlistTickers(): Promise<string[]> {
+  const { data, error } = await supabase.from("watchlist_tickers").select("symbol");
+  if (error) {
+    throw new Error(`Failed to read watchlist_tickers: ${error.message}`);
+  }
+  return (data ?? []).map((row) => row.symbol as string);
+}
