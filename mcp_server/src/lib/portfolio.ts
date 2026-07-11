@@ -96,3 +96,92 @@ export function applyLiveFxRate(
     combined: updatedCombined,
   };
 }
+
+export interface DriftEntry {
+  fund: string;
+  actual_pct: number;
+  target_pct: number;
+  drift_pts: number;
+  status: "ON_TARGET" | "DRIFTED";
+}
+
+export interface AccountDrift {
+  account_key: string;
+  label: string;
+  entries: DriftEntry[];
+  max_drift_pts: number;
+  has_drifted: boolean;
+}
+
+// Matches the rebalancing-band convention used by mainstream robo-advisors
+// (Betterment/Wealthfront-style drift monitoring): flag a fund once it's off
+// its long-term target by more than this many percentage points, rather than
+// rebalancing on every tiny wiggle.
+const DRIFT_THRESHOLD_PTS = 5;
+
+/**
+ * Compares actual holdings_pct against long_term_target_pct for every
+ * account that defines both, flagging funds drifted beyond
+ * DRIFT_THRESHOLD_PTS. Deliberately mechanical — no macro judgment, purely
+ * "is this account still close to its own stated target." Accounts with no
+ * formal target (e.g. the RRSP's permanent passive stance) are simply
+ * skipped; accounts with a known structural_issue note but no formal target
+ * (e.g. spouse 401k) surface that note as a standing flag instead of
+ * fabricating a target that was never specified.
+ *
+ * Accounts with an active dry_powder_usd mechanism (currently just the
+ * tactical 401k) are also skipped here: their "distance from long-term
+ * target" is dominated by dry powder deliberately held back per the
+ * crash-protocol wave system, not neglect — a raw target-vs-actual diff
+ * can't tell those apart and would flag a huge, fully-intentional "drift"
+ * every single run. That account's rebalancing pace is already governed by
+ * get_deployment_plan/wave status, so it's noted as a pointer instead.
+ */
+export function computePortfolioDrift(portfolio: unknown): {
+  accounts: AccountDrift[];
+  standing_flags: string[];
+} {
+  const root = portfolio as Record<string, unknown> | null;
+  const accounts = (root?.["accounts"] as Record<string, unknown> | undefined) ?? {};
+  const result: AccountDrift[] = [];
+  const standingFlags: string[] = [];
+
+  for (const [key, acctRaw] of Object.entries(accounts)) {
+    const acct = acctRaw as Record<string, unknown>;
+    const holdings = acct["holdings_pct"] as Record<string, number> | undefined;
+    const target = acct["long_term_target_pct"] as Record<string, number> | undefined;
+    const label = typeof acct["label"] === "string" ? (acct["label"] as string) : key;
+
+    if (typeof acct["dry_powder_usd"] === "number") {
+      standingFlags.push(
+        `${label}: rebalancing pace is governed by the crash-protocol wave system, not a plain drift check — see get_deployment_plan for wave-gated deployment status instead.`,
+      );
+    } else if (holdings && target) {
+      const funds = new Set([...Object.keys(holdings), ...Object.keys(target)]);
+      const entries: DriftEntry[] = [...funds].map((fund) => {
+        const actual = holdings[fund] ?? 0;
+        const tgt = target[fund] ?? 0;
+        const drift = Math.round((actual - tgt) * 10) / 10;
+        return {
+          fund,
+          actual_pct: actual,
+          target_pct: tgt,
+          drift_pts: drift,
+          status: Math.abs(drift) > DRIFT_THRESHOLD_PTS ? "DRIFTED" : "ON_TARGET",
+        };
+      });
+      entries.sort((a, b) => Math.abs(b.drift_pts) - Math.abs(a.drift_pts));
+      result.push({
+        account_key: key,
+        label,
+        entries,
+        max_drift_pts: entries.length > 0 ? Math.max(...entries.map((e) => Math.abs(e.drift_pts))) : 0,
+        has_drifted: entries.some((e) => e.status === "DRIFTED"),
+      });
+    } else if (typeof acct["structural_issue"] === "string") {
+      standingFlags.push(`${label}: ${acct["structural_issue"]}`);
+    }
+  }
+
+  return { accounts: result, standing_flags: standingFlags };
+}

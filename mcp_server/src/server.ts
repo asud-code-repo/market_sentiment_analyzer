@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/supabase.js";
-import { readPortfolio, readDryPowderUsd, applyLiveFxRate } from "./lib/portfolio.js";
+import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 
@@ -100,6 +100,21 @@ server.registerTool(
     }
     return json(applyLiveFxRate(portfolio, dexcaus.value, dexcaus.observation_date));
   },
+);
+
+server.registerTool(
+  "get_portfolio_drift",
+  {
+    description:
+      "Compares actual holdings_pct against long_term_target_pct for every account that defines " +
+      "both, flagging funds drifted more than 5 percentage points from target (same rebalancing-band " +
+      "convention mainstream robo-advisors use). Purely mechanical — no macro judgment. Accounts " +
+      "with a known structural_issue but no formal target (e.g. spouse 401k) are surfaced as a " +
+      "standing flag instead. Part of the Portfolio Opportunity Review process, layered under the " +
+      "crash-check indicator panel: this answers 'is each account still close to its own stated " +
+      "target' independent of the macro regime.",
+  },
+  async () => json(computePortfolioDrift(readPortfolio())),
 );
 
 server.registerTool(
