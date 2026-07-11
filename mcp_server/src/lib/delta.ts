@@ -2,6 +2,7 @@ import type { CrashCheckRow } from "./supabase.js";
 
 const TRACKED_FIELDS = [
   "red_count",
+  "confirmed_red_count",
   "wave_active",
   "wave_authorized",
   "sp500_level",

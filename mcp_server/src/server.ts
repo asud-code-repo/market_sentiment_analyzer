@@ -41,24 +41,40 @@ server.registerTool(
 server.registerTool(
   "get_indicator_panel",
   {
-    description: "Returns just the current 6-indicator RED/AMBER/GREEN panel, RED count, and wave status.",
+    description:
+      "Returns just the current 6-indicator RED/AMBER/GREEN panel, RED count, confirmed-RED count, and " +
+      "wave status. Each of the 5 numeric indicators (all but Fed pivot signal) carries confirmed/" +
+      "days_confirmed — per crash-check-rules.md's Signal Tiering rule, a RED reading only counts toward " +
+      "wave authorization once confirmed across 2+ distinct ingestion dates, not on its first appearance. " +
+      "wave_authorized already reflects confirmed_red_count, not raw red_count — report confirmed_red_count " +
+      "as the authorizing number, and red_count/pending indicators as context for what's building.",
   },
   async () => {
     const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
     }
+    const conf = latest.confirmation_state ?? {};
+    const withConfirmation = (key: string, value: unknown, color: string | null) => ({
+      value,
+      color,
+      confirmed: conf[key]?.confirmed ?? null,
+      days_confirmed: conf[key]?.days_confirmed ?? null,
+      first_breach_date: conf[key]?.first_breach_date ?? null,
+    });
     return json({
       run_at: latest.run_at,
       indicators: {
-        vix: { value: latest.vix_value, color: latest.vix_color },
-        hy_spread_bps: { value: latest.hy_spread_bps, color: latest.hy_spread_color },
-        sp_drawdown_pct: { value: latest.sp_drawdown_pct, color: latest.sp_drawdown_color },
-        treasury_10y_pct: { value: latest.treasury_10y_pct, color: latest.treasury_10y_color },
-        sahm_rule: { value: latest.sahm_rule_value, color: latest.sahm_rule_color },
+        vix: withConfirmation("vix", latest.vix_value, latest.vix_color),
+        hy_spread_bps: withConfirmation("hy_spread", latest.hy_spread_bps, latest.hy_spread_color),
+        sp_drawdown_pct: withConfirmation("sp_drawdown", latest.sp_drawdown_pct, latest.sp_drawdown_color),
+        treasury_10y_pct: withConfirmation("treasury_10y", latest.treasury_10y_pct, latest.treasury_10y_color),
+        sahm_rule: withConfirmation("sahm_rule", latest.sahm_rule_value, latest.sahm_rule_color),
+        // No confirmation entry — manually/LLM-judged, no numeric series behind it (see tool description).
         fed_pivot_signal: { value: latest.fed_pivot_signal, color: latest.fed_pivot_color },
       },
       red_count: latest.red_count,
+      confirmed_red_count: latest.confirmed_red_count,
       wave_authorized: latest.wave_authorized,
       wave_active: latest.wave_active,
       sp500_level: latest.sp500_level,

@@ -10,6 +10,8 @@ import {
   isWaveAuthorized,
   activeWave,
   drawdownPct,
+  computeConfirmation,
+  type ConfirmationEntry,
 } from "./rules.js";
 
 async function requireLatest(seriesId: string) {
@@ -53,8 +55,28 @@ export async function classify(): Promise<void> {
   const fedPivotColor = bandFedPivotSignal(fedPivotSignal);
 
   const redCount = countReds([vixColor, hySpreadColor, spDrawdownColor, treasury10yColor, sahmRuleColor, fedPivotColor]);
-  const waveAuthorized = isWaveAuthorized(redCount);
   const waveActive = activeWave(sp500.value, vix.value);
+
+  // Signal Tiering & Confirmation Windows (crash-check-rules.md v5): each of
+  // the 5 numeric Tier-1 indicators must hold its color across 2+ distinct
+  // observation dates before it counts toward wave authorization. Fed pivot
+  // signal has no numeric series behind it (manually/LLM-judged, carried
+  // forward above) — confirmation-by-distinct-date doesn't mean anything for
+  // it, so it's excluded from this mechanism and its RED state (if any)
+  // counts toward confirmed_red_count immediately, same as it always has.
+  const priorConfirmation = prior?.confirmation_state ?? {};
+  const confirmationState: Record<string, ConfirmationEntry> = {
+    vix: computeConfirmation(vixColor, vix.observation_date, priorConfirmation.vix),
+    hy_spread: computeConfirmation(hySpreadColor, hySpread.observation_date, priorConfirmation.hy_spread),
+    sp_drawdown: computeConfirmation(spDrawdownColor, sp500.observation_date, priorConfirmation.sp_drawdown),
+    treasury_10y: computeConfirmation(treasury10yColor, treasury10y.observation_date, priorConfirmation.treasury_10y),
+    sahm_rule: computeConfirmation(sahmRuleColor, sahmRule.observation_date, priorConfirmation.sahm_rule),
+  };
+
+  const confirmedRedCount =
+    Object.values(confirmationState).filter((c) => c.color === "RED" && c.confirmed).length +
+    (fedPivotColor === "RED" ? 1 : 0);
+  const waveAuthorized = isWaveAuthorized(confirmedRedCount);
 
   await insertCrashCheck({
     sp500_level: sp500.value,
@@ -73,6 +95,8 @@ export async function classify(): Promise<void> {
     fed_pivot_signal: fedPivotSignal,
     fed_pivot_color: fedPivotColor,
     red_count: redCount,
+    confirmed_red_count: confirmedRedCount,
+    confirmation_state: confirmationState,
     wave_authorized: waveAuthorized,
     wave_active: waveActive,
     warsh_classification: (prior?.warsh_classification as "HAWKISH" | "MODERATE" | "DOVISH" | "PENDING" | null) ?? "PENDING",
@@ -86,8 +110,8 @@ export async function classify(): Promise<void> {
   });
 
   console.log(
-    `Classified: ${redCount}/6 RED (VIX=${vixColor}, HY=${hySpreadColor}, Drawdown=${spDrawdownColor}, ` +
-      `10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
+    `Classified: ${redCount}/6 RED (${confirmedRedCount} confirmed) (VIX=${vixColor}, HY=${hySpreadColor}, ` +
+      `Drawdown=${spDrawdownColor}, 10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
       `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}.`,
   );
 }

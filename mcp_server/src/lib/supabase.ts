@@ -13,6 +13,16 @@ export const supabase = createClient(
   requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
 );
 
+/** Mirrors rule_engine/src/rules.ts's ConfirmationEntry — separate TS
+ * project, so duplicated rather than shared across a package boundary. */
+export interface ConfirmationEntry {
+  color: "GREEN" | "AMBER" | "RED";
+  observation_date: string;
+  days_confirmed: number;
+  confirmed: boolean;
+  first_breach_date: string;
+}
+
 // Mirrors the crash_checks columns — see supabase/migrations/20260708000000_stage1_schema.sql
 export interface CrashCheckRow {
   id: string;
@@ -40,6 +50,8 @@ export interface CrashCheckRow {
   fed_pivot_signal: string | null;
   fed_pivot_color: string | null;
   red_count: number;
+  confirmed_red_count: number | null;
+  confirmation_state: Record<string, ConfirmationEntry> | null;
   wave_authorized: boolean;
   wave_active: string | null;
   crash_type: string | null;
@@ -193,6 +205,12 @@ export async function writeSnapshot(qualitative: {
     fed_pivot_signal: fedPivotSignal,
     fed_pivot_color: fedPivotColor,
     red_count: latest.red_count,
+    // Carried forward, not recomputed — confirmation_state is rule-engine-
+    // owned (classify.ts's per-indicator streak tracking). If write_snapshot
+    // didn't propagate it, the next classify() run would see a null prior
+    // confirmation_state and incorrectly reset every indicator's streak.
+    confirmed_red_count: latest.confirmed_red_count,
+    confirmation_state: latest.confirmation_state,
     wave_authorized: latest.wave_authorized,
     wave_active: latest.wave_active,
 

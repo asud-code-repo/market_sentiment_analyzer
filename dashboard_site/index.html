@@ -375,16 +375,16 @@ function renderContextIndicators(latest) {
     .join("");
 }
 
-// How many consecutive checks (walking backward from CURRENT_INDEX) this
-// indicator has held its current color, and the date that streak started —
-// e.g. "AMBER for 6 checks (since Jul 3)" reads very differently from
-// "just flipped today," which the point-in-time color alone can't convey.
-function computeStreak(colorKey) {
-  const color = ALL_ROWS[CURRENT_INDEX]?.[colorKey];
-  if (!color) return null;
-  let j = CURRENT_INDEX;
-  while (j > 0 && ALL_ROWS[j - 1][colorKey] === color) j--;
-  return { color, length: CURRENT_INDEX - j + 1, sinceDate: fmtDateShort(ALL_ROWS[j].run_at) };
+// Reads the rule engine's own confirmation_state (crash-check-rules.md v5's
+// Signal Tiering rule) instead of computing a streak client-side from raw
+// row counts — a raw per-row streak conflates "13 checks over 2 calendar
+// days" with 13 independent confirmations, which is exactly the bug this
+// server-side tracking (rule_engine/src/rules.ts's computeConfirmation)
+// closes. confirmationKey is null for Fed pivot signal, which has no
+// numeric series behind it and is excluded from the confirmation mechanism.
+function getConfirmation(row, confirmationKey) {
+  if (!confirmationKey) return null;
+  return row?.confirmation_state?.[confirmationKey] ?? null;
 }
 
 function fmtDateShort(iso) {
@@ -396,18 +396,23 @@ function trendArrow(current, prior) {
   return current > prior ? " ▲" : " ▼";
 }
 
-function renderIndicatorCard(infoKey, value, color, priorValue, streak) {
+function renderIndicatorCard(infoKey, value, color, priorValue, confirmation) {
   const info = INDICATOR_INFO[infoKey];
-  const streakHtml = streak
-    ? `<div class="streak">${streak.color} for ${streak.length} check${streak.length === 1 ? "" : "s"} (since ${streak.sinceDate})</div>`
-    : "";
+  let confirmationHtml = "";
+  if (confirmation) {
+    confirmationHtml = confirmation.confirmed
+      ? `<div class="streak">Confirmed — ${confirmation.color} for ${confirmation.days_confirmed} distinct dates (since ${fmtDateShort(confirmation.first_breach_date)})</div>`
+      : `<div class="streak">Pending confirmation (day ${confirmation.days_confirmed} of 2)</div>`;
+  } else if (infoKey === "fedPivot") {
+    confirmationHtml = `<div class="streak">Manually judged — not date-gated</div>`;
+  }
   return `
     <div class="indicator ${pillClass(color)}">
       <div class="label">${info.label}</div>
       <div class="value">${value ?? "—"}${trendArrow(value, priorValue)}</div>
       <div class="status">${color ?? ""}</div>
       <div class="favourable">Favourable: ${info.favorable}</div>
-      ${streakHtml}
+      ${confirmationHtml}
       <div class="indicator-info"><strong>What it measures:</strong> ${info.what}</div>
       <div class="indicator-info"><strong>Why it matters:</strong> ${info.why}</div>
     </div>
@@ -503,18 +508,22 @@ function renderReport(row, priorFullReport, priorAnyRow) {
     ? `<p class="eyebrow" style="margin-top:16px;">Narrative</p><div class="notes-text">${row.notes.replace(/</g, "&lt;")}</div>`
     : `<p class="loading" style="margin-top:16px;">No narrative for this entry — this was an automated daily indicator refresh, not a full chat-triggered report.</p>`;
 
+  const confirmedRedCount = row.confirmed_red_count ?? 0;
+  const pendingRedCount = Math.max(0, (row.red_count ?? 0) - confirmedRedCount);
+  const redPillText = `${confirmedRedCount} of 6 RED confirmed${pendingRedCount > 0 ? `, ${pendingRedCount} pending` : ""}`;
+
   el.innerHTML = `
     ${banner}
     <div class="card">
-      <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${row.red_count >= 3 ? 'critical' : row.red_count > 0 ? 'warning' : 'good'}">${row.red_count} of 6 RED</span> <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
+      <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
       ${probSection}
       <div class="grid-3" style="margin-top:16px;">
-        ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, computeStreak("vix_color"))}
-        ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps, computeStreak("hy_spread_color"))}
-        ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct, computeStreak("sp_drawdown_color"))}
-        ${renderIndicatorCard("treasury10y", row.treasury_10y_pct, row.treasury_10y_color, priorAnyRow?.treasury_10y_pct, computeStreak("treasury_10y_color"))}
-        ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, computeStreak("sahm_rule_color"))}
-        ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, computeStreak("fed_pivot_color"))}
+        ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
+        ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps, getConfirmation(row, "hy_spread"))}
+        ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct, getConfirmation(row, "sp_drawdown"))}
+        ${renderIndicatorCard("treasury10y", row.treasury_10y_pct, row.treasury_10y_color, priorAnyRow?.treasury_10y_pct, getConfirmation(row, "treasury_10y"))}
+        ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, getConfirmation(row, "sahm_rule"))}
+        ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
       </div>
       ${scenarioSection}
       ${triggerSection}
@@ -687,7 +696,7 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
 async function main() {
   try {
     ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes&order=run_at.asc&limit=1000",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes&order=run_at.asc&limit=1000",
     );
 
     if (ALL_ROWS.length === 0) {

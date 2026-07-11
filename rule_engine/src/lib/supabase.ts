@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { ConfirmationEntry } from "../rules.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -41,15 +42,18 @@ export interface LatestSnapshotRow {
   warsh_hard_rules_active: boolean;
   fed_pivot_signal: string | null;
   trigger_status: unknown;
+  confirmation_state: Record<string, ConfirmationEntry> | null;
 }
 
 /** The most recent crash_checks row, for carrying forward manually-judged
  * fields (Warsh classification, Fed pivot signal, trigger statuses) that
- * the rule engine doesn't — and shouldn't — auto-derive. Null on first run. */
+ * the rule engine doesn't — and shouldn't — auto-derive, plus the prior
+ * confirmation_state each indicator's streak is computed against. Null on
+ * first run. */
 export async function getLatestCrashCheck(): Promise<LatestSnapshotRow | null> {
   const { data, error } = await supabase
     .from("crash_checks")
-    .select("warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status")
+    .select("warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state")
     .order("run_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -77,6 +81,8 @@ export interface CrashCheckInsert {
   fed_pivot_signal: "NONE" | "PAUSE" | "CUT";
   fed_pivot_color: "GREEN" | "AMBER" | "RED";
   red_count: number;
+  confirmed_red_count: number;
+  confirmation_state: Record<string, ConfirmationEntry>;
   wave_authorized: boolean;
   wave_active: "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";
   warsh_classification: "HAWKISH" | "MODERATE" | "DOVISH" | "PENDING" | null;

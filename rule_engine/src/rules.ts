@@ -71,3 +71,44 @@ export function activeWave(sp500Level: number, vix: number): WaveActive {
 export function drawdownPct(level: number, ath: number): number {
   return ((ath - level) / ath) * 100;
 }
+
+/**
+ * Signal Tiering & Confirmation Windows (crash-check-rules.md v5): a
+ * Tier-1 indicator's color must hold across 2+ *distinct* ingestion dates
+ * before it's "confirmed" — not just be true on whatever row a dashboard
+ * happens to render. Distinctness is judged per-indicator by its own
+ * observation_date advancing, not by classify.ts's run_at, since indicators
+ * update at different cadences (VIX daily, Sahm Rule monthly) and the same
+ * calendar day can get classified more than once (manual re-triggers).
+ */
+export interface ConfirmationEntry {
+  color: Color;
+  observation_date: string;
+  days_confirmed: number;
+  confirmed: boolean;
+  first_breach_date: string;
+}
+
+export function computeConfirmation(
+  color: Color,
+  observationDate: string,
+  prior: ConfirmationEntry | undefined,
+): ConfirmationEntry {
+  if (!prior) {
+    // First-ever run for this indicator — bootstrap, same pattern as
+    // fed_pivot_signal/Warsh fields defaulting on a fresh crash_checks table.
+    return { color, observation_date: observationDate, days_confirmed: 1, confirmed: false, first_breach_date: observationDate };
+  }
+  if (observationDate === prior.observation_date) {
+    // Same underlying data as last run (e.g. a same-day manual re-trigger,
+    // no new observation has landed yet) — carry the state forward as-is,
+    // don't double-count this as a second confirming date.
+    return prior;
+  }
+  if (color === prior.color) {
+    const daysConfirmed = prior.days_confirmed + 1;
+    return { color, observation_date: observationDate, days_confirmed: daysConfirmed, confirmed: daysConfirmed >= 2, first_breach_date: prior.first_breach_date };
+  }
+  // Color changed on a new observation date — the streak resets.
+  return { color, observation_date: observationDate, days_confirmed: 1, confirmed: false, first_breach_date: observationDate };
+}
