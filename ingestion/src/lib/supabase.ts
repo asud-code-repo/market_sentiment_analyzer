@@ -23,6 +23,12 @@ export interface DataPoint {
   raw_payload?: unknown;
 }
 
+// Daily ingestion writes ~20 rows — irrelevant here — but backfill.ts can
+// pass tens of thousands (5 years x ~17 FRED series), which risks hitting a
+// request payload limit in one upsert call. Chunking keeps every caller safe
+// without needing to know its own volume.
+const UPSERT_CHUNK_SIZE = 500;
+
 /**
  * Upserts on (series_id, observation_date) — see the unique constraint in
  * supabase/migrations/20260708000000_stage1_schema.sql. Safe to call
@@ -31,12 +37,15 @@ export interface DataPoint {
 export async function writeDataPoints(points: DataPoint[]): Promise<void> {
   if (points.length === 0) return;
 
-  const { error } = await supabase
-    .from("data_points")
-    .upsert(points, { onConflict: "series_id,observation_date" });
+  for (let i = 0; i < points.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = points.slice(i, i + UPSERT_CHUNK_SIZE);
+    const { error } = await supabase
+      .from("data_points")
+      .upsert(chunk, { onConflict: "series_id,observation_date" });
 
-  if (error) {
-    throw new Error(`Supabase upsert failed for data_points: ${error.message}`);
+    if (error) {
+      throw new Error(`Supabase upsert failed for data_points (rows ${i}-${i + chunk.length}): ${error.message}`);
+    }
   }
 }
 

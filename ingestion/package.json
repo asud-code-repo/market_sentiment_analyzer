@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "ingest": "tsx src/ingest.ts",
+    "backfill": "tsx src/backfill.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

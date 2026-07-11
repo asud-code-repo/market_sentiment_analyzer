@@ -157,6 +157,60 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
   ];
 }
 
+// One-time historical backfill (see backfill.ts) — 5 years is enough to
+// cover the 2022 rate-hike cycle for the "All" time-range toggle on the
+// dashboard's trend charts, without pulling full multi-decade histories
+// (some of these series go back to the 1940s-60s) that would bloat
+// data_points and slow client-side chart rendering for no real benefit.
+const BACKFILL_YEARS = 5;
+
+async function fetchFredHistory(seriesId: string, apiKey: string, observationStart: string): Promise<FredObservation[]> {
+  const url = new URL("https://api.stlouisfed.org/fred/series/observations");
+  url.searchParams.set("series_id", seriesId);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("file_type", "json");
+  url.searchParams.set("observation_start", observationStart);
+  url.searchParams.set("sort_order", "asc");
+  url.searchParams.set("limit", "100000");
+
+  const res = await fetchWithRetry(url.toString());
+  if (!res.ok) {
+    throw new Error(`FRED backfill request failed for ${seriesId}: HTTP ${res.status} ${await res.text()}`);
+  }
+
+  const body = (await res.json()) as FredResponse;
+  return (body.observations ?? []).filter((o) => o.value !== ".");
+}
+
+export async function fetchFredBackfill(): Promise<DataPoint[]> {
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) {
+    throw new Error("FRED_API_KEY is not set");
+  }
+
+  const observationStart = new Date();
+  observationStart.setFullYear(observationStart.getFullYear() - BACKFILL_YEARS);
+  const startStr = observationStart.toISOString().slice(0, 10);
+
+  const points: DataPoint[] = [];
+  for (const series of FRED_SERIES) {
+    const history = await fetchFredHistory(series.id, apiKey, startStr);
+    for (const obs of history) {
+      points.push({
+        series_id: series.id,
+        source: "FRED",
+        source_series_code: series.id,
+        observation_date: obs.date,
+        value: Number(obs.value),
+        unit: series.unit,
+        raw_payload: obs,
+      });
+    }
+    console.log(`  FRED backfill: ${series.id} — ${history.length} observations since ${startStr}`);
+  }
+  return points;
+}
+
 export async function fetchFred(): Promise<DataPoint[]> {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) {

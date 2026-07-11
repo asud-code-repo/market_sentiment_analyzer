@@ -80,3 +80,72 @@ export async function fetchAlphaVantage(): Promise<DataPoint[]> {
   }
   return points;
 }
+
+const TIME_SERIES_DAILY_URL = "https://www.alphavantage.co/query";
+// Matches fred.ts's BACKFILL_YEARS — TIME_SERIES_DAILY's outputsize=full
+// returns 20+ years, filtered down client-side since AV has no date-range
+// param on this endpoint.
+const BACKFILL_YEARS = 5;
+
+interface AlphaVantageDaily {
+  "Time Series (Daily)"?: Record<string, { "4. close": string }>;
+  Note?: string;
+  Information?: string;
+}
+
+async function fetchDailyHistory(symbol: string, apiKey: string, cutoffDate: string): Promise<DataPoint[]> {
+  const url = new URL(TIME_SERIES_DAILY_URL);
+  url.searchParams.set("function", "TIME_SERIES_DAILY");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("outputsize", "full");
+  url.searchParams.set("apikey", apiKey);
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(`Alpha Vantage backfill request failed for ${symbol}: HTTP ${res.status} ${await res.text()}`);
+  }
+
+  const body = (await res.json()) as AlphaVantageDaily;
+  const series = body["Time Series (Daily)"];
+  if (!series) {
+    console.warn(`Alpha Vantage backfill: no data for ${symbol} — ${body.Note ?? body.Information ?? "empty response"}`);
+    return [];
+  }
+
+  return Object.entries(series)
+    .filter(([date]) => date >= cutoffDate)
+    .map(([date, day]) => ({
+      series_id: symbol,
+      source: "ALPHA_VANTAGE",
+      source_series_code: symbol,
+      observation_date: date,
+      value: Number(day["4. close"]),
+      unit: "usd",
+      raw_payload: day,
+    }));
+}
+
+export async function fetchAlphaVantageBackfill(): Promise<DataPoint[]> {
+  const tickers = await readWatchlistTickers();
+  if (tickers.length === 0) {
+    return [];
+  }
+
+  const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+  if (!apiKey) {
+    throw new Error("watchlist_tickers has entries but ALPHA_VANTAGE_API_KEY is not set");
+  }
+
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - BACKFILL_YEARS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const points: DataPoint[] = [];
+  for (let i = 0; i < tickers.length; i++) {
+    if (i > 0) await sleep(REQUEST_SPACING_MS);
+    const history = await fetchDailyHistory(tickers[i], apiKey, cutoffStr);
+    points.push(...history);
+    console.log(`  Alpha Vantage backfill: ${tickers[i]} — ${history.length} observations since ${cutoffStr}`);
+  }
+  return points;
+}

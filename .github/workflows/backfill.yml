@@ -1,0 +1,32 @@
+name: One-time data_points backfill
+
+# Manual trigger only — this is a one-off historical pull (5yr of FRED
+# series + watchlist ticker prices), not a recurring job. See
+# ingestion/src/backfill.ts. Safe to re-run: upserts on
+# (series_id, observation_date).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingestion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ingestion/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
