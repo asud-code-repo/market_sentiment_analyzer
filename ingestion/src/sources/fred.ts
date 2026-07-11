@@ -43,6 +43,33 @@ interface FredResponse {
   observations: FredObservation[];
 }
 
+// fetchFred() makes ~17 sequential requests per run; a bare fetch() means any
+// single transient 5xx/network blip anywhere in that sequence aborts the
+// entire FRED fetch (see fetchFred()'s atomic loop below), losing series that
+// already succeeded too. Retries only 5xx/network errors — a 4xx (bad series
+// ID, bad key) is a real bug and should still fail immediately, not be masked
+// by retrying it.
+const RETRY_DELAYS_MS = [500, 1500, 4000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url: string): Promise<Response> {
+  let lastError: Error = new Error("fetchWithRetry: unreachable");
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok || res.status < 500) return res;
+      lastError = new Error(`HTTP ${res.status} ${await res.text()}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+    if (attempt < RETRY_DELAYS_MS.length) await sleep(RETRY_DELAYS_MS[attempt]);
+  }
+  throw lastError;
+}
+
 async function fetchLatestObservation(seriesId: string, apiKey: string): Promise<FredObservation> {
   const url = new URL("https://api.stlouisfed.org/fred/series/observations");
   url.searchParams.set("series_id", seriesId);
@@ -53,7 +80,7 @@ async function fetchLatestObservation(seriesId: string, apiKey: string): Promise
   // pull a few and take the first real value rather than assuming index 0 is valid.
   url.searchParams.set("limit", "5");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithRetry(url.toString());
   if (!res.ok) {
     throw new Error(`FRED request failed for ${seriesId}: HTTP ${res.status} ${await res.text()}`);
   }
@@ -83,7 +110,7 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
   url.searchParams.set("sort_order", "asc");
   url.searchParams.set("limit", "100000");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithRetry(url.toString());
   if (!res.ok) {
     throw new Error(`FRED request failed for SP500: HTTP ${res.status} ${await res.text()}`);
   }
