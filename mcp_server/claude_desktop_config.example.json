@@ -7,7 +7,8 @@
       "env": {
         "SUPABASE_URL": "https://YOUR_PROJECT_REF.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "YOUR_SECRET_KEY",
-        "PORTFOLIO_PATH": "C:\\ABSOLUTE\\PATH\\TO\\market_sentiment_analyzer\\local_state\\portfolio.yaml"
+        "PORTFOLIO_PATH": "C:\\ABSOLUTE\\PATH\\TO\\market_sentiment_analyzer\\local_state\\portfolio.yaml",
+        "WATCHLIST_PATH": "C:\\ABSOLUTE\\PATH\\TO\\market_sentiment_analyzer\\local_state\\brokeragelink_watchlist.yaml"
       }
     }
   }

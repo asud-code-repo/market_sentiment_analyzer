@@ -1,0 +1,27 @@
+# Template for local_state/brokeragelink_watchlist.yaml — copy this file,
+# rename to brokeragelink_watchlist.yaml (already gitignored), and fill in
+# real values there. Read only by the locally-running MCP server (stdio);
+# max_position_usd figures are personal (tied to your actual dry powder),
+# so this stays local-only like portfolio.yaml — never sent to Supabase.
+#
+# Only the *price* for each symbol gets ingested into Supabase's data_points
+# (public market data, same as SP500) — this file's targets/theme/position
+# sizing never leave this machine.
+#
+# updated_at / updated_by get set automatically by the write_watchlist MCP
+# tool after an on-demand "run portfolio review" session; edit by hand too
+# if you just want to tweak a target without a full review.
+
+updated_at: "2026-01-01"
+updated_by: "manual"
+
+tickers:
+  - symbol: "EXAMPLE"
+    name: "Example Corp"
+    theme: "Example thesis"
+    wave1_target: 0
+    wave2_target: 0
+    wave3_target: 0
+    wave3_only: false   # true = only a valid buy once Wave 3 triggers, not Wave 1/2
+    max_position_usd: 0
+    thesis_note: "Why this ticker expresses this theme."

@@ -3,6 +3,7 @@ import { fetchFred } from "./sources/fred.js";
 import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
+import { fetchAlphaVantage } from "./sources/alphavantage.js";
 
 interface SourceResult {
   name: string;
@@ -35,6 +36,10 @@ async function main() {
     // over a source with no known live replacement yet.
     runSource("CBOE", false, fetchCboe),
     runSource("Polymarket", false, fetchPolymarket),
+    // Best-effort like CBOE/Polymarket: watchlist ticker prices are
+    // supplementary to the crash-check core (not one of the 6 gating
+    // indicators), and Alpha Vantage's free tier can be flaky/rate-limited.
+    runSource("AlphaVantage", false, fetchAlphaVantage),
   ]);
 
   const requiredFailures = results.filter((r) => r.error && r.required);

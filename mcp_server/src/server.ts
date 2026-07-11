@@ -5,6 +5,7 @@ import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/s
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
+import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -115,6 +116,61 @@ server.registerTool(
       "target' independent of the macro regime.",
   },
   async () => json(computePortfolioDrift(readPortfolio())),
+);
+
+server.registerTool(
+  "get_watchlist_status",
+  {
+    description:
+      "Returns the BrokerageLink stock watchlist with live price vs. Wave 1/2/3 targets and a " +
+      "deterministic BUY_ZONE/WATCH/WAIT status per ticker (current price at/below Wave 1 target = " +
+      "BUY_ZONE, within 20% above = WATCH, more than 20% above = WAIT — same bands as the original " +
+      "watchlist design). Prices come from Supabase (public market data, ingested daily via Alpha " +
+      "Vantage); targets/thesis/position sizing come from the local watchlist file. Purely " +
+      "mechanical — use this instead of estimating prices via web search.",
+  },
+  async () => {
+    const watchlist = readWatchlist();
+    const prices = await Promise.all(watchlist.tickers.map((t) => getLatestDataPoint(t.symbol)));
+    return json({
+      updated_at: watchlist.updated_at,
+      tickers: computeWatchlistStatus(watchlist.tickers, prices),
+    });
+  },
+);
+
+server.registerTool(
+  "write_watchlist",
+  {
+    description:
+      "Persists an updated BrokerageLink watchlist to the local file — full replacement of the " +
+      "ticker list, not a merge. Use this after an on-demand 'run portfolio review' session once " +
+      "the user has approved specific changes (new/removed tickers, updated targets, revised thesis " +
+      "notes). Never call this to record a routine price check — only for actual reviewed changes " +
+      "to the list itself. If tickers were added or removed (not just targets changed), also tell " +
+      "the user to update the WATCHLIST_TICKERS GitHub repo variable to match, since ingestion runs " +
+      "in CI and can't read this local file directly.",
+    inputSchema: {
+      tickers: z.array(
+        z.object({
+          symbol: z.string(),
+          name: z.string(),
+          theme: z.string(),
+          wave1_target: z.number().positive(),
+          wave2_target: z.number().positive(),
+          wave3_target: z.number().positive(),
+          wave3_only: z.boolean().optional(),
+          max_position_usd: z.number().positive(),
+          thesis_note: z.string().optional(),
+        }),
+      ),
+      change_summary: z.string(),
+    },
+  },
+  async (input) => {
+    const written = writeWatchlist(input.tickers, `Claude (portfolio review): ${input.change_summary}`);
+    return json({ written });
+  },
 );
 
 server.registerTool(
