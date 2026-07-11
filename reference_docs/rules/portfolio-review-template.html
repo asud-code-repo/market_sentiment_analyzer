@@ -77,7 +77,10 @@
   .cc-verdict-stat .n { font-size: 20px; font-weight: 600; }
   .cc-verdict-stat .l { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
-  /* Allocation bar — target-vs-actual, informational not alarm-toned */
+  /* Allocation bar — target-vs-actual, informational not alarm-toned.
+     Deliberately has no delta/trend treatment: target-vs-actual % doesn't
+     move day-to-day the way a price or indicator does — it changes when
+     the account is manually rebalanced, not continuously. */
   .cc-alloc-note { font-size: 12px; color: var(--text-muted); margin: -6px 0 12px; }
   .cc-alloc-row { display: grid; grid-template-columns: 150px 1fr 90px; gap: 12px; align-items: center; padding: 7px 0; }
   .cc-alloc-row .name { font-size: 12px; color: var(--text-secondary); }
@@ -112,16 +115,42 @@
   .cc-prox-zone.wait { background: var(--meter-track); }
   .cc-prox-marker { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: 2px; background: var(--text-primary); }
   .cc-prox-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+  /* Delta standard: 3-day + 7-day, always both, always labeled — applies
+     to the watchlist (real price trend) but not the allocation bars above. */
+  .cc-delta-pair { display: flex; gap: 12px; font-size: 10px; color: var(--text-secondary); margin-top: 6px; }
+  .cc-delta-pair b { color: var(--text-primary); font-weight: 600; }
   .cc-thesis-note { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
   .cc-thesis-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; margin-bottom: 4px; }
   .cc-thesis-chip.up { color: var(--good); }
   .cc-thesis-chip.flat { color: var(--text-muted); }
   .cc-thesis-chip.watch { color: var(--warning); }
 
-  /* Macro cross-reference source card */
+  /* Macro cross-reference source card — "as of" date reflects real
+     publication lag of whichever report/dashboard is being cited. */
   .cc-source-card { border: 1px solid var(--border); border-radius: 10px; padding: 13px; }
   .cc-source-card .org { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
   .cc-source-card .point { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+  .cc-source-card .asof { font-size: 9px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+
+  /* Radar chart — current vs prior check across 6 dimensions. Two series:
+     current (solid, neutral-blue) and prior (dashed, muted) — fixed
+     categorical assignment, not cycled, with a legend since there are 2
+     series. Values are 0-100 risk/elevation scores per axis, plotted by
+     Claude each run from its own synthesis — this is judgment output, not
+     a rule-engine binding, same as the crash-type diagnosis in
+     dashboard-template.html. */
+  .cc-radar-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .cc-radar-svg { width: 300px; height: 300px; flex-shrink: 0; }
+  .cc-radar-grid { fill: none; stroke: var(--grid); stroke-width: 1; }
+  .cc-radar-axis { stroke: var(--grid); stroke-width: 1; }
+  .cc-radar-label { font-size: 10px; fill: var(--text-secondary); }
+  .cc-radar-current { fill: var(--neutral-blue); fill-opacity: 0.18; stroke: var(--neutral-blue); stroke-width: 2; }
+  .cc-radar-prior { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .cc-radar-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+  .cc-radar-legend .item { display: flex; align-items: center; gap: 8px; }
+  .cc-radar-legend .sw { width: 16px; height: 2px; flex-shrink: 0; }
+  .cc-radar-legend .sw.current { background: var(--neutral-blue); height: 3px; }
+  .cc-radar-legend .sw.prior { border-top: 2px dashed var(--text-muted); }
 
   .cc-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 </style>
@@ -186,9 +215,10 @@
     </div>
   </div>
 
-  <!-- BROKERAGELINK WATCHLIST — each card: price, a proximity meter
-       (BUY/WATCH/WAIT zones with a marker for current price vs the Wave 1
-       target), and a thesis-direction chip from this run's re-underwrite. -->
+  <!-- BROKERAGELINK WATCHLIST — each card: price + 3-day/7-day Δ, a
+       proximity meter (BUY/WATCH/WAIT zones with a marker for current
+       price vs the Wave 1 target, real distance not evenly spaced), and a
+       thesis-direction chip from this run's re-underwrite. -->
   <div class="cc-card">
     <p class="cc-eyebrow">BrokerageLink Watchlist</p>
     <div class="cc-grid-3">
@@ -204,6 +234,7 @@
           <div class="cc-prox-marker" style="left:52%;"></div>
         </div>
         <div class="cc-prox-labels"><span>W1 $115</span><span>now $134.10</span></div>
+        <div class="cc-delta-pair"><span><b>3d Δ:</b> +$1.20</span><span><b>7d Δ:</b> −$3.40</span></div>
         <div class="cc-thesis-note"><span class="cc-thesis-chip up">&#9650; Strengthening</span><br>Hormuz risk live, Buy consensus $134&ndash;175. No change.</div>
       </div>
 
@@ -218,6 +249,7 @@
           <div class="cc-prox-marker" style="left:96%;"></div>
         </div>
         <div class="cc-prox-labels"><span>W1 $44</span><span>now $95.99</span></div>
+        <div class="cc-delta-pair"><span><b>3d Δ:</b> −$0.85</span><span><b>7d Δ:</b> +$2.30</span></div>
         <div class="cc-thesis-note"><span class="cc-thesis-chip watch">&#9670; Needs review</span><br>Secular re-rate &mdash; $44 target may no longer be realistic outside an actual crash.</div>
       </div>
 
@@ -232,6 +264,7 @@
           <div class="cc-prox-marker" style="left:58%;"></div>
         </div>
         <div class="cc-prox-labels"><span>W3 $175</span><span>now $210.96</span></div>
+        <div class="cc-delta-pair"><span><b>3d Δ:</b> +$0.40</span><span><b>7d Δ:</b> −$5.10</span></div>
         <div class="cc-thesis-note"><span class="cc-thesis-chip flat">&#9679; Steady</span><br>Correctly gated to Wave 3, smallest size. No wave active &mdash; not actionable regardless.</div>
       </div>
 
@@ -242,21 +275,64 @@
   <!-- MACRO / GEOPOLITICAL CROSS-REFERENCE — short attributed reads from
        the sources checked this run (BlackRock's dashboard, WEF's report,
        a bank/asset-manager outlook), each tagged with which watchlist
-       position it supports or cautions. -->
+       position it supports or cautions, and dated to the source's real
+       publication (not today's render time). -->
   <div class="cc-card">
     <p class="cc-eyebrow">Macro / Geopolitical Cross-Reference</p>
     <div class="cc-grid-3">
       <div class="cc-source-card">
         <div class="org">BlackRock <span class="cc-pill good" style="font-size:9px;">Supports EOG/LNG</span></div>
         <div class="point">Geopolitical Risk Dashboard centers on the Iran/Hormuz conflict &mdash; framed as the most significant energy crisis since the 1970s.</div>
+        <div class="asof">Dashboard last updated May 2026</div>
       </div>
       <div class="cc-source-card">
         <div class="org">WEF <span class="cc-pill warning" style="font-size:9px;">Watch NVDA</span></div>
         <div class="point">Global Risks Report 2026: geoeconomic confrontation ranks #1; asset-bubble-burst risk rose 7 places &mdash; relevant to the AI-trough position.</div>
+        <div class="asof">Report published January 2026</div>
       </div>
       <div class="cc-source-card">
         <div class="org">JPMorgan <span class="cc-pill warning" style="font-size:9px;">Tension w/ EOG</span></div>
         <div class="point">Mid-year outlook: AI capex offsetting Iran War drag; commodities desk still projects a Brent oversupply, ~$58/bbl.</div>
+        <div class="asof">Outlook published June 2026 (mid-year)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RISK RADAR — current vs prior check across 6 dimensions. Judgment
+       output (Claude's own synthesis each run), not a rule-engine binding.
+       0-100 scale per axis; higher = more elevated/risky. Update the two
+       polygons' point coordinates below to reflect this run's actual
+       assessment vs the prior review's stored values. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Risk Radar — current vs. prior review</p>
+    <div class="cc-radar-wrap">
+      <svg class="cc-radar-svg" viewBox="0 0 300 300">
+        <!-- grid rings at 33/66/100% -->
+        <polygon class="cc-radar-grid" points="150,110 184.6,130 184.6,170 150,190 115.4,170 115.4,130" />
+        <polygon class="cc-radar-grid" points="150,70 219.3,110 219.3,190 150,230 80.7,190 80.7,110" />
+        <polygon class="cc-radar-grid" points="150,30 253.9,90 253.9,210 150,270 46.1,210 46.1,90" />
+        <!-- axis lines -->
+        <line class="cc-radar-axis" x1="150" y1="150" x2="150" y2="30" />
+        <line class="cc-radar-axis" x1="150" y1="150" x2="253.9" y2="90" />
+        <line class="cc-radar-axis" x1="150" y1="150" x2="253.9" y2="210" />
+        <line class="cc-radar-axis" x1="150" y1="150" x2="150" y2="270" />
+        <line class="cc-radar-axis" x1="150" y1="150" x2="46.1" y2="210" />
+        <line class="cc-radar-axis" x1="150" y1="150" x2="46.1" y2="90" />
+        <!-- prior check (dashed, muted) -->
+        <polygon class="cc-radar-prior" points="150,80.4 217.5,111 202,180 150,224.4 127.1,163.2 108.4,126" />
+        <!-- current check (solid, neutral-blue) -->
+        <polygon class="cc-radar-current" points="150,63.6 220.7,109.2 207.2,183 150,222 124,165 103.2,123" />
+        <!-- axis labels -->
+        <text class="cc-radar-label" x="150" y="20" text-anchor="middle">Geopolitical</text>
+        <text class="cc-radar-label" x="262" y="80" text-anchor="start">Policy / Fed</text>
+        <text class="cc-radar-label" x="262" y="224" text-anchor="start">Inflation</text>
+        <text class="cc-radar-label" x="150" y="288" text-anchor="middle">Valuation</text>
+        <text class="cc-radar-label" x="38" y="224" text-anchor="end">Labor Market</text>
+        <text class="cc-radar-label" x="38" y="80" text-anchor="end">Earnings</text>
+      </svg>
+      <div class="cc-radar-legend">
+        <div class="item"><span class="sw current"></span>Current (Jul 10): Geopolitical 72, Policy/Fed 68, Inflation 55, Valuation 60, Labor 25, Earnings 45</div>
+        <div class="item"><span class="sw prior"></span>Prior (Jul 3): Geopolitical 58, Policy/Fed 65, Inflation 50, Valuation 62, Labor 22, Earnings 40</div>
       </div>
     </div>
   </div>

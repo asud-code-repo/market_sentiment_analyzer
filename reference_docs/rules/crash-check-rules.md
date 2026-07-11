@@ -510,9 +510,11 @@ report"). Make the distinction a rule, not an implicit side effect:
   run itself "Indicator Update" as already shown.
 - **Full chat-triggered report** (on demand, or automatically when a
   confirmed threshold newly fires): adds narrative synthesis, Stage 1 crash-
-  type diagnosis (if drawdown ≥15%), the radar chart, and brokerage-window
-  watchlist. Label it distinctly (e.g. "Full Report") so the history view
-  never makes the user guess which kind of entry they're looking at.
+  type diagnosis (if drawdown ≥15%), and brokerage-window watchlist. Label
+  it distinctly (e.g. "Full Report") so the history view never makes the
+  user guess which kind of entry they're looking at. (The radar chart is
+  specific to the Portfolio Opportunity Review — see below — not part of
+  this report.)
 
 **Scan order, top to bottom (fixed):**
 1. RED ALERT banner, if any indicator/wave condition is confirmed or pending confirmation

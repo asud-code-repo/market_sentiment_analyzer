@@ -62,6 +62,11 @@
   .cc-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
   .cc-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+  .cc-num { font-variant-numeric: tabular-nums; }
+
+  /* Report header: run-type label */
+  .cc-report-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .cc-report-header .title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 
   /* Alert banners */
   .cc-banner { border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border); }
@@ -76,15 +81,26 @@
   .cc-delta.up-bad { color: var(--critical); }
   .cc-delta.up-good { color: var(--good); }
   .cc-delta.flat { color: var(--text-muted); }
-  .cc-pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .cc-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
   .cc-pill.good { background: var(--good-bg); color: var(--good); }
   .cc-pill.warning { background: var(--warning-bg); color: var(--warning); }
   .cc-pill.critical { background: var(--critical-bg); color: var(--critical); }
   .cc-pill.muted { background: var(--grid); color: var(--text-muted); }
+  .cc-pill.info { background: var(--neutral-blue-bg); color: var(--neutral-blue); }
+
+  /* Judgment-call tag — distinct from good/warning/critical, which stay
+     reserved for deterministic rule-engine bands. Marks anything on the
+     dashboard that's an LLM/manual judgment call rather than a mechanically
+     confirmed value (Warsh classification, crash-type diagnosis). */
+  .cc-judgment-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--grid); color: var(--text-muted); }
 
   .cc-meter-track { position: relative; height: 10px; border-radius: 999px; background: var(--meter-track); margin: 14px 0 8px; overflow: hidden; }
   .cc-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
   .cc-meter-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+
+  /* Delta standard: 3-day + 7-day, always both, always labeled */
+  .cc-delta-pair { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+  .cc-delta-pair b { color: var(--text-primary); font-weight: 600; }
 
   .cc-delta-log { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .cc-delta-log li { font-size: 13px; color: var(--text-secondary); display: flex; gap: 8px; }
@@ -93,7 +109,7 @@
   .cc-delta-log .sign.neg { color: var(--good); }
 
   /* Indicator panel grid */
-  .cc-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cc-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
   .cc-panel-header h3 { font-size: 14px; font-weight: 600; margin: 0; }
   .cc-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .cc-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -112,6 +128,8 @@
   .cc-indicator.warning .status { color: var(--warning); }
   .cc-indicator.critical .status { color: var(--critical); }
   .cc-indicator .favourable { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .cc-indicator .cc-confirm-badge { font-size: 10px; color: var(--text-muted); margin-top: 6px; font-weight: 600; }
+  .cc-indicator .cc-asof { font-size: 9px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
 
   /* Stat tiles */
   .cc-stat .label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
@@ -146,7 +164,7 @@
   .cc-context-card.good { background: var(--good-bg); }
   .cc-context-card h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); }
 
-  /* Trigger list */
+  /* Trigger list / crash-type checklist (shared component) */
   .cc-trigger-list { display: flex; flex-direction: column; gap: 10px; }
   .cc-trigger { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
   .cc-trigger .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
@@ -164,147 +182,247 @@
 <div class="cc-root">
 <div class="cc-wrap">
 
-  <!-- ALERT BANNERS: show/hide based on live warsh_hard_rules_active / any same-day market note -->
+  <!-- REPORT HEADER: run-type label, always visible. "Indicator Update" =
+       automated refresh (no narrative/crash-type/watchlist below). "Full
+       Report" = chat-triggered (adds narrative, crash-type diagnosis if
+       drawdown>=15%, and the brokerage watchlist). -->
+  <div class="cc-report-header">
+    <span class="title">Macro Crash Check — July 10, 2026</span>
+    <span class="cc-pill info">Full Report</span>
+  </div>
+
+  <!-- RED ALERT BANNER (Crash Mode Protocol) — only rendered when S&P
+       drawdown from ATH is >=10%, confirmed per Signal Tiering (2+ distinct
+       ingestion dates). Omit this banner entirely below that threshold.
+       Renders ABOVE the regime banner below: this is time-sensitive and
+       action-oriented (a wave may be authorizing), while regime status is
+       a standing policy state that changes far less often. -->
+  <div class="cc-banner critical">
+    <b>⚠ RED ALERT — 12.4% drawdown from ATH (confirmed)</b> — S&amp;P 500 at 6,847.20 vs. ATH 7,821.55 (6/2/2026). Wave 1 triggered — 3 of 6 indicators RED confirmed, 1 pending confirmation. See deployment plan and watchlist below.
+  </div>
+
+  <!-- REGIME BANNER: Warsh HAWKISH/MODERATE/DOVISH status. Show/hide based
+       on live warsh_hard_rules_active. -->
   <div class="cc-banner critical">
     <b>⚠ HAWKISH REGIME ACTIVE</b> — All 401k rotation suspended. Hold fully defensive until July 30 FOMC or June CPI below 3.5%.
   </div>
 
   <!-- CRASH PROBABILITY HERO -->
   <div class="cc-card">
-    <p class="cc-eyebrow">Crash Probability — July 9, 2026</p>
+    <p class="cc-eyebrow">Crash Probability — July 10, 2026</p>
     <div class="cc-hero-row">
-      <span class="cc-hero-value">10%</span>
-      <span class="cc-delta flat">— first automated run, no prior chat check to diff against</span>
-      <span class="cc-pill good">LOW</span>
+      <span class="cc-hero-value cc-num">18%</span>
+      <span class="cc-pill warning">LOW-MODERATE</span>
+      <span class="cc-pill info">Confidence: Medium persistence</span>
     </div>
     <div class="cc-meter-track">
-      <div class="cc-meter-fill" style="width: 10%; background: var(--good);"></div>
+      <div class="cc-meter-fill" style="width: 18%; background: var(--warning);"></div>
     </div>
-    <div class="cc-meter-labels"><span>0%</span><span>Range: 5–20%</span><span>100%</span></div>
+    <div class="cc-meter-labels"><span>0%</span><span>Range: 10–27%</span><span>100%</span></div>
+    <div class="cc-delta-pair">
+      <span><b>3-day Δ:</b> +1pt</span>
+      <span><b>7-day Δ:</b> +3pts</span>
+    </div>
     <ul class="cc-delta-log">
-      <li><span class="sign neg">0/6</span> RED indicators — no wave-deployment pressure this run</li>
-      <li><span class="sign neg">—</span> Shiller CAPE elevated but not an active trigger; treated as vulnerability, not signal</li>
+      <li><span class="sign pos">+</span> Hormuz conflict re-escalated to active fighting — the clearest upside risk this run</li>
+      <li><span class="sign pos">+</span> June FOMC minutes confirmed the hawkish dot shift was substantive, not just noise</li>
+      <li><span class="sign neg">−</span> 0 of 6 confirmed RED — mechanical panel stayed calm; market has absorbed the shock so far</li>
     </ul>
   </div>
 
-  <!-- 6-INDICATOR PANEL -->
+  <!-- 6-INDICATOR PANEL — each card binds directly to the rule engine's
+       stored color/value/confirmation_state; nothing here is computed or
+       restated by the template. Header pill separates confirmed vs pending
+       RED, since only confirmed REDs count toward wave authorization. -->
   <div class="cc-card">
     <div class="cc-panel-header">
       <h3>6-Indicator Crash Panel</h3>
-      <span class="cc-pill good">0 of 6 RED — wave not authorized</span>
+      <span class="cc-pill good">0 of 6 RED confirmed — wave not authorized</span>
     </div>
     <div class="cc-grid-3">
       <div class="cc-indicator good">
         <div class="label">1. VIX</div>
-        <div class="value">16.13</div>
+        <div class="value cc-num">15.84</div>
         <div class="status">GREEN</div>
-        <div class="favourable">Favourable: &lt;20 / Now: 16.13</div>
+        <div class="favourable">Favourable: &lt;20 / Now: 15.84</div>
+        <div class="cc-confirm-badge">Confirmed — GREEN for 21 distinct dates (since Jun 11)</div>
+        <div class="cc-delta-pair"><span><b>3d:</b> −0.3</span><span><b>7d:</b> −1.1</span></div>
       </div>
       <div class="cc-indicator good">
         <div class="label">2. HY credit spreads</div>
-        <div class="value">267 bps</div>
+        <div class="value cc-num">270 bps</div>
         <div class="status">GREEN</div>
-        <div class="favourable">Favourable: &lt;350 / Now: 267</div>
+        <div class="favourable">Favourable: &lt;350 / Now: 270</div>
+        <div class="cc-confirm-badge">Confirmed — GREEN for 308 distinct dates (since 2025-05-12)</div>
+        <div class="cc-delta-pair"><span><b>3d:</b> +2 bps</span><span><b>7d:</b> −4 bps</span></div>
       </div>
       <div class="cc-indicator good">
         <div class="label">3. S&amp;P drawdown from ATH</div>
-        <div class="value">1.67%</div>
+        <div class="value cc-num">0.45%</div>
         <div class="status">GREEN</div>
-        <div class="favourable">ATH 7,609.78 (6/2) / Now 7,482.71</div>
+        <div class="favourable">ATH 7,609.78 (6/2) / Now 7,575.39</div>
+        <div class="cc-confirm-badge">Confirmed — GREEN for 301 distinct dates (since 2025-04-29)</div>
+        <div class="cc-delta-pair"><span><b>3d:</b> +0.1pt</span><span><b>7d:</b> +0.3pt</span></div>
       </div>
       <div class="cc-indicator warning">
         <div class="label">4. 10yr yield</div>
-        <div class="value">4.55%</div>
+        <div class="value cc-num">4.54%</div>
         <div class="status">AMBER</div>
-        <div class="favourable">Favourable: &lt;4.3 / Now: 4.55</div>
+        <div class="favourable">Favourable: &lt;4.3 / Now: 4.54</div>
+        <div class="cc-confirm-badge">Confirmed — AMBER for 55 distinct dates (since Apr 21)</div>
+        <div class="cc-delta-pair"><span><b>3d:</b> +0.02pt</span><span><b>7d:</b> +0.06pt</span></div>
       </div>
       <div class="cc-indicator good">
         <div class="label">5. Sahm Rule</div>
-        <div class="value">0.07</div>
+        <div class="value cc-num">0.07</div>
         <div class="status">GREEN</div>
         <div class="favourable">Trigger: &gt;0.5 / Now: 0.07</div>
+        <div class="cc-confirm-badge">Confirmed — GREEN for 5 distinct readings (since Feb 1)</div>
+        <div class="cc-delta-pair"><span><b>3d:</b> n/a (monthly)</span><span><b>7d:</b> n/a (monthly)</span></div>
       </div>
       <div class="cc-indicator good">
         <div class="label">6. Fed pivot signal</div>
         <div class="value">None</div>
         <div class="status">GREEN</div>
         <div class="favourable">No pause/cut language detected</div>
+        <div class="cc-confirm-badge">Manually judged — not date-gated</div>
       </div>
     </div>
   </div>
 
+  <!-- CRASH-TYPE DIAGNOSIS — only rendered when S&P drawdown from ATH is
+       >=15%. This is Claude's own live judgment call (Stage 1,
+       crash-check-rules.md), not a rule-engine output: some confirming
+       criteria bind to real indicator data, others (hyperscaler capex
+       guidance, Fed emergency-lending activation, bank-stress proxies) have
+       no numeric source and can only be assessed via research each run.
+       Judgment-tagged, same treatment as the Warsh classification tile
+       below — nothing here should be mistaken for something the rule
+       engine mechanically confirmed. Omit this entire section below the
+       15% drawdown threshold. -->
+  <div class="cc-card">
+    <div class="cc-panel-header">
+      <h3>Crash-Type Diagnosis</h3>
+      <span class="cc-judgment-tag">Judgment call — not rule-engine-verified</span>
+    </div>
+    <p style="font-size:15px; font-weight:600; margin:0 0 4px;">Type A — Stagflation</p>
+    <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px;">Confirm with all three criteria (crash-check-rules.md, Stage 1):</p>
+    <div class="cc-trigger-list">
+      <div class="cc-trigger">
+        <span class="cc-pill critical">MET</span>
+        <div><div class="title">CPI above 3.5% YoY, not falling</div><div class="desc">June CPI 4.1% YoY — bound directly to FRED CPIAUCSL.</div></div>
+      </div>
+      <div class="cc-trigger">
+        <span class="cc-pill critical">MET</span>
+        <div><div class="title">10yr yield above 4.0%, not declining</div><div class="desc">10yr at 4.54% and rising — bound directly to FRED DGS10.</div></div>
+      </div>
+      <div class="cc-trigger">
+        <span class="cc-pill warning">ASSESSED VIA RESEARCH</span>
+        <div><div class="title">Brent crude above $80</div><div class="desc">Brent ~$84/bbl per this week's news read — no FRED series ingested for Brent specifically (WTI is ingested instead); assessed via web research this run, not bound to stored data.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAVE STATUS + BROKERAGELINK WATCHLIST — full chat-triggered reports
+       only. 3-day/7-day Δ columns per the delta standard; status pill
+       reflects the ticker's real distance to its Wave 1 target. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">BrokerageLink Watchlist</p>
+    <table class="cc-table">
+      <thead><tr><th>Ticker</th><th>Current</th><th>Wave 1</th><th>% Above</th><th>3d Δ</th><th>7d Δ</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>EOG</td><td class="cc-num">$134.10</td><td class="cc-num">$115</td><td class="cc-num">+16.6%</td><td class="cc-num">+$1.20</td><td class="cc-num">−$3.40</td><td><span class="cc-pill good">WATCH</span></td></tr>
+        <tr><td>LNG</td><td class="cc-num">$258.64</td><td class="cc-num">$175</td><td class="cc-num">+47.8%</td><td class="cc-num">+$4.10</td><td class="cc-num">+$9.80</td><td><span class="cc-pill muted">WAIT</span></td></tr>
+        <tr><td>CCJ</td><td class="cc-num">$95.99</td><td class="cc-num">$44</td><td class="cc-num">+118.2%</td><td class="cc-num">−$0.85</td><td class="cc-num">+$2.30</td><td><span class="cc-pill muted">WAIT</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- CONTEXTUAL INDICATORS — informational only, never part of the 6-gate.
        Deliberately neutral (uncolored) styling to visually distinguish from
-       the RED/AMBER/GREEN-gated panel above. -->
+       the RED/AMBER/GREEN-gated panel above. Each card carries an "as of"
+       date reflecting the source's real publication lag — FRED series are
+       not same-day. -->
   <div class="cc-card">
     <p class="cc-eyebrow">Contextual Indicators — informational, not wave-gating</p>
     <div class="cc-grid-4">
       <div class="cc-indicator neutral">
         <div class="label">Financial Stress Index</div>
-        <div class="value">−0.62</div>
+        <div class="value cc-num">−0.72</div>
         <div class="signal">Below-average stress</div>
+        <div class="cc-asof">As of Jul 3 (weekly series)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">Nat'l Financial Conditions</div>
-        <div class="value">−0.41</div>
+        <div class="value cc-num">−0.52</div>
         <div class="signal">Looser than average</div>
+        <div class="cc-asof">As of Jul 3 (weekly series)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">2s10s Spread</div>
-        <div class="value">+0.38%</div>
+        <div class="value cc-num">+0.36%</div>
         <div class="signal">Normal (positive slope)</div>
+        <div class="cc-asof">As of Jul 9 (daily series)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">10yr Breakeven Inflation</div>
-        <div class="value">2.4%</div>
+        <div class="value cc-num">2.25%</div>
         <div class="signal">Near Fed's ~2% target</div>
+        <div class="cc-asof">As of Jul 9 (daily series)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">Bank Lending Standards</div>
-        <div class="value">+12%</div>
+        <div class="value cc-num">+8.1%</div>
         <div class="signal">Net tightening</div>
+        <div class="cc-asof">As of Q2 2026 (quarterly SLOOS)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">Reverse Repo</div>
-        <div class="value">$142B</div>
+        <div class="value cc-num">$3.3B</div>
         <div class="signal">Context-dependent, not directional</div>
+        <div class="cc-asof">As of Jul 9 (daily series)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">Initial Jobless Claims</div>
-        <div class="value">223K</div>
+        <div class="value cc-num">215K</div>
         <div class="signal">Stable, no weakening trend</div>
+        <div class="cc-asof">As of Jul 4 (weekly, ~1wk lag)</div>
       </div>
       <div class="cc-indicator neutral">
         <div class="label">Credit Card Delinquency</div>
-        <div class="value">3.2%</div>
-        <div class="signal">Slightly elevated vs pre-2020</div>
+        <div class="value cc-num">2.92%</div>
+        <div class="signal">Modest, not accelerating</div>
+        <div class="cc-asof">As of Q1 2026 (quarterly, ~2qtr lag)</div>
       </div>
     </div>
   </div>
 
-  <!-- KEY MACRO INDICATORS (stat tile grid) -->
+  <!-- KEY MACRO INDICATORS (stat tile grid). Warsh classification carries
+       the judgment-call tag — it's a manual/LLM read on Fed communication,
+       not a rule-engine output, same as the crash-type diagnosis above. -->
   <div class="cc-card">
     <p class="cc-eyebrow">Key Macro Indicators</p>
     <div class="cc-grid-4">
       <div class="cc-indicator good cc-stat">
         <div class="label">S&amp;P 500</div>
-        <div class="value">7,482.71</div>
-        <div class="context">−1.67% from ATH</div>
+        <div class="value cc-num">7,575.39</div>
+        <div class="context">−0.45% from ATH</div>
       </div>
       <div class="cc-indicator warning cc-stat">
         <div class="label">10yr Treasury</div>
-        <div class="value">4.55%</div>
+        <div class="value cc-num">4.54%</div>
         <div class="context">AMBER — near 4.3% threshold</div>
       </div>
       <div class="cc-indicator good cc-stat">
         <div class="label">VIX</div>
-        <div class="value">16.13</div>
+        <div class="value cc-num">15.84</div>
         <div class="context">Below 20 — calm</div>
       </div>
       <div class="cc-indicator critical cc-stat">
         <div class="label">Warsh classification</div>
         <div class="value">HAWKISH</div>
         <div class="context">Hard rules active</div>
+        <span class="cc-judgment-tag" style="margin-top:6px;">Judgment call</span>
       </div>
     </div>
   </div>
@@ -313,28 +431,16 @@
   <div class="cc-card">
     <p class="cc-eyebrow">Scenario Distribution</p>
     <div class="cc-stackbar">
-      <div class="seg bull" style="width: 25%;"></div>
-      <div class="seg base" style="width: 45%;"></div>
-      <div class="seg bear" style="width: 22%;"></div>
-      <div class="seg crash" style="width: 8%;"></div>
+      <div class="seg bull" style="width: 18%;"></div>
+      <div class="seg base" style="width: 43%;"></div>
+      <div class="seg bear" style="width: 26%;"></div>
+      <div class="seg crash" style="width: 13%;"></div>
     </div>
     <div class="cc-legend">
-      <div class="item"><span class="dot bull"></span>Bull 25% — Warsh softens Jul 30, CPI confirms disinflation</div>
-      <div class="item"><span class="dot base"></span>Base 45% — HAWKISH holds, gradual data-driven path</div>
-      <div class="item"><span class="dot bear"></span>Bear 22% — CPI surprises hot, hike odds rise</div>
-      <div class="item"><span class="dot crash"></span>Crash 8% — credit/liquidity shock or AI-capex unwind</div>
-    </div>
-  </div>
-
-  <!-- NARRATIVE CONTEXT (two-column, swap in whatever the live geopolitical/earnings read is) -->
-  <div class="cc-grid-2">
-    <div class="cc-context-card critical">
-      <h4>What to watch</h4>
-      Sticky 10yr yield (4.55%, AMBER) is the nearest indicator to flipping — a 7bps move would tighten it toward GREEN. HAWKISH regime keeps all rotation suspended regardless.
-    </div>
-    <div class="cc-context-card good">
-      <h4>What's stable</h4>
-      0 of 6 RED, VIX calm, credit spreads tight, drawdown under 2%. No wave-deployment pressure this run.
+      <div class="item"><span class="dot bull"></span>Bull 18% — Hormuz de-escalates, June CPI confirms disinflation, Warsh softens</div>
+      <div class="item"><span class="dot base"></span>Base 43% — HAWKISH holds, Hormuz friction persists but contained</div>
+      <div class="item"><span class="dot bear"></span>Bear 26% — CPI surprises hot and/or Hormuz strikes intensify</div>
+      <div class="item"><span class="dot crash"></span>Crash 13% — Hormuz shipping shock spikes oil/inflation while AI-capex unwind hits simultaneously</div>
     </div>
   </div>
 
@@ -352,7 +458,7 @@
       <div class="cc-trigger">
         <span class="cc-pill warning">APPROACHING</span>
         <div>
-          <div class="title">June CPI release — mid-July</div>
+          <div class="title">June CPI release — July 14</div>
           <div class="desc">Primary reclassification gate. Below 3.5% lifts HAWKISH rules; above 4.0% confirms Q3 stress.</div>
         </div>
       </div>
@@ -366,17 +472,17 @@
     </div>
   </div>
 
-  <!-- BROKERAGELINK WATCHLIST -->
-  <div class="cc-card">
-    <p class="cc-eyebrow">BrokerageLink Watchlist</p>
-    <table class="cc-table">
-      <thead><tr><th>Ticker</th><th>Current</th><th>Wave 1</th><th>% Above</th><th>Status</th></tr></thead>
-      <tbody>
-        <tr><td>EOG</td><td>$122</td><td>$115</td><td>+6%</td><td><span class="cc-pill warning">WATCH</span></td></tr>
-        <tr><td>LNG</td><td>$260</td><td>$175</td><td>+49%</td><td><span class="cc-pill muted">WAIT</span></td></tr>
-        <tr><td>CCJ</td><td>$99</td><td>$44</td><td>+125%</td><td><span class="cc-pill muted">WAIT</span></td></tr>
-      </tbody>
-    </table>
+  <!-- NARRATIVE CONTEXT (free-form prose, last per the scan-order rule —
+       swap in whatever the live geopolitical/earnings read is). -->
+  <div class="cc-grid-2">
+    <div class="cc-context-card critical">
+      <h4>What to watch</h4>
+      Sticky 10yr yield (4.54%, AMBER, confirmed 55 distinct dates) is the nearest indicator to flipping. HAWKISH regime keeps all rotation suspended regardless.
+    </div>
+    <div class="cc-context-card good">
+      <h4>What's stable</h4>
+      0 of 6 confirmed RED, VIX calm and confirmed 21 distinct dates, credit spreads tight and confirmed 308 distinct dates. No wave-deployment pressure this run.
+    </div>
   </div>
 
   <p class="cc-disclaimer">
