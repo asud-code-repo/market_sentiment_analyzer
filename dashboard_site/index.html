@@ -705,11 +705,62 @@ async function main() {
     const withMeta = (valueKey) => ALL_ROWS.map((r) => ({ date: dateOf(r), rawDate: r.run_at, value: r[valueKey], waveActive: r.wave_active && r.wave_active !== "NONE" }));
 
     renderLineChart("chart-crash-probability", { title: "Crash Probability", unit: "%", formatValue: (v) => v, allPoints: withMeta("crash_probability_pct") });
-    renderLineChart("chart-vix", { title: "VIX", unit: "", formatValue: (v) => v, allPoints: withMeta("vix_value") });
-    renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: withMeta("hy_spread_bps") });
-    renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: withMeta("sp_drawdown_pct") });
-    renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: withMeta("treasury_10y_pct") });
-    renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: withMeta("sahm_rule_value") });
+
+    // VIX/HY spread/10yr/Sahm/drawdown read from data_points instead of
+    // crash_checks — crash_checks only has rows from when the rule engine
+    // started running (~July 8), while data_points has 5yr of real FRED
+    // history (see ingestion/src/backfill.ts). Isolated try/catch: a
+    // failure here shouldn't take down the crash-probability chart above,
+    // which has no other source and stays on crash_checks.
+    try {
+      const waveActiveByDate = {};
+      for (const r of ALL_ROWS) {
+        if (r.wave_active && r.wave_active !== "NONE") waveActiveByDate[r.run_at.slice(0, 10)] = true;
+      }
+
+      const fetchSeriesHistory = (seriesId) =>
+        fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${seriesId}&order=observation_date.asc&limit=5000`);
+
+      const toChartPoints = (rows, transform) =>
+        rows.map((r) => ({
+          date: new Date(r.observation_date).toLocaleDateString(),
+          rawDate: r.observation_date,
+          value: transform ? transform(r.value) : r.value,
+          waveActive: !!waveActiveByDate[r.observation_date],
+        }));
+
+      const [vixHistory, hySpreadHistory, treasuryHistory, sahmHistory, sp500History] = await Promise.all([
+        fetchSeriesHistory("VIXCLS"),
+        fetchSeriesHistory("BAMLH0A0HYM2"),
+        fetchSeriesHistory("DGS10"),
+        fetchSeriesHistory("SAHMREALTIME"),
+        fetchSeriesHistory("SP500"),
+      ]);
+
+      renderLineChart("chart-vix", { title: "VIX", unit: "", formatValue: (v) => v, allPoints: toChartPoints(vixHistory) });
+      // BAMLH0A0HYM2 is FRED percent (e.g. 2.67) — x100 to bps, matching
+      // rule_engine/src/classify.ts's hySpreadBps = hySpread.value * 100.
+      renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: toChartPoints(hySpreadHistory, (v) => Math.round(v * 100)) });
+      renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: toChartPoints(treasuryHistory) });
+      renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: toChartPoints(sahmHistory) });
+
+      // Drawdown isn't a raw FRED series — compute a running max-to-date
+      // over the SP500 level history and derive drawdown per point, matching
+      // rule_engine/src/rules.ts's drawdownPct(level, ath) = (ath-level)/ath*100.
+      let runningMax = -Infinity;
+      const drawdownPoints = sp500History.map((r) => {
+        runningMax = Math.max(runningMax, r.value);
+        return {
+          date: new Date(r.observation_date).toLocaleDateString(),
+          rawDate: r.observation_date,
+          value: Math.round(((runningMax - r.value) / runningMax) * 10000) / 100,
+          waveActive: !!waveActiveByDate[r.observation_date],
+        };
+      });
+      renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: drawdownPoints });
+    } catch (err) {
+      document.getElementById("error-container").innerHTML += `<div class="error-banner">Failed to load historical trend charts: ${err.message}</div>`;
+    }
   } catch (err) {
     document.getElementById("error-container").innerHTML = `<div class="error-banner">Failed to load data: ${err.message}</div>`;
   }

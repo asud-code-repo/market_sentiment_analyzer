@@ -208,6 +208,27 @@ export async function fetchFredBackfill(): Promise<DataPoint[]> {
     }
     console.log(`  FRED backfill: ${series.id} — ${history.length} observations since ${startStr}`);
   }
+
+  // SP500 itself is a special case in the regular daily fetch (only the
+  // latest level + running ATH get written, see fetchSp500LevelAndAth) — so
+  // unlike every other FRED series, its daily history was never persisted.
+  // This backfills the full daily level series so the dashboard can compute
+  // a historical drawdown-from-ATH trend client-side (running max per date),
+  // matching drawdownPct()'s formula in rule_engine/src/rules.ts.
+  const sp500History = await fetchFredHistory("SP500", apiKey, startStr);
+  for (const obs of sp500History) {
+    points.push({
+      series_id: "SP500",
+      source: "FRED",
+      source_series_code: "SP500",
+      observation_date: obs.date,
+      value: Number(obs.value),
+      unit: "index",
+      raw_payload: obs,
+    });
+  }
+  console.log(`  FRED backfill: SP500 — ${sp500History.length} observations since ${startStr}`);
+
   return points;
 }
 
