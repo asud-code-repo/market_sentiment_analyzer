@@ -15,7 +15,7 @@ async function main() {
   const fredPoints = await fetchFredBackfill();
   console.log(`FRED backfill: ${fredPoints.length} total observations.`);
 
-  console.log("Backfilling watchlist ticker prices (5yr)...");
+  console.log("Backfilling watchlist ticker prices (free-tier ceiling: ~100 trading days)...");
   const tickerPoints = await fetchAlphaVantageBackfill();
   console.log(`Alpha Vantage backfill: ${tickerPoints.length} total observations.`);
 

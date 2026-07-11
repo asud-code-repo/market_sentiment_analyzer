@@ -82,9 +82,11 @@ export async function fetchAlphaVantage(): Promise<DataPoint[]> {
 }
 
 const TIME_SERIES_DAILY_URL = "https://www.alphavantage.co/query";
-// Matches fred.ts's BACKFILL_YEARS — TIME_SERIES_DAILY's outputsize=full
-// returns 20+ years, filtered down client-side since AV has no date-range
-// param on this endpoint.
+// outputsize=full (20+ years) is a premium-only feature on Alpha Vantage's
+// free tier — confirmed live (returns a "premium feature" Information
+// message, not data). outputsize=compact is the free-tier ceiling: the most
+// recent ~100 trading days (~5 months), well short of fred.ts's 5-year
+// BACKFILL_YEARS, but it's what's actually available without a paid plan.
 const BACKFILL_YEARS = 5;
 
 interface AlphaVantageDaily {
@@ -97,7 +99,7 @@ async function fetchDailyHistory(symbol: string, apiKey: string, cutoffDate: str
   const url = new URL(TIME_SERIES_DAILY_URL);
   url.searchParams.set("function", "TIME_SERIES_DAILY");
   url.searchParams.set("symbol", symbol);
-  url.searchParams.set("outputsize", "full");
+  url.searchParams.set("outputsize", "compact");
   url.searchParams.set("apikey", apiKey);
 
   const res = await fetch(url.toString());
