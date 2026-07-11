@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { getRecentCrashChecks, writeSnapshot, getLatestDataPoint } from "./lib/supabase.js";
-import { readPortfolio, readDryPowderUsd } from "./lib/portfolio.js";
+import { readPortfolio, readDryPowderUsd, applyLiveFxRate } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 
@@ -84,9 +84,22 @@ server.registerTool(
   {
     description:
       "Returns personal account balances/allocations from the local portfolio file. This data " +
-      "never leaves this machine — it is not read from or written to Supabase.",
+      "never leaves this machine — it is not read from or written to Supabase. The RRSP's CAD->USD " +
+      "conversion is computed live from FRED's DEXCAUS series (fetched from Supabase, which holds " +
+      "only the macro exchange rate — never the resulting personal dollar figure) rather than " +
+      "trusting the file's hardcoded snapshot.",
   },
-  async () => json(readPortfolio()),
+  async () => {
+    const portfolio = readPortfolio();
+    const dexcaus = await getLatestDataPoint("DEXCAUS");
+    if (!dexcaus) {
+      // No live rate available yet (e.g. ingestion hasn't run since this
+      // series was added) — fall back to the file's hardcoded snapshot
+      // rather than failing the whole tool call.
+      return json(portfolio);
+    }
+    return json(applyLiveFxRate(portfolio, dexcaus.value, dexcaus.observation_date));
+  },
 );
 
 server.registerTool(

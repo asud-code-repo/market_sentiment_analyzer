@@ -32,6 +32,13 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "RSAFS", unit: "usd_millions" }, // Advance retail sales, all stores — closest free proxy
                                           // to "consumer/credit-card spending"; FRED has no public
                                           // real-time card-swipe series, this is reported monthly.
+
+  // CAD/USD FX rate for the RRSP's local_state/portfolio.yaml conversion —
+  // was a hand-updated snapshot before this; see get_portfolio_snapshot in
+  // mcp_server, which reads this series live instead of trusting the
+  // hardcoded value. Units: Canadian dollars per 1 US dollar (e.g. 1.42) —
+  // the CAD->USD rate used for value_usd is 1/DEXCAUS, computed at read time.
+  { id: "DEXCAUS", unit: "cad_per_usd" },
 ];
 
 interface FredObservation {
