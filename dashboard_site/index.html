@@ -223,6 +223,26 @@ async function fetchFromSupabase(path) {
   return res.json();
 }
 
+// PostgREST silently caps every response at a project-level max-rows setting
+// (confirmed live: 1000, regardless of a `limit=` query param requesting
+// more) — a 5yr daily FRED series (~1250+ rows) gets truncated mid-series,
+// which doesn't just drop old data, it can make the "last" element in an
+// ascending-sorted truncated response an arbitrary middle-of-history row
+// instead of the true latest. Paginate with offset until a short page comes
+// back, so this works regardless of the cap's actual value or future growth.
+async function fetchAllFromSupabase(path, pageSize = 1000) {
+  const separator = path.includes("?") ? "&" : "?";
+  let offset = 0;
+  let allRows = [];
+  while (true) {
+    const page = await fetchFromSupabase(`${path}${separator}limit=${pageSize}&offset=${offset}`);
+    allRows = allRows.concat(page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return allRows;
+}
+
 // Plain-language explanations for each of the 6 canonical indicators — fixed,
 // well-established public knowledge (not live data), matching the treatment
 // already given to the contextual indicators in crash-check-rules.md.
@@ -719,7 +739,7 @@ async function main() {
       }
 
       const fetchSeriesHistory = (seriesId) =>
-        fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${seriesId}&order=observation_date.asc&limit=5000`);
+        fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.${seriesId}&order=observation_date.asc`);
 
       const toChartPoints = (rows, transform) =>
         rows.map((r) => ({
