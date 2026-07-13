@@ -2,9 +2,20 @@ name: Daily ingestion + classification
 
 on:
   schedule:
-    # 11:00 UTC daily — after FRED/EIA/CBOE typically publish the prior
-    # business day's data, before US market open.
-    - cron: "0 11 * * *"
+    # Always 7am US Eastern, weekdays only. GitHub Actions cron is fixed
+    # UTC and doesn't auto-adjust for daylight saving, so this is split
+    # into two entries — one per UTC offset — rather than a single
+    # year-round expression. Only one of the two ever matches on a given
+    # day since the month ranges don't overlap.
+    #
+    # Approximated by calendar month, not the exact DST transition date
+    # (2nd Sunday of March / 1st Sunday of November) — accurate to within
+    # ~1-2 weeks around those two boundaries, off by exactly 1 hour during
+    # that window. A reasonable tradeoff vs. exact date-based logic for a
+    # job whose correctness never depends on the precise trigger time
+    # (it's reading yesterday's close either way, hours before market open).
+    - cron: "0 11 * 3-10 1-5"    # Mar-Oct (EDT, UTC-4) — 11:00 UTC = 7am EDT
+    - cron: "0 12 * 11,12,1,2 1-5" # Nov-Feb (EST, UTC-5) — 12:00 UTC = 7am EST
   workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab
 
 jobs:
