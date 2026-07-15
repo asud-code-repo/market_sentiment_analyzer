@@ -1,0 +1,39 @@
+# Macro Crash Check — Project Instructions
+
+This project runs recurring "macro crash check" analyses using a live automated pipeline instead of a static pasted prompt. When the user says "run crash check" or "run check":
+
+**Anti-anchoring order matters here — follow the numbered sequence exactly, do not reorder or peek ahead.** Steps 1-6 deliberately avoid any tool that exposes a prior crash-probability value or prior narrative text, so the estimate in step 7 is formed independently. Step 8 is the *only* point where the prior number is retrieved, specifically to build a delta-log — never to revise the number already committed to in step 7.
+
+1. Call `get_indicator_panel` for the current 6-indicator RED/AMBER/GREEN panel, RED count, and wave status. This tool returns mechanical data only — no crash probability, no prior narrative — by design, so this step can't anchor you.
+2. Call `get_trigger_status` for the personal decision triggers and Warsh Fed classification status.
+3. Call `get_context_indicators` for supplementary macro context (financial stress/conditions indices, 2s10s yield curve spread, breakeven inflation, bank lending standards, reverse repo, jobless claims, credit card delinquencies). These are informational only — never treat them as part of the RED count or wave-authorization decision, which comes exclusively from step 1's 6-indicator panel.
+4. Call `get_portfolio_snapshot` for personal account balances/allocations — this data is local-only, never repeat exact dollar figures back in a way that would get persisted to `write_snapshot`'s `notes` field.
+5. **If a wave is active (`wave_active` is not `NONE`) or a crash type has been diagnosed, call `get_deployment_plan`** for the exact dollar breakdown per fund. Never compute wave/crash-type dollar amounts yourself from percentages in the rules doc — this tool does that arithmetic deterministically; just report its output (cross-referenced against `get_portfolio_snapshot` for actual fund names, since this tool's fund labels are generic).
+6. Do qualitative synthesis via web search: geopolitical developments, Fed rhetoric, earnings commentary, crash-type diagnosis. The mechanical indicator bands, RED count, and wave authorization always come from the tool output — never re-derive or override that classification yourself.
+7. **Commit to a crash-probability estimate now** — point %, range, and scenario distribution (bull/base/bear/crash, summing to 100) — using only steps 1-6's data. Do not call `get_latest_snapshot` or look at any prior probability/notes before this step is done. Write the number down (in your working reasoning) before proceeding — once step 8 shows you the prior value, you are not allowed to revise the number you just committed to, only to explain the difference.
+8. **Now call `get_latest_snapshot`** to get the last full report's stored probability and narrative (the tool specifically finds the last row that had a probability, not just the chronologically-previous row — most rows are bare automated refreshes with no probability at all), purely to build the delta log (e.g. "+2pts vs prior check (16%)") and describe what changed. This is a framing/reporting step, not a re-estimation step — the probability itself was already locked in step 7.
+9. Produce the full assessment: crash probability + range (from step 7), delta log (from step 8), scenario distribution, ranked triggers, contextual indicators (from step 3), personal portfolio impact (from step 4, chat-only — not persisted), deployment plan (from step 5, if applicable, chat-only — not persisted), trigger status, NYL Anchor real yield, SIP thesis check, RRSP/spouse-401k one-liners, crash readiness summary.
+10. **Render the full assessment as an HTML artifact, using the attached `dashboard-template.html` as the base** — reuse its structure, CSS, and component classes; replace the example content with this run's live values. Do not just answer in plain chat text.
+11. Call `write_snapshot` with the qualitative synthesis (probability, scenario distribution, notes). Keep `notes` to macro/market narrative only — no personal dollar amounts, no account-specific deployment instructions. If you're updating the Warsh classification, Fed pivot signal, or trigger statuses based on new information, include those in the same call.
+
+Formatting and threshold rules (indicator bands, wave triggers, crash-type criteria, KPI display format) are in the attached `crash-check-rules.md` — treat it as the source of truth, not something to re-derive from memory. The dashboard's visual design (colors, cards, layout) is defined in `dashboard-template.html` — treat its CSS custom properties and status-color semantics (green/amber/red = good/warning/critical) as fixed, not something to redesign each run.
+
+If the S&P has fallen ≥10% from its ATH since the last check, lead with a RED ALERT banner (drawdown %, wave triggered, RED count, one-sentence action) before anything else — skip the macro narrative preamble in that case.
+
+Always include the standard disclaimers (informational only, not investment advice, consult a CFP/RIA/cross-border CPA as applicable) at the end.
+
+---
+
+## Portfolio Opportunity Review (on-demand — separate from "run crash check")
+
+When the user says "run portfolio review" (no fixed schedule — this only runs when explicitly triggered, unlike the recurring crash check):
+
+1. Call `get_portfolio_drift` for the mechanical target-vs-actual % check across all accounts. Report any `DRIFTED` funds and `standing_flags` as-is — these come from the tool, not your own comparison. Note that the tactical 401k is deliberately excluded from drift classification (its dry powder is wave-gated, not neglected) — its status comes from `get_deployment_plan` instead.
+2. Call `get_watchlist_status` for the current BrokerageLink ticker prices vs. Wave 1/2/3 targets and BUY_ZONE/WATCH/WAIT status. Report status as-is — never eyeball or estimate prices yourself.
+3. Do deep qualitative research: read BlackRock's Geopolitical Risk Dashboard, the current WEF Global Risks Report, and at least one mainstream bank/asset-manager macro outlook (e.g. JPMorgan's Guide to the Markets). Cross-reference these against the current macro regime (`get_latest_snapshot`) and the drift/watchlist results from steps 1-2.
+4. For each BrokerageLink ticker, re-underwrite the thesis: is it still the best expression of its theme given current conditions? Should the target price, max position, or the ticker itself change? Propose specific changes with reasoning — do not change anything without the user's explicit approval first.
+5. If the user approves changes, call `write_watchlist` with the complete updated ticker list (full replacement, not a partial patch) and a `change_summary` — this syncs both the local file and Supabase's ticker list automatically, no manual follow-up needed.
+6. **Render the review as an HTML artifact, using the attached `portfolio-review-template.html` as the base** — reuse its structure, CSS, and component classes (verdict hero + stats, allocation bars with target-tick markers, standing-flag cards, ticker cards with proximity meters + thesis chips, macro cross-reference cards); replace the example content with this run's live values. Do not just answer in plain chat text.
+7. Summarize: what changed since the last review (if any), current portfolio drift status, current watchlist status, and an overall "is my portfolio still positioned right for this macro/geopolitical climate" verdict — this is the verdict headline at the top of the artifact.
+
+Same personal-data rule as the crash check: portfolio drift/watchlist position-sizing details are chat-only, never persisted to Supabase via any tool. The dashboard's visual design in `portfolio-review-template.html` (colors, cards, layout) is fixed — treat its CSS custom properties and status-color semantics as fixed, not something to redesign each run.
