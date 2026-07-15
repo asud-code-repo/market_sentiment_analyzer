@@ -64,6 +64,18 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   look at whether the joint drawdown-AND-VIX construction is calibrated
   right — not acted on yet, just flagged so it isn't lost.
 
+- **Idea, discuss later: package this as a Kubernetes / plug-and-play open
+  source solution**, rather than this user's personal deployment (2x
+  Cloudflare Pages, Supabase, GitHub Actions cron, a local stdio MCP server
+  tied to this user's own `local_state/` files and Claude Desktop config).
+  Not analyzed yet — flagged only. Worth weighing when it comes up: the
+  split-storage security model assumes a single local user, not
+  multi-tenant; the rules doc's specific thresholds/percentages/watchlist
+  are this user's own calibration and would need to become configurable;
+  and whether Kubernetes is even the right packaging target given the
+  current stack is already serverless/edge-native with no long-running
+  compute.
+
 ## Process & content
 
 - **Reassess recent shipped work after a week of real usage.** A lot
