@@ -105,7 +105,11 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   freshness.ts`, commit 635b82d) compares the latest row's date against
   the expected ingestion date (accounting for weekends) and now makes step
   1 of the workflow stop and report staleness instead of proceeding —
-  covers both manual and the unattended 2pm run.
+  covers both manual and the unattended 2pm run. Also moved ingestion from
+  7am to **10am ET** (commit 7dcf430) for extra buffer (~4hrs before the
+  2pm run) — not strictly necessary given the freshness check, but cheap
+  insurance against a wasted/skipped run on an unusually-late ingestion day.
+  Final daily pipeline: **ingestion 10am ET → Claude analysis 2pm ET**.
 
   **Not yet confirmed:** whether 2pm actually avoids the original skip
   issue, whether the writes landing in `crash_checks`/`full_report_snapshots`
