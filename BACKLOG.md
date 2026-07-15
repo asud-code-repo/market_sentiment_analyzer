@@ -84,17 +84,21 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   re-examined price *targets* (flagging one as likely stale), not whether
   the underlying ticker choices themselves still hold up.
 
-- **Explore automating the full daily analysis.** Right now, the daily
-  automated job only runs deterministic classification — the full
-  qualitative synthesis (crash probability, narrative, crash-type
-  diagnosis) only happens when a chat session is manually triggered.
-  Automating that fully is a real option, but changes the trust model (no
-  human review before persisting) and has a genuine per-run API cost to
-  weigh against the current zero-marginal-cost manual trigger. A native
-  Claude Desktop scheduled-task attempt at this surfaced its own open
-  question — a run scheduled during "peak hours" showed as skipped, and it
-  wasn't confirmed whether that's a capacity/rate-limit behavior specific
-  to that feature.
+- **Automating the full daily analysis — in testing.** The daily GitHub
+  Action still only runs deterministic classification; the full qualitative
+  synthesis (crash probability, narrative, crash-type diagnosis) used to
+  only happen when a chat session was manually triggered. As of 2026-07-14,
+  the user has a **Claude Desktop native scheduled task** running "run
+  crash check" daily at **2pm** (chosen as non-peak, to dodge the earlier
+  unexplained peak-hours skip) — no GitHub Action, no direct API billing,
+  just the existing Desktop subscription running the same workflow a human
+  would. This means `write_snapshot` and `write_full_report` now persist
+  unattended, with no human review before writing — the dollar-figure
+  guardrail still catches that one specific failure mode, but not a bad
+  probability estimate or a garbled diagnosis. **Not yet confirmed:**
+  whether 2pm actually avoids the skip issue, or whether the writes
+  landing in `crash_checks`/`full_report_snapshots` look correct — check
+  back after a couple days of real runs.
 
 - **PWA / phone-friendly reporting site(s).** Worth exploring making the
   reporting surface(s) installable to a phone home screen — a manifest
