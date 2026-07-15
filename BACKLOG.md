@@ -4,12 +4,13 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
 
 ## Security & access
 
-- **Cloudflare Access lockdown.** `dashboard_site` is live on Cloudflare
-  Pages but publicly unauthenticated — anyone with the link can view it.
-  The data itself is safe by design (RLS-scoped anon key, macro-only
-  tables), but there's no reason to leave it open. Plan: Zero Trust →
-  Access → Applications → self-hosted app scoped to the `.pages.dev`
-  domain, policy restricted to a single email via OTP.
+- ~~Cloudflare Access lockdown on `dashboard_site`~~ — **resolved as a
+  deliberate decision, not deferred.** The data is safe by design
+  (RLS-scoped anon key, macro-only tables), and the user wants to be able
+  to share this page with others — a single-email Access policy works
+  against that goal. Decided: leave it public. Cloudflare Access is
+  reserved specifically for the confidential Full Report page below, where
+  restricting access to just the user *is* the point.
 
 - **A new, separate "Full Report" Cloudflare Pages project**, distinct from
   the existing public `dashboard_site` (which stays unchanged). Would show
