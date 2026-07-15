@@ -64,6 +64,14 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   look at whether the joint drawdown-AND-VIX construction is calibrated
   right — not acted on yet, just flagged so it isn't lost.
 
+- **Trigger notifications on threshold crossings** — e.g. 2 of 6 indicators
+  going RED (`confirmed_red_count >= 2`), rather than only finding out via a
+  chat-triggered or scheduled crash-check run. Detection data already
+  exists (`classify()` computes `red_count`/`confirmed_red_count` every
+  ingestion run); the gap is purely delivery (push/email/SMS/webhook) and
+  de-duplication (notify on transition, not every day the condition holds).
+  Not analyzed or built — flagged only.
+
 - **Idea, discuss later: package this as a Kubernetes / plug-and-play open
   source solution**, rather than this user's personal deployment (2x
   Cloudflare Pages, Supabase, GitHub Actions cron, a local stdio MCP server
