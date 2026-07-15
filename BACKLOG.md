@@ -94,10 +94,24 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   would. This means `write_snapshot` and `write_full_report` now persist
   unattended, with no human review before writing — the dollar-figure
   guardrail still catches that one specific failure mode, but not a bad
-  probability estimate or a garbled diagnosis. **Not yet confirmed:**
-  whether 2pm actually avoids the skip issue, or whether the writes
-  landing in `crash_checks`/`full_report_snapshots` look correct — check
-  back after a couple days of real runs.
+  probability estimate or a garbled diagnosis.
+
+  A related risk surfaced when checking whether 7am ingestion + 7:30am
+  Claude was a safe pairing: `ingest.yml`'s actual run history shows
+  GitHub's cron trigger has been delayed **up to 62 minutes** past its
+  nominal 7am ET schedule — a fixed-offset scheduled Claude run could
+  silently analyze yesterday's stale `crash_checks` row with no warning.
+  **Fixed**: a new `data_freshness` check (`mcp_server/src/lib/
+  freshness.ts`, commit 635b82d) compares the latest row's date against
+  the expected ingestion date (accounting for weekends) and now makes step
+  1 of the workflow stop and report staleness instead of proceeding —
+  covers both manual and the unattended 2pm run.
+
+  **Not yet confirmed:** whether 2pm actually avoids the original skip
+  issue, whether the writes landing in `crash_checks`/`full_report_snapshots`
+  look correct, or whether the freshness check itself has actually
+  triggered/behaved correctly on a real stale-data day — check back after
+  a couple days of real runs.
 
 - ~~PWA / phone-friendly reporting site(s)~~ — **built**, both sites.
   `manifest.json` + generated icons (shared pulse/sparkline glyph, blue
