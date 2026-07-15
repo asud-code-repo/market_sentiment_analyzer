@@ -12,26 +12,25 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   reserved specifically for the confidential Full Report page below, where
   restricting access to just the user *is* the point.
 
-- **"Full Report" Cloudflare Pages project — code built, not yet live.**
-  Distinct from the existing public `dashboard_site` (unchanged). Shows the
-  brokerage watchlist (tickers + wave price targets), the crash-type
-  diagnosis narrative, and the *qualitative* parts of the personal
-  portfolio snapshot — all previously chat-only. Built per the converged
-  design: Cloudflare Access (page-level login) + a **Cloudflare Pages
-  Function** (`full_report_site/functions/index.ts`) doing server-side
-  Supabase queries with the `service_role` key, never exposed to the
-  browser. Data lives in a new, separate Supabase table
+- ~~"Full Report" Cloudflare Pages project~~ — **live**, at
+  `market-sentiment-full-report.pages.dev`. Distinct from the existing
+  public `dashboard_site` (unchanged). Shows the brokerage watchlist
+  (tickers + wave price targets), the crash-type diagnosis narrative, and
+  the *qualitative* parts of the personal portfolio snapshot — all
+  previously chat-only. Cloudflare Access (One-Time-PIN login, gmail-gated)
+  + a **Cloudflare Pages Function** (`full_report_site/functions/index.ts`)
+  doing server-side Supabase queries with the `service_role` key, never
+  exposed to the browser. Data lives in a separate Supabase table
   (`full_report_snapshots`, RLS deny-all for anon/authenticated). Layout:
   **Option B "Bridge"** (4-stat context strip + crash-type diagnosis +
-  dense single-line watchlist), picked over the minimal "Companion"
-  alternative. History writes from day one, no browsing UI in v1.
-  Explicitly **out of scope, permanently**: `portfolio-review-template.html`.
-  **Still needed — a user step, not more code:** apply
-  `supabase/migrations/20260714000000_full_report_snapshots.sql` via the
-  Supabase SQL editor; create the actual Cloudflare Pages project (root
-  directory `full_report_site`, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
-  as secrets); set up and verify Cloudflare Access. Steps are in
-  `full_report_site/README.md`. No live end-to-end test has been run yet.
+  dense single-line watchlist). History writes from day one, no browsing
+  UI in v1. Explicitly **out of scope, permanently**:
+  `portfolio-review-template.html`. Verified end-to-end 2026-07-14 (Access
+  login → Pages Function → Supabase query all confirmed working) — see
+  project memory for the deploy/Access gotchas hit along the way. Currently
+  shows the empty state since `write_full_report` hasn't run against real
+  content yet. Not covered: Access policy coverage of Cloudflare Pages
+  preview-deployment URLs — low priority for a single-user page.
 
 - ~~No code-level guard against personal dollar figures leaking into
   Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
