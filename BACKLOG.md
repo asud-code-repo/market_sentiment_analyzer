@@ -11,28 +11,44 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   Access → Applications → self-hosted app scoped to the `.pages.dev`
   domain, policy restricted to a single email via OTP.
 
-- **Unify the crash-check report with the public dashboard site.** The
-  chat-rendered report (`dashboard-template.html`) shows a brokerage
-  watchlist (tickers + wave price targets) and a crash-type diagnosis
-  narrative that the public site doesn't. A full plan exists for moving
-  these over, but it requires real auth first — **Cloudflare Access alone
-  isn't sufficient**, since it only gates page *loading*, not direct
-  requests to Supabase's REST API (a separate origin). The recommended
-  design is two-tier: Cloudflare Access (page-level) + Supabase Auth with
-  RLS scoped to an authenticated session (data-level), with the watchlist
-  specifically requiring the stronger tier. Explicitly **not** in scope for
-  this: `portfolio-review-template.html`, which stays chat-only,
-  permanently, regardless of what auth gets built for the crash-check side.
+- **A new, separate "Full Report" Cloudflare Pages project**, distinct from
+  the existing public `dashboard_site` (which stays unchanged). Would show
+  the brokerage watchlist (tickers + wave price targets), the crash-type
+  diagnosis narrative, and the *qualitative* parts of the personal
+  portfolio snapshot — all currently chat-only. Converged design: Cloudflare
+  Access (page-level login) + a **Cloudflare Pages Function** doing
+  server-side Supabase queries with the `service_role` key, never exposed
+  to the browser — this closes the access-control gap *by design* rather
+  than relying on Cloudflare Access alone (which only gates page loading,
+  not direct requests to Supabase's REST API — a plain client-side anon key
+  with broad SELECT access would still be queryable directly, bypassing
+  Access entirely). A free-tier BI tool (Grafana, Metabase) was considered
+  and ruled out — too visually constraining given the custom design
+  language already built. Data lives in a **new, separate Supabase table**
+  (not new columns on `crash_checks` — RLS is row-level, so mixing public
+  and gated content in one table would leak the gated columns to the
+  existing anon key). Two layout directions were mocked up (a minimal
+  "Companion" with a link-out to the public dashboard, vs. a "Bridge" with
+  a condensed context strip) — not yet decided between. Scoped as a
+  **separate Cloudflare Pages project** (own deploy pipeline), history
+  writes from day one but no browsing UI in v1. Explicitly **out of
+  scope, permanently**: `portfolio-review-template.html`, regardless of
+  what gets built here.
 
-- **`write_snapshot` has no code-level guard against personal data leaking
-  into Supabase.** Every other security boundary in this project (RLS,
-  GRANTs, `.gitignore`, the local-only MCP server) is enforced at an
-  infrastructure or code level. The one exception: the `notes` field
-  persisted by `write_snapshot` relies entirely on a prompt instruction not
-  to include personal dollar figures. Proposed fix: have `write_snapshot`
-  cross-reference the real portfolio figures (readable locally) against the
-  incoming text and reject the write if a match is found, rather than
-  trusting instruction-following alone.
+- **No code-level guard against personal dollar figures leaking into
+  Supabase.** Every other security boundary in this project (RLS, GRANTs,
+  `.gitignore`, the local-only MCP server) is enforced at an infrastructure
+  or code level. Two write paths currently rely entirely on prompt
+  instruction instead: `write_snapshot`'s `notes` field, and (once built)
+  the new Full Report page's persistence function — the latter surfaced
+  because the personal portfolio snapshot section contains one real dollar
+  figure (an opportunity-cost gap) mixed into otherwise-qualitative content.
+  Proposed fix: cross-reference real portfolio figures (read locally)
+  against incoming text on *both* write paths and reject the write if a
+  match is found, rather than trusting instruction-following alone.
+  Explicitly rejected as an alternative: reducing `local_state/
+  portfolio.yaml`'s own precision — that file needs to stay exact for
+  `get_deployment_plan`/`get_portfolio_drift` to keep working.
 
 ## Data & infrastructure
 
@@ -79,4 +95,15 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   diagnosis) only happens when a chat session is manually triggered.
   Automating that fully is a real option, but changes the trust model (no
   human review before persisting) and has a genuine per-run API cost to
-  weigh against the current zero-marginal-cost manual trigger.
+  weigh against the current zero-marginal-cost manual trigger. A native
+  Claude Desktop scheduled-task attempt at this surfaced its own open
+  question — a run scheduled during "peak hours" showed as skipped, and it
+  wasn't confirmed whether that's a capacity/rate-limit behavior specific
+  to that feature.
+
+- **PWA / phone-friendly reporting site(s).** Worth exploring making the
+  reporting surface(s) installable to a phone home screen — a manifest
+  file, optionally a service worker for offline caching. The existing
+  responsive breakpoints already give this a real foundation. Best picked
+  up once the new Full Report page above actually exists, so it's clear
+  which surface is worth making installable first.
