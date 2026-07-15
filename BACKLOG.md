@@ -36,17 +36,17 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   scope, permanently**: `portfolio-review-template.html`, regardless of
   what gets built here.
 
-- **No code-level guard against personal dollar figures leaking into
-  Supabase.** Every other security boundary in this project (RLS, GRANTs,
-  `.gitignore`, the local-only MCP server) is enforced at an infrastructure
-  or code level. Two write paths currently rely entirely on prompt
-  instruction instead: `write_snapshot`'s `notes` field, and (once built)
-  the new Full Report page's persistence function — the latter surfaced
-  because the personal portfolio snapshot section contains one real dollar
-  figure (an opportunity-cost gap) mixed into otherwise-qualitative content.
-  Proposed fix: cross-reference real portfolio figures (read locally)
-  against incoming text on *both* write paths and reject the write if a
-  match is found, rather than trusting instruction-following alone.
+- ~~No code-level guard against personal dollar figures leaking into
+  Supabase (write path 1/2)~~ — **implemented.** `write_snapshot`'s `notes`
+  field now cross-references real dollar figures from
+  `local_state/portfolio.yaml` (`_usd`/`_cad` keys, ≥$1,000) against the
+  incoming text (raw and comma-formatted, with substring-boundary
+  protection) and throws before persisting if a match is found, rather
+  than relying on prompt instruction alone. **Write path 2/2 still open:**
+  once the new Full Report page's persistence function (below) is built,
+  it needs the identical check — that surfaced because the personal
+  portfolio snapshot section contains one real dollar figure (an
+  opportunity-cost gap) mixed into otherwise-qualitative content.
   Explicitly rejected as an alternative: reducing `local_state/
   portfolio.yaml`'s own precision — that file needs to stay exact for
   `get_deployment_plan`/`get_portfolio_drift` to keep working.
