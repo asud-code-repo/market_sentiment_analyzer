@@ -99,9 +99,11 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   landing in `crash_checks`/`full_report_snapshots` look correct — check
   back after a couple days of real runs.
 
-- **PWA / phone-friendly reporting site(s).** Worth exploring making the
-  reporting surface(s) installable to a phone home screen — a manifest
-  file, optionally a service worker for offline caching. The existing
-  responsive breakpoints already give this a real foundation. Best picked
-  up once the new Full Report page above actually exists, so it's clear
-  which surface is worth making installable first.
+- ~~PWA / phone-friendly reporting site(s)~~ — **built**, both sites.
+  `manifest.json` + generated icons (shared pulse/sparkline glyph, blue
+  accent for `dashboard_site`, red accent for `full_report_site`) +
+  `apple-touch-icon`/`theme-color` tags. Deliberately manifest-only, no
+  service worker — avoids caching `full_report_site`'s Access-gated content
+  in a way that could outlive a logged-out session, or showing stale
+  financial data while offline. **Not yet verified live:** needs a push and
+  a real "Add to Home Screen" test on a phone.
