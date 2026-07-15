@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { readPortfolio, findLeakedDollarFigures } from "./portfolio.js";
+import { readWatchlist, computeWatchlistStatus } from "./watchlist.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -249,6 +250,79 @@ export async function writeSnapshot(qualitative: {
   const { data, error } = await supabase.from("crash_checks").insert(row).select().single();
   if (error) {
     throw new Error(`Failed to insert crash_checks row: ${error.message}`);
+  }
+  return data;
+}
+
+export interface FullReportCriterion {
+  name: string;
+  status: string;
+  detail: string;
+}
+
+export interface FullReportCrashTypeDiagnosis {
+  type: string;
+  criteria: FullReportCriterion[];
+}
+
+export interface FullReportSnapshotRow {
+  id: string;
+  run_at: string;
+  watchlist: unknown;
+  crash_type_diagnosis: FullReportCrashTypeDiagnosis | null;
+  portfolio_context: string | null;
+  source_crash_check_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Inserts a new full_report_snapshots row — the second write path covered by
+ * the dollar-figure guardrail (see [[backlog_write_snapshot_dollar_figure_guardrail]]
+ * in project memory / BACKLOG.md's "Security & access" section). Watchlist
+ * status is recomputed here from live prices, exactly like get_watchlist_status,
+ * rather than trusted from caller input — same "rule engine output contract"
+ * discipline as writeSnapshot's mechanical fields. max_position_usd is
+ * stripped even though this table is already access-gated (never anon-
+ * readable) — belt-and-suspenders, consistent with treating personal dollar
+ * figures as never-persist rather than persist-but-restrict.
+ */
+export async function writeFullReport(qualitative: {
+  crash_type_diagnosis: FullReportCrashTypeDiagnosis | null;
+  portfolio_context: string;
+}): Promise<FullReportSnapshotRow> {
+  const [latest] = await getRecentCrashChecks(1);
+  if (!latest) {
+    throw new Error("No prior crash_checks row found — the rule engine (Stage 3) must run at least once first.");
+  }
+
+  const diagnosisText = qualitative.crash_type_diagnosis
+    ? qualitative.crash_type_diagnosis.criteria.map((c) => c.detail).join(" ")
+    : "";
+  const leaked = findLeakedDollarFigures(`${qualitative.portfolio_context} ${diagnosisText}`, readPortfolio());
+  if (leaked.length > 0) {
+    throw new Error(
+      `Refusing to write: portfolio_context/crash_type_diagnosis appears to contain a real personal dollar figure ` +
+        `(${leaked.map((n) => n.toLocaleString("en-US")).join(", ")}). ` +
+        `full_report_snapshots is qualitative-only — rephrase without the specific figure and try again.`,
+    );
+  }
+
+  const watchlistFile = readWatchlist();
+  const prices = await Promise.all(watchlistFile.tickers.map((t) => getLatestDataPoint(t.symbol)));
+  const watchlist = computeWatchlistStatus(watchlistFile.tickers, prices).map(
+    ({ max_position_usd: _maxPositionUsd, ...rest }) => rest,
+  );
+
+  const row = {
+    watchlist,
+    crash_type_diagnosis: qualitative.crash_type_diagnosis,
+    portfolio_context: qualitative.portfolio_context,
+    source_crash_check_id: latest.id,
+  };
+
+  const { data, error } = await supabase.from("full_report_snapshots").insert(row).select().single();
+  if (error) {
+    throw new Error(`Failed to insert full_report_snapshots row: ${error.message}`);
   }
   return data;
 }

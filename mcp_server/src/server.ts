@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -343,6 +343,41 @@ server.registerTool(
         "Never touch the passive long-duration account (RRSP-equivalent) during a crash",
       ],
     });
+  },
+);
+
+server.registerTool(
+  "write_full_report",
+  {
+    description:
+      "Persists this run's Full Report content (BrokerageLink watchlist status, crash-type diagnosis, " +
+      "and the qualitative-only parts of the personal portfolio snapshot) to full_report_snapshots — " +
+      "a table that is never anon-readable, read server-side only by the Full Report Cloudflare Pages " +
+      "Function behind Cloudflare Access. Watchlist status is recomputed here from live prices, not " +
+      "trusted from caller input. Do not include any personal dollar figures in portfolio_context or " +
+      "crash_type_diagnosis — e.g. the RRSP/spouse-401k opportunity-cost gap must stay chat-only, " +
+      "never passed to this tool; the write will be rejected if a real portfolio dollar figure is " +
+      "detected anyway. Call this alongside write_snapshot in the same run, once the qualitative " +
+      "synthesis (crash-type diagnosis, portfolio narrative) has been produced.",
+    inputSchema: {
+      crash_type_diagnosis: z
+        .object({
+          type: z.string(),
+          criteria: z.array(
+            z.object({
+              name: z.string(),
+              status: z.string(),
+              detail: z.string(),
+            }),
+          ),
+        })
+        .nullable(),
+      portfolio_context: z.string(),
+    },
+  },
+  async (input) => {
+    const row = await writeFullReport(input);
+    return json({ written: row });
   },
 );
 

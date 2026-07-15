@@ -1,0 +1,7 @@
+name = "full-report-site"
+compatibility_date = "2026-07-14"
+
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are NOT set here — they're
+# configured as encrypted environment variables in the Cloudflare Pages
+# dashboard (Settings -> Environment variables), never committed to this
+# repo. See full_report_site/README.md for setup steps.
