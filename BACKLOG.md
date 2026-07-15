@@ -12,44 +12,38 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   reserved specifically for the confidential Full Report page below, where
   restricting access to just the user *is* the point.
 
-- **A new, separate "Full Report" Cloudflare Pages project**, distinct from
-  the existing public `dashboard_site` (which stays unchanged). Would show
-  the brokerage watchlist (tickers + wave price targets), the crash-type
+- **"Full Report" Cloudflare Pages project — code built, not yet live.**
+  Distinct from the existing public `dashboard_site` (unchanged). Shows the
+  brokerage watchlist (tickers + wave price targets), the crash-type
   diagnosis narrative, and the *qualitative* parts of the personal
-  portfolio snapshot — all currently chat-only. Converged design: Cloudflare
-  Access (page-level login) + a **Cloudflare Pages Function** doing
-  server-side Supabase queries with the `service_role` key, never exposed
-  to the browser — this closes the access-control gap *by design* rather
-  than relying on Cloudflare Access alone (which only gates page loading,
-  not direct requests to Supabase's REST API — a plain client-side anon key
-  with broad SELECT access would still be queryable directly, bypassing
-  Access entirely). A free-tier BI tool (Grafana, Metabase) was considered
-  and ruled out — too visually constraining given the custom design
-  language already built. Data lives in a **new, separate Supabase table**
-  (not new columns on `crash_checks` — RLS is row-level, so mixing public
-  and gated content in one table would leak the gated columns to the
-  existing anon key). Two layout directions were mocked up (a minimal
-  "Companion" with a link-out to the public dashboard, vs. a "Bridge" with
-  a condensed context strip) — not yet decided between. Scoped as a
-  **separate Cloudflare Pages project** (own deploy pipeline), history
-  writes from day one but no browsing UI in v1. Explicitly **out of
-  scope, permanently**: `portfolio-review-template.html`, regardless of
-  what gets built here.
+  portfolio snapshot — all previously chat-only. Built per the converged
+  design: Cloudflare Access (page-level login) + a **Cloudflare Pages
+  Function** (`full_report_site/functions/index.ts`) doing server-side
+  Supabase queries with the `service_role` key, never exposed to the
+  browser. Data lives in a new, separate Supabase table
+  (`full_report_snapshots`, RLS deny-all for anon/authenticated). Layout:
+  **Option B "Bridge"** (4-stat context strip + crash-type diagnosis +
+  dense single-line watchlist), picked over the minimal "Companion"
+  alternative. History writes from day one, no browsing UI in v1.
+  Explicitly **out of scope, permanently**: `portfolio-review-template.html`.
+  **Still needed — a user step, not more code:** apply
+  `supabase/migrations/20260714000000_full_report_snapshots.sql` via the
+  Supabase SQL editor; create the actual Cloudflare Pages project (root
+  directory `full_report_site`, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+  as secrets); set up and verify Cloudflare Access. Steps are in
+  `full_report_site/README.md`. No live end-to-end test has been run yet.
 
 - ~~No code-level guard against personal dollar figures leaking into
-  Supabase (write path 1/2)~~ — **implemented.** `write_snapshot`'s `notes`
-  field now cross-references real dollar figures from
-  `local_state/portfolio.yaml` (`_usd`/`_cad` keys, ≥$1,000) against the
+  Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
+  field and the new `write_full_report`'s `portfolio_context`/
+  `crash_type_diagnosis` fields both cross-reference real dollar figures
+  from `local_state/portfolio.yaml` (`_usd`/`_cad` keys, ≥$1,000) against
   incoming text (raw and comma-formatted, with substring-boundary
-  protection) and throws before persisting if a match is found, rather
-  than relying on prompt instruction alone. **Write path 2/2 still open:**
-  once the new Full Report page's persistence function (below) is built,
-  it needs the identical check — that surfaced because the personal
-  portfolio snapshot section contains one real dollar figure (an
-  opportunity-cost gap) mixed into otherwise-qualitative content.
-  Explicitly rejected as an alternative: reducing `local_state/
-  portfolio.yaml`'s own precision — that file needs to stay exact for
-  `get_deployment_plan`/`get_portfolio_drift` to keep working.
+  protection) and throw before persisting if a match is found, rather than
+  relying on prompt instruction alone. Explicitly rejected as an
+  alternative: reducing `local_state/portfolio.yaml`'s own precision — that
+  file needs to stay exact for `get_deployment_plan`/`get_portfolio_drift`
+  to keep working.
 
 ## Data & infrastructure
 
