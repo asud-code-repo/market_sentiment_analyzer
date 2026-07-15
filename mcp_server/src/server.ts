@@ -6,6 +6,7 @@ import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
+import { computeDataFreshness } from "./lib/freshness.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -47,7 +48,10 @@ server.registerTool(
       "days_confirmed — per crash-check-rules.md's Signal Tiering rule, a RED reading only counts toward " +
       "wave authorization once confirmed across 2+ distinct ingestion dates, not on its first appearance. " +
       "wave_authorized already reflects confirmed_red_count, not raw red_count — report confirmed_red_count " +
-      "as the authorizing number, and red_count/pending indicators as context for what's building.",
+      "as the authorizing number, and red_count/pending indicators as context for what's building. Check " +
+      "data_freshness.is_fresh before proceeding — if false, the daily GitHub Action ingestion hasn't run " +
+      "yet today (or failed), and this panel is a stale prior-day snapshot; stop and tell the user instead " +
+      "of analyzing it as if it were current.",
   },
   async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -64,6 +68,7 @@ server.registerTool(
     });
     return json({
       run_at: latest.run_at,
+      data_freshness: computeDataFreshness(latest.run_at),
       indicators: {
         vix: withConfirmation("vix", latest.vix_value, latest.vix_color),
         hy_spread_bps: withConfirmation("hy_spread", latest.hy_spread_bps, latest.hy_spread_color),
