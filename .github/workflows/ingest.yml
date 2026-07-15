@@ -2,11 +2,16 @@ name: Daily ingestion + classification
 
 on:
   schedule:
-    # Always 7am US Eastern, weekdays only. GitHub Actions cron is fixed
-    # UTC and doesn't auto-adjust for daylight saving, so this is split
-    # into two entries — one per UTC offset — rather than a single
-    # year-round expression. Only one of the two ever matches on a given
-    # day since the month ranges don't overlap.
+    # Always 10am US Eastern, weekdays only — 4 hours of buffer before the
+    # 2pm scheduled Claude Desktop "run crash check" (see project-instructions.md),
+    # comfortably absorbing the cron-delay risk found 2026-07-14 (GitHub's
+    # scheduler has been observed running this workflow up to 62 minutes
+    # late). get_indicator_panel's data_freshness check is the actual
+    # backstop regardless of this buffer. GitHub Actions cron is fixed UTC
+    # and doesn't auto-adjust for daylight saving, so this is split into two
+    # entries — one per UTC offset — rather than a single year-round
+    # expression. Only one of the two ever matches on a given day since the
+    # month ranges don't overlap.
     #
     # Approximated by calendar month, not the exact DST transition date
     # (2nd Sunday of March / 1st Sunday of November) — accurate to within
@@ -14,8 +19,8 @@ on:
     # that window. A reasonable tradeoff vs. exact date-based logic for a
     # job whose correctness never depends on the precise trigger time
     # (it's reading yesterday's close either way, hours before market open).
-    - cron: "0 11 * 3-10 1-5"    # Mar-Oct (EDT, UTC-4) — 11:00 UTC = 7am EDT
-    - cron: "0 12 * 11,12,1,2 1-5" # Nov-Feb (EST, UTC-5) — 12:00 UTC = 7am EST
+    - cron: "0 14 * 3-10 1-5"    # Mar-Oct (EDT, UTC-4) — 14:00 UTC = 10am EDT
+    - cron: "0 15 * 11,12,1,2 1-5" # Nov-Feb (EST, UTC-5) — 15:00 UTC = 10am EST
   workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab
 
 jobs:
