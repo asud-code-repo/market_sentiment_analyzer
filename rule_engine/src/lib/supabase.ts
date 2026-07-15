@@ -43,6 +43,7 @@ export interface LatestSnapshotRow {
   fed_pivot_signal: string | null;
   trigger_status: unknown;
   confirmation_state: Record<string, ConfirmationEntry> | null;
+  confirmed_red_count: number | null;
 }
 
 /** The most recent crash_checks row, for carrying forward manually-judged
@@ -53,7 +54,7 @@ export interface LatestSnapshotRow {
 export async function getLatestCrashCheck(): Promise<LatestSnapshotRow | null> {
   const { data, error } = await supabase
     .from("crash_checks")
-    .select("warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state")
+    .select("warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state, confirmed_red_count")
     .order("run_at", { ascending: false })
     .limit(1)
     .maybeSingle();

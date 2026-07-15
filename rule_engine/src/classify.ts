@@ -1,4 +1,5 @@
 import { getLatestDataPoint, getLatestCrashCheck, insertCrashCheck } from "./lib/supabase.js";
+import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import {
   bandVix,
   bandHySpreadBps,
@@ -114,4 +115,6 @@ export async function classify(): Promise<void> {
       `Drawdown=${spDrawdownColor}, 10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
       `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}.`,
   );
+
+  await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);
 }
