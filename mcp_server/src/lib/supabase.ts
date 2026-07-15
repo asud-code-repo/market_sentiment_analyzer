@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { readPortfolio, findLeakedDollarFigures } from "./portfolio.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -180,6 +181,20 @@ export async function writeSnapshot(qualitative: {
   const [latest] = await getRecentCrashChecks(1);
   if (!latest) {
     throw new Error("No prior crash_checks row found — the rule engine (Stage 3) must run at least once first.");
+  }
+
+  // Code-level guardrail, not just a prompt instruction: crash_checks is
+  // public (anon-readable), so notes must never contain a real personal
+  // dollar figure. Checked against local_state/portfolio.yaml directly
+  // rather than trusted to the model having followed the "no dollar
+  // amounts in notes" instruction correctly.
+  const leaked = findLeakedDollarFigures(qualitative.notes, readPortfolio());
+  if (leaked.length > 0) {
+    throw new Error(
+      `Refusing to write: notes appears to contain a real personal dollar figure ` +
+        `(${leaked.map((n) => n.toLocaleString("en-US")).join(", ")}). ` +
+        `Supabase is macro/market data only — rephrase without the specific figure and try again.`,
+    );
   }
 
   const fedPivotSignal = qualitative.fed_pivot_signal ?? (latest.fed_pivot_signal as "NONE" | "PAUSE" | "CUT" | null) ?? "NONE";

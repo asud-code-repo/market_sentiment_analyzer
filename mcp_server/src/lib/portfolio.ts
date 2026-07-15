@@ -97,6 +97,54 @@ export function applyLiveFxRate(
   };
 }
 
+/**
+ * Recursively collects every numeric value whose key name marks it as a
+ * dollar figure (ends in `_usd`/`_cad`) — deliberately narrow rather than
+ * grabbing every number in the file, so percentages/rates/allocation
+ * weights (e.g. nyl_anchor_rate: 0.0395, holdings_pct: 65.5) don't cause
+ * false-positive matches against legitimate macro content already in real
+ * reports (e.g. "$725B in AI capex", "Brent ~$77"). Also excludes anything
+ * under $1,000 — small figures like a $500 monthly contribution are both
+ * less sensitive and more likely to coincidentally collide with an
+ * unrelated small number in narrative text.
+ */
+function extractDollarFigures(node: unknown, out: Set<number> = new Set()): Set<number> {
+  if (node === null || typeof node !== "object") return out;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (typeof value === "number" && /_usd$|_cad$/.test(key) && Math.abs(value) >= 1000) {
+      out.add(Math.round(value));
+    } else if (typeof value === "object" && value !== null) {
+      extractDollarFigures(value, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * Scans `text` for any of the portfolio's real dollar figures appearing as
+ * a standalone number (not just a substring inside a larger, unrelated
+ * number — e.g. matching "175678" inside "1756780"), in either raw
+ * ("175678") or comma-formatted ("175,678") form. Returns the matched
+ * figures, or an empty array if none leaked. This is the guardrail behind
+ * write_snapshot/any future write path that persists free-text content —
+ * see reference_docs/rules/crash-check-rules.md's split-storage note: no
+ * personal dollar figure should ever reach Supabase, and that shouldn't
+ * rely on prompt-following alone.
+ */
+export function findLeakedDollarFigures(text: string, portfolio: unknown): number[] {
+  const figures = extractDollarFigures(portfolio);
+  const found: number[] = [];
+  for (const figure of figures) {
+    const raw = String(figure);
+    const formatted = figure.toLocaleString("en-US");
+    const pattern = new RegExp(`(?<!\\d)(${raw}|${formatted})(?!\\d)`);
+    if (pattern.test(text)) {
+      found.push(figure);
+    }
+  }
+  return found;
+}
+
 export interface DriftEntry {
   fund: string;
   actual_pct: number;
