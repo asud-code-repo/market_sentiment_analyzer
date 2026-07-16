@@ -60,7 +60,26 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   not instead of them — verified against the real portfolio file (all 7
   funds now show, including the dry-powder fund's own large, intentional
   deviation). Also improves `get_portfolio_drift` directly, not just this
-  page.
+  page. Drift row labels were then cleaned up (commit 7971edc): grouped by
+  account instead of repeating the full label on every row, and raw
+  snake_case fund keys (`nyl_anchor`) formatted into readable names (`NYL
+  Anchor`).
+
+  **Third, more serious bug**: a manually-triggered "run crash check" on
+  2026-07-16 revealed `write_full_report` was completely broken — every
+  call rejected `crash_type_diagnosis` as a string no matter what was
+  sent. Root cause confirmed directly via `z.toJSONSchema()`: this was the
+  only nullable-object field across all 4 write tools
+  (`.object({...}).nullable()`), which generates an `anyOf: [{type:
+  "object"}, {type: "null"}]` union schema that the client apparently
+  can't serialize an object against. Fixed (commit 0dd5a3e): switched to
+  `.optional()` (a clean, non-union object schema) — the model must now
+  omit the field entirely rather than pass `null` when no crash type was
+  diagnosed. This explains the page's persistent stale "Run at" timestamp
+  independent of whether the 2pm scheduled task itself has been firing —
+  that question is still open, and this bug would have blocked it either
+  way. Not yet re-verified live; needs a Claude Desktop restart and a
+  retry.
 
 - ~~No code-level guard against personal dollar figures leaking into
   Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
