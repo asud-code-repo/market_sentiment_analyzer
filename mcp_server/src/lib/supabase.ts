@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { readPortfolio, findLeakedDollarFigures } from "./portfolio.js";
+import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift } from "./portfolio.js";
 import { readWatchlist, computeWatchlistStatus } from "./watchlist.js";
 
 function requireEnv(name: string): string {
@@ -323,6 +323,94 @@ export async function writeFullReport(qualitative: {
   const { data, error } = await supabase.from("full_report_snapshots").insert(row).select().single();
   if (error) {
     throw new Error(`Failed to insert full_report_snapshots row: ${error.message}`);
+  }
+  return data;
+}
+
+export interface PortfolioReviewTickerEntry {
+  symbol: string;
+  thesis_verdict: string;
+  proposed_change: string | null;
+  reasoning: string;
+}
+
+export interface RiskRadarScores {
+  geopolitical: number;
+  policy_fed: number;
+  inflation: number;
+  valuation: number;
+  labor_market: number;
+  earnings: number;
+}
+
+export interface PortfolioReviewSnapshotRow {
+  id: string;
+  run_at: string;
+  verdict: string | null;
+  summary: string | null;
+  macro_cross_reference: string | null;
+  drift: unknown;
+  tickers: PortfolioReviewTickerEntry[];
+  risk_radar: RiskRadarScores | null;
+  source_crash_check_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Inserts a new portfolio_review_snapshots row — merges Portfolio
+ * Opportunity Review content into the Full Report page (see
+ * backlog_unify_crash_check_dashboard_site in project memory/BACKLOG.md;
+ * this reverses the earlier "chat-only, never published" decision on
+ * portfolio-review-template.html per explicit 2026-07-16 instruction).
+ * Drift is recomputed server-side from computePortfolioDrift(), not
+ * trusted from the caller, same discipline as writeFullReport's watchlist
+ * recomputation. Guardrail-checked the same way as the other two write
+ * paths — every free-text field (verdict/summary/macro_cross_reference/
+ * per-ticker reasoning+proposed_change, plus drift's standing_flags) is
+ * scanned for real portfolio dollar figures before writing.
+ */
+export async function writePortfolioReview(qualitative: {
+  verdict: string;
+  summary: string;
+  macro_cross_reference: string;
+  tickers: PortfolioReviewTickerEntry[];
+  risk_radar: RiskRadarScores;
+}): Promise<PortfolioReviewSnapshotRow> {
+  const [latestCrashCheck] = await getRecentCrashChecks(1);
+
+  const portfolio = readPortfolio();
+  const drift = computePortfolioDrift(portfolio);
+
+  const combinedText = [
+    qualitative.verdict,
+    qualitative.summary,
+    qualitative.macro_cross_reference,
+    ...qualitative.tickers.map((t) => `${t.reasoning} ${t.proposed_change ?? ""}`),
+    ...drift.standing_flags,
+  ].join(" ");
+
+  const leaked = findLeakedDollarFigures(combinedText, portfolio);
+  if (leaked.length > 0) {
+    throw new Error(
+      `Refusing to write: portfolio review content appears to contain a real personal dollar figure ` +
+        `(${leaked.map((n) => n.toLocaleString("en-US")).join(", ")}). ` +
+        `portfolio_review_snapshots is qualitative-only — rephrase without the specific figure and try again.`,
+    );
+  }
+
+  const row = {
+    verdict: qualitative.verdict,
+    summary: qualitative.summary,
+    macro_cross_reference: qualitative.macro_cross_reference,
+    drift,
+    tickers: qualitative.tickers,
+    risk_radar: qualitative.risk_radar,
+    source_crash_check_id: latestCrashCheck?.id ?? null,
+  };
+
+  const { data, error } = await supabase.from("portfolio_review_snapshots").insert(row).select().single();
+  if (error) {
+    throw new Error(`Failed to insert portfolio_review_snapshots row: ${error.message}`);
   }
   return data;
 }

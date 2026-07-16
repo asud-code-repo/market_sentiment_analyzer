@@ -24,13 +24,22 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   (`full_report_snapshots`, RLS deny-all for anon/authenticated). Layout:
   **Option B "Bridge"** (4-stat context strip + crash-type diagnosis +
   dense single-line watchlist). History writes from day one, no browsing
-  UI in v1. Explicitly **out of scope, permanently**:
-  `portfolio-review-template.html`. Verified end-to-end 2026-07-14 (Access
-  login → Pages Function → Supabase query all confirmed working) — see
-  project memory for the deploy/Access gotchas hit along the way. Currently
-  shows the empty state since `write_full_report` hasn't run against real
-  content yet. Not covered: Access policy coverage of Cloudflare Pages
-  preview-deployment URLs — low priority for a single-user page.
+  UI in v1. Verified end-to-end 2026-07-14 (Access login → Pages Function →
+  Supabase query all confirmed working) — see project memory for the
+  deploy/Access gotchas hit along the way. Not covered: Access policy
+  coverage of Cloudflare Pages preview-deployment URLs — low priority for
+  a single-user page.
+
+  **Update 2026-07-16 — Portfolio Opportunity Review merged in too.** The
+  earlier "`portfolio-review-template.html` is permanently chat-only, never
+  published" exclusion was explicitly reversed by the user. New
+  `portfolio_review_snapshots` table (same deny-all RLS pattern) +
+  `write_portfolio_review` MCP tool (drift recomputed server-side, every
+  free-text field guardrail-checked) + a new page section (verdict, drift
+  bars, ticker thesis cards merged with live watchlist status, macro
+  cross-reference, and a server-side-rendered risk radar chart replicating
+  the template's hexagon SVG math). Position-sizing dollar figures
+  (`max_position_usd`) still never persisted — everything else now does.
 
 - ~~No code-level guard against personal dollar figures leaking into
   Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`

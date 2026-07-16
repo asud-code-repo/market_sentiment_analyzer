@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -382,6 +382,47 @@ server.registerTool(
   },
   async (input) => {
     const row = await writeFullReport(input);
+    return json({ written: row });
+  },
+);
+
+server.registerTool(
+  "write_portfolio_review",
+  {
+    description:
+      "Persists this Portfolio Opportunity Review's qualitative synthesis (verdict, summary, macro " +
+      "cross-reference, per-ticker thesis re-underwrite, risk radar scores) to portfolio_review_snapshots " +
+      "— merged into the Full Report page alongside crash-check content. Never anon-readable, same as " +
+      "full_report_snapshots. Portfolio drift is recomputed server-side from the local portfolio file, " +
+      "not taken from this call. Do not include any personal dollar figures anywhere here (verdict, " +
+      "summary, macro_cross_reference, ticker reasoning/proposed_change) — e.g. the RRSP/spouse-401k " +
+      "opportunity-cost gap must stay chat-only; the write is rejected if a real portfolio dollar figure " +
+      "is detected anyway. Call this at the end of every Portfolio Opportunity Review run, whether or not " +
+      "the user approved any ticker changes (that's a separate gate on write_watchlist specifically).",
+    inputSchema: {
+      verdict: z.string(),
+      summary: z.string(),
+      macro_cross_reference: z.string(),
+      tickers: z.array(
+        z.object({
+          symbol: z.string(),
+          thesis_verdict: z.string(),
+          proposed_change: z.string().nullable(),
+          reasoning: z.string(),
+        }),
+      ),
+      risk_radar: z.object({
+        geopolitical: z.number().min(0).max(100),
+        policy_fed: z.number().min(0).max(100),
+        inflation: z.number().min(0).max(100),
+        valuation: z.number().min(0).max(100),
+        labor_market: z.number().min(0).max(100),
+        earnings: z.number().min(0).max(100),
+      }),
+    },
+  },
+  async (input) => {
+    const row = await writePortfolioReview(input);
     return json({ written: row });
   },
 );

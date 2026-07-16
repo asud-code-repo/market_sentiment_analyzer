@@ -55,6 +55,53 @@ interface FullReportRow {
   portfolio_context: string | null;
 }
 
+interface DriftEntry {
+  fund: string;
+  actual_pct: number;
+  target_pct: number;
+  drift_pts: number;
+  status: "ON_TARGET" | "DRIFTED";
+}
+
+interface AccountDrift {
+  account_key: string;
+  label: string;
+  entries: DriftEntry[];
+  max_drift_pts: number;
+  has_drifted: boolean;
+}
+
+interface PortfolioDrift {
+  accounts: AccountDrift[];
+  standing_flags: string[];
+}
+
+interface PortfolioReviewTicker {
+  symbol: string;
+  thesis_verdict: string;
+  proposed_change: string | null;
+  reasoning: string;
+}
+
+interface RiskRadarScores {
+  geopolitical: number;
+  policy_fed: number;
+  inflation: number;
+  valuation: number;
+  labor_market: number;
+  earnings: number;
+}
+
+interface PortfolioReviewRow {
+  run_at: string;
+  verdict: string | null;
+  summary: string | null;
+  macro_cross_reference: string | null;
+  drift: PortfolioDrift | null;
+  tickers: PortfolioReviewTicker[];
+  risk_radar: RiskRadarScores | null;
+}
+
 async function supabaseGet<T>(env: Env, path: string): Promise<T> {
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
@@ -71,13 +118,15 @@ async function supabaseGet<T>(env: Env, path: string): Promise<T> {
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   let fullReport: FullReportRow | undefined;
   let crashCheck: CrashCheckRow | undefined;
+  let portfolioReviews: PortfolioReviewRow[];
   try {
-    [[fullReport], [crashCheck]] = await Promise.all([
+    [[fullReport], [crashCheck], portfolioReviews] = await Promise.all([
       supabaseGet<FullReportRow[]>(env, "full_report_snapshots?select=*&order=run_at.desc&limit=1"),
       supabaseGet<CrashCheckRow[]>(
         env,
         "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_active,warsh_classification&order=run_at.desc&limit=1",
       ),
+      supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=*&order=run_at.desc&limit=2"),
     ]);
   } catch (err) {
     return new Response(renderShell("Full Report unavailable", `<p>${escapeHtml(String(err))}</p>`), {
@@ -96,7 +145,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     );
   }
 
-  return new Response(renderPage(fullReport, crashCheck), {
+  const [latestReview, priorReview] = portfolioReviews;
+
+  return new Response(renderPage(fullReport, crashCheck, latestReview, priorReview?.risk_radar ?? null), {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
 };
@@ -123,7 +174,135 @@ function statusBadgeClass(status: WatchlistEntry["status"]): string {
   return "muted";
 }
 
-function renderPage(report: FullReportRow, crashCheck: CrashCheckRow | undefined): string {
+const RADAR_AXES: { key: keyof RiskRadarScores; label: string; labelX: number; labelY: number; anchor: string }[] = [
+  { key: "geopolitical", label: "Geopolitical", labelX: 150, labelY: 20, anchor: "middle" },
+  { key: "policy_fed", label: "Policy / Fed", labelX: 262, labelY: 80, anchor: "start" },
+  { key: "inflation", label: "Inflation", labelX: 262, labelY: 224, anchor: "start" },
+  { key: "valuation", label: "Valuation", labelX: 150, labelY: 288, anchor: "middle" },
+  { key: "labor_market", label: "Labor Market", labelX: 38, labelY: 224, anchor: "end" },
+  { key: "earnings", label: "Earnings", labelX: 38, labelY: 80, anchor: "end" },
+];
+
+// Hexagon math: 6 axes at 60-degree intervals starting straight up
+// (-90 degrees), center (150,150), max radius 120 — matches the fixed grid
+// ring/axis-line coordinates below exactly (verified against
+// portfolio-review-template.html's hardcoded example values).
+function radarPolygonPoints(scores: RiskRadarScores): string {
+  const center = 150;
+  const maxRadius = 120;
+  return RADAR_AXES.map((axis, i) => {
+    const value = Math.max(0, Math.min(100, scores[axis.key]));
+    const angleRad = ((-90 + 60 * i) * Math.PI) / 180;
+    const r = (value / 100) * maxRadius;
+    const x = center + r * Math.cos(angleRad);
+    const y = center + r * Math.sin(angleRad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+}
+
+function renderPortfolioReviewSection(
+  review: PortfolioReviewRow,
+  priorRadar: RiskRadarScores | null,
+  watchlistBySymbol: Map<string, WatchlistEntry>,
+): string {
+  const driftRows = (review.drift?.accounts ?? [])
+    .flatMap((acct) =>
+      acct.entries.map(
+        (e) => `<div class="drift-row">
+          <div class="drift-name">${escapeHtml(acct.label)} — ${escapeHtml(e.fund)}</div>
+          <div class="drift-track"><div class="drift-fill" style="width:${Math.min(100, Math.max(0, e.actual_pct))}%;"></div><div class="drift-target" style="left:${Math.min(100, Math.max(0, e.target_pct))}%;"></div></div>
+          <div class="drift-val">${e.actual_pct}% <span class="muted">(target ${e.target_pct}%)</span></div>
+        </div>`,
+      ),
+    )
+    .join("");
+
+  const standingFlags = (review.drift?.standing_flags ?? [])
+    .map((flag) => `<div class="flag-card">${escapeHtml(flag)}</div>`)
+    .join("");
+
+  const driftSection =
+    driftRows || standingFlags
+      ? `<section class="card"><p class="eyebrow">Portfolio Drift</p>${driftRows}${standingFlags}</section>`
+      : "";
+
+  const tickerCards = review.tickers
+    .map((t) => {
+      const wl = watchlistBySymbol.get(t.symbol);
+      return `<div class="pr-ticker-card">
+        <div class="ticker-head">
+          <span class="ticker-symbol">${escapeHtml(t.symbol)}</span>
+          ${wl ? `<span class="badge ${statusBadgeClass(wl.status)}">${escapeHtml(wl.status.replace("_", " "))}</span>` : ""}
+        </div>
+        ${wl ? `<div class="muted">${escapeHtml(wl.theme)} · $${wl.current_price?.toLocaleString("en-US") ?? "—"}</div>` : ""}
+        <div class="thesis-verdict">${escapeHtml(t.thesis_verdict)}</div>
+        <p class="narrative">${escapeHtml(t.reasoning)}</p>
+        ${t.proposed_change ? `<div class="proposed-change"><b>Proposed:</b> ${escapeHtml(t.proposed_change)}</div>` : ""}
+      </div>`;
+    })
+    .join("");
+
+  const tickerSection = tickerCards
+    ? `<section class="card"><p class="eyebrow">Watchlist Thesis Re-Underwrite</p><div class="pr-ticker-grid">${tickerCards}</div></section>`
+    : "";
+
+  const crossReferenceParagraphs = (review.macro_cross_reference ?? "")
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p class="narrative">${escapeHtml(p)}</p>`)
+    .join("");
+
+  const crossReferenceSection = crossReferenceParagraphs
+    ? `<section class="card"><p class="eyebrow">Macro / Geopolitical Cross-Reference</p>${crossReferenceParagraphs}</section>`
+    : "";
+
+  const radarSection = review.risk_radar
+    ? `<section class="card">
+        <p class="eyebrow">Risk Radar — current vs. prior review</p>
+        <div class="radar-wrap">
+          <svg class="radar-svg" viewBox="0 0 300 300">
+            <polygon class="radar-grid" points="150,110 184.6,130 184.6,170 150,190 115.4,170 115.4,130" />
+            <polygon class="radar-grid" points="150,70 219.3,110 219.3,190 150,230 80.7,190 80.7,110" />
+            <polygon class="radar-grid" points="150,30 253.9,90 253.9,210 150,270 46.1,210 46.1,90" />
+            <line class="radar-axis" x1="150" y1="150" x2="150" y2="30" />
+            <line class="radar-axis" x1="150" y1="150" x2="253.9" y2="90" />
+            <line class="radar-axis" x1="150" y1="150" x2="253.9" y2="210" />
+            <line class="radar-axis" x1="150" y1="150" x2="150" y2="270" />
+            <line class="radar-axis" x1="150" y1="150" x2="46.1" y2="210" />
+            <line class="radar-axis" x1="150" y1="150" x2="46.1" y2="90" />
+            ${priorRadar ? `<polygon class="radar-prior" points="${radarPolygonPoints(priorRadar)}" />` : ""}
+            <polygon class="radar-current" points="${radarPolygonPoints(review.risk_radar)}" />
+            ${RADAR_AXES.map((axis) => `<text class="radar-label" x="${axis.labelX}" y="${axis.labelY}" text-anchor="${axis.anchor}">${axis.label}</text>`).join("")}
+          </svg>
+          <div class="radar-legend">
+            <div><span class="sw current"></span>Current: ${RADAR_AXES.map((a) => `${a.label} ${review.risk_radar![a.key]}`).join(", ")}</div>
+            ${priorRadar ? `<div><span class="sw prior"></span>Prior: ${RADAR_AXES.map((a) => `${a.label} ${priorRadar[a.key]}`).join(", ")}</div>` : ""}
+          </div>
+        </div>
+      </section>`
+    : "";
+
+  return `
+    <section class="card">
+      <p class="eyebrow">Portfolio Opportunity Review</p>
+      <p class="verdict">${escapeHtml(review.verdict ?? "")}</p>
+      <p class="narrative">${escapeHtml(review.summary ?? "")}</p>
+      <p class="subtitle" style="margin-top:10px;">Reviewed at ${escapeHtml(formatRunAt(review.run_at))}</p>
+    </section>
+    ${driftSection}
+    ${tickerSection}
+    ${crossReferenceSection}
+    ${radarSection}
+  `;
+}
+
+function renderPage(
+  report: FullReportRow,
+  crashCheck: CrashCheckRow | undefined,
+  portfolioReview: PortfolioReviewRow | undefined,
+  priorRadar: RiskRadarScores | null,
+): string {
   const contextStrip = crashCheck
     ? `<div class="context-strip">
         <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div></div>
@@ -163,6 +342,11 @@ function renderPage(report: FullReportRow, crashCheck: CrashCheckRow | undefined
     ? `<section class="card"><p class="eyebrow">Personal Portfolio Context</p><p class="narrative">${escapeHtml(report.portfolio_context)}</p></section>`
     : "";
 
+  const watchlistBySymbol = new Map(report.watchlist.map((t) => [t.symbol, t]));
+  const portfolioReviewSection = portfolioReview
+    ? renderPortfolioReviewSection(portfolioReview, priorRadar, watchlistBySymbol)
+    : "";
+
   const body = `
     <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
     ${contextStrip}
@@ -175,6 +359,7 @@ function renderPage(report: FullReportRow, crashCheck: CrashCheckRow | undefined
       </table>
     </section>
     ${portfolioContext}
+    ${portfolioReviewSection}
   `;
   return renderShell("Full Report", body);
 }
@@ -242,8 +427,39 @@ const PAGE_CSS = `
   .badge.good { background: var(--good-bg); color: var(--good); }
   .badge.warning { background: var(--warning-bg); color: var(--warning); }
   .badge.muted { background: var(--grid); color: var(--text-muted); }
+
+  .verdict { font-size: 17px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; }
+
+  .drift-row { display: grid; grid-template-columns: 200px 1fr 140px; gap: 12px; align-items: center; padding: 7px 0; }
+  .drift-name { font-size: 12px; color: var(--text-secondary); }
+  .drift-track { position: relative; height: 8px; border-radius: 999px; background: var(--grid); }
+  .drift-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--neutral-blue); }
+  .drift-target { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); opacity: 0.55; }
+  .drift-val { font-size: 12px; text-align: right; color: var(--text-secondary); }
+  .flag-card { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: var(--warning-bg); border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  .pr-ticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .pr-ticker-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .ticker-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .thesis-verdict { font-size: 12px; font-weight: 600; margin: 8px 0 4px; }
+  .proposed-change { font-size: 12px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+  .radar-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .radar-svg { width: 280px; height: 280px; flex-shrink: 0; }
+  .radar-grid { fill: none; stroke: var(--grid); stroke-width: 1; }
+  .radar-axis { stroke: var(--grid); stroke-width: 1; }
+  .radar-label { font-size: 10px; fill: var(--text-secondary); }
+  .radar-current { fill: var(--neutral-blue); fill-opacity: 0.18; stroke: var(--neutral-blue); stroke-width: 2; }
+  .radar-prior { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .radar-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-secondary); max-width: 320px; }
+  .radar-legend .sw { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; }
+  .radar-legend .sw.current { background: var(--neutral-blue); height: 3px; }
+  .radar-legend .sw.prior { border-top: 2px dashed var(--text-muted); }
+
   @media (max-width: 700px) {
     .context-strip { grid-template-columns: repeat(2, 1fr); }
     .watchlist-table { display: block; overflow-x: auto; }
+    .pr-ticker-grid { grid-template-columns: 1fr; }
+    .drift-row { grid-template-columns: 1fr; gap: 4px; }
   }
 `;
