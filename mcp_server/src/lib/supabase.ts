@@ -287,7 +287,7 @@ export interface FullReportSnapshotRow {
  * figures as never-persist rather than persist-but-restrict.
  */
 export async function writeFullReport(qualitative: {
-  crash_type_diagnosis: FullReportCrashTypeDiagnosis | null;
+  crash_type_diagnosis: FullReportCrashTypeDiagnosis | null | undefined;
   portfolio_context: string;
 }): Promise<FullReportSnapshotRow> {
   const [latest] = await getRecentCrashChecks(1);

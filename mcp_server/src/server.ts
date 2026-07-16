@@ -370,7 +370,8 @@ server.registerTool(
       "crash_type_diagnosis — e.g. the RRSP/spouse-401k opportunity-cost gap must stay chat-only, " +
       "never passed to this tool; the write will be rejected if a real portfolio dollar figure is " +
       "detected anyway. Call this alongside write_snapshot in the same run, once the qualitative " +
-      "synthesis (crash-type diagnosis, portfolio narrative) has been produced.",
+      "synthesis (crash-type diagnosis, portfolio narrative) has been produced. Omit " +
+      "crash_type_diagnosis entirely if no crash type has been diagnosed this run — do not pass null.",
     inputSchema: {
       crash_type_diagnosis: z
         .object({
@@ -383,7 +384,7 @@ server.registerTool(
             }),
           ),
         })
-        .nullable(),
+        .optional(),
       portfolio_context: z.string(),
     },
   },
