@@ -30,16 +30,25 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   coverage of Cloudflare Pages preview-deployment URLs — low priority for
   a single-user page.
 
-  **Update 2026-07-16 — Portfolio Opportunity Review merged in too.** The
-  earlier "`portfolio-review-template.html` is permanently chat-only, never
-  published" exclusion was explicitly reversed by the user. New
-  `portfolio_review_snapshots` table (same deny-all RLS pattern) +
+  **Update 2026-07-16 — Portfolio Opportunity Review merged in too, live and
+  verified.** The earlier "`portfolio-review-template.html` is permanently
+  chat-only, never published" exclusion was explicitly reversed by the
+  user. New `portfolio_review_snapshots` table (same deny-all RLS pattern,
+  migration applied and anon-permission-denied re-verified) +
   `write_portfolio_review` MCP tool (drift recomputed server-side, every
   free-text field guardrail-checked) + a new page section (verdict, drift
   bars, ticker thesis cards merged with live watchlist status, macro
   cross-reference, and a server-side-rendered risk radar chart replicating
   the template's hexagon SVG math). Position-sizing dollar figures
   (`max_position_usd`) still never persisted — everything else now does.
+  Ran a real Portfolio Opportunity Review and confirmed every new section
+  renders correctly via a PDF export of the live page. Found and fixed one
+  real bug from that test: `full_report_snapshots.watchlist` only refreshed
+  on `write_full_report` calls, so a target change from `write_watchlist`
+  during this Portfolio Review (CCJ's Wave 1 target, $44→$70) sat stale in
+  the watchlist table, directly contradicting the Portfolio Review
+  section's own narrative right below it. `write_watchlist` now also
+  patches the latest `full_report_snapshots` row's watchlist immediately.
 
 - ~~No code-level guard against personal dollar figures leaking into
   Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
