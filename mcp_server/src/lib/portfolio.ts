@@ -172,18 +172,25 @@ const DRIFT_THRESHOLD_PTS = 5;
  * account that defines both, flagging funds drifted beyond
  * DRIFT_THRESHOLD_PTS. Deliberately mechanical — no macro judgment, purely
  * "is this account still close to its own stated target." Accounts with no
- * formal target (e.g. the RRSP's permanent passive stance) are simply
- * skipped; accounts with a known structural_issue note but no formal target
- * (e.g. spouse 401k) surface that note as a standing flag instead of
- * fabricating a target that was never specified.
+ * formal target at all (e.g. the RRSP's permanent passive stance) are
+ * simply skipped, since there's nothing to compute a drift against.
  *
- * Accounts with an active dry_powder_usd mechanism (currently just the
- * tactical 401k) are also skipped here: their "distance from long-term
- * target" is dominated by dry powder deliberately held back per the
- * crash-protocol wave system, not neglect — a raw target-vs-actual diff
- * can't tell those apart and would flag a huge, fully-intentional "drift"
- * every single run. That account's rebalancing pace is already governed by
- * get_deployment_plan/wave status, so it's noted as a pointer instead.
+ * An account can carry a dry_powder_usd mechanism (currently just the
+ * tactical 401k) *and* still get full per-fund drift entries below — these
+ * are not mutually exclusive. Fund-level entries are always shown when
+ * holdings/target data exists, for full visibility (explicit user
+ * preference 2026-07-16, after an earlier version of this function skipped
+ * the whole account whenever dry_powder_usd was present — that hid
+ * legitimate drift on the account's *other* funds as collateral damage).
+ * The wave-gated standing flag is added *alongside* the entries, not
+ * instead of them, so a large intentional deviation in the dry-powder
+ * holding fund itself reads as "DRIFTED" like anything else, with the flag
+ * supplying the "this one's deliberate" context rather than the code
+ * silently deciding to hide it.
+ *
+ * Accounts with a known structural_issue note but no formal target (e.g.
+ * spouse 401k) surface that note as a standing flag instead of fabricating
+ * a target that was never specified.
  */
 export function computePortfolioDrift(portfolio: unknown): {
   accounts: AccountDrift[];
@@ -202,9 +209,14 @@ export function computePortfolioDrift(portfolio: unknown): {
 
     if (typeof acct["dry_powder_usd"] === "number") {
       standingFlags.push(
-        `${label}: rebalancing pace is governed by the crash-protocol wave system, not a plain drift check — see get_deployment_plan for wave-gated deployment status instead.`,
+        `${label}: rebalancing pace is governed by the crash-protocol wave system, not a plain drift check — see get_deployment_plan for wave-gated deployment status instead. Fund-level drift is still shown below for full visibility; large deviation in the dry-powder holding fund itself is expected and intentional, not neglect.`,
       );
-    } else if (holdings && target) {
+    }
+    if (typeof acct["structural_issue"] === "string") {
+      standingFlags.push(`${label}: ${acct["structural_issue"]}`);
+    }
+
+    if (holdings && target) {
       const funds = new Set([...Object.keys(holdings), ...Object.keys(target)]);
       const entries: DriftEntry[] = [...funds].map((fund) => {
         const actual = holdings[fund] ?? 0;
@@ -226,8 +238,6 @@ export function computePortfolioDrift(portfolio: unknown): {
         max_drift_pts: entries.length > 0 ? Math.max(...entries.map((e) => Math.abs(e.drift_pts))) : 0,
         has_drifted: entries.some((e) => e.status === "DRIFTED"),
       });
-    } else if (typeof acct["structural_issue"] === "string") {
-      standingFlags.push(`${label}: ${acct["structural_issue"]}`);
     }
   }
 

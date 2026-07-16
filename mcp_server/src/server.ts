@@ -139,11 +139,13 @@ server.registerTool(
     description:
       "Compares actual holdings_pct against long_term_target_pct for every account that defines " +
       "both, flagging funds drifted more than 5 percentage points from target (same rebalancing-band " +
-      "convention mainstream robo-advisors use). Purely mechanical — no macro judgment. Accounts " +
-      "with a known structural_issue but no formal target (e.g. spouse 401k) are surfaced as a " +
-      "standing flag instead. Part of the Portfolio Opportunity Review process, layered under the " +
-      "crash-check indicator panel: this answers 'is each account still close to its own stated " +
-      "target' independent of the macro regime.",
+      "convention mainstream robo-advisors use). Purely mechanical — no macro judgment. The tactical " +
+      "401k's dry-powder fund shows up here too (full visibility) even though its large deviation is " +
+      "deliberate, not neglect — a standing flag alongside it explains that, rather than the tool " +
+      "hiding the fund entirely. Accounts with a known structural_issue but no formal target (e.g. " +
+      "spouse 401k) are surfaced as a standing flag instead. Part of the Portfolio Opportunity Review " +
+      "process, layered under the crash-check indicator panel: this answers 'is each account still " +
+      "close to its own stated target' independent of the macro regime.",
   },
   async () => json(computePortfolioDrift(readPortfolio())),
 );
