@@ -50,6 +50,18 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   section's own narrative right below it. `write_watchlist` now also
   patches the latest `full_report_snapshots` row's watchlist immediately.
 
+  A second bug surfaced from the same test: the "Portfolio Drift" section
+  showed only standing flags, no actual allocation bars — `computePortfolioDrift()`
+  treated "has `dry_powder_usd`" and "has a full target breakdown" as
+  mutually exclusive, so `tactical_401k` (which has both) had its
+  legitimate fund-level drift silently suppressed entirely. Fixed (commit
+  049b5c4) per explicit user preference for full visibility: the
+  wave-gated standing flag now appears *alongside* full fund-level entries,
+  not instead of them — verified against the real portfolio file (all 7
+  funds now show, including the dry-powder fund's own large, intentional
+  deviation). Also improves `get_portfolio_drift` directly, not just this
+  page.
+
 - ~~No code-level guard against personal dollar figures leaking into
   Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
   field and the new `write_full_report`'s `portfolio_context`/
