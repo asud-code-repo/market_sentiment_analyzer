@@ -101,6 +101,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   });
 };
 
+// Rendered server-side with no client JS to adapt to the viewer's own
+// locale/timezone (unlike dashboard_site's client-side toLocaleString), so
+// this is pinned to US Eastern — consistent with the rest of this project's
+// Eastern-time convention (ingest.yml's schedule, the data-freshness check).
+function formatRunAt(isoString: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(isoString)) + " ET";
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -152,7 +164,7 @@ function renderPage(report: FullReportRow, crashCheck: CrashCheckRow | undefined
     : "";
 
   const body = `
-    <p class="subtitle">Run at ${escapeHtml(report.run_at)} · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
+    <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
     ${contextStrip}
     ${diagnosis}
     <section class="card">
