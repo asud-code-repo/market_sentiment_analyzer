@@ -169,11 +169,16 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   triggered/behaved correctly on a real stale-data day — check back after
   a couple days of real runs.
 
-- ~~PWA / phone-friendly reporting site(s)~~ — **built**, both sites.
-  `manifest.json` + generated icons (shared pulse/sparkline glyph, blue
-  accent for `dashboard_site`, red accent for `full_report_site`) +
-  `apple-touch-icon`/`theme-color` tags. Deliberately manifest-only, no
-  service worker — avoids caching `full_report_site`'s Access-gated content
-  in a way that could outlive a logged-out session, or showing stale
-  financial data while offline. **Not yet verified live:** needs a push and
-  a real "Add to Home Screen" test on a phone.
+- ~~PWA / phone-friendly reporting site(s)~~ — **built and confirmed
+  working.** `manifest.json` + generated icons (shared pulse/sparkline
+  glyph, blue accent for `dashboard_site`, red accent for
+  `full_report_site`) + `apple-touch-icon`/`theme-color` tags. Deliberately
+  manifest-only, no service worker — avoids caching `full_report_site`'s
+  Access-gated content in a way that could outlive a logged-out session, or
+  showing stale financial data while offline. Chrome-on-iPhone has no
+  install option at all (Apple restricts "Add to Home Screen" to Safari
+  specifically); iOS Safari also ignores the manifest's `display:
+  standalone` field and needs its own `apple-mobile-web-app-capable` meta
+  tag, added separately. Real Safari "Add to Home Screen" test on an
+  iPhone 16 confirmed working — standalone launch, no address bar, correct
+  icon.
