@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift } from "./portfolio.js";
-import { readWatchlist, computeWatchlistStatus } from "./watchlist.js";
+import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./watchlist.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -325,6 +325,47 @@ export async function writeFullReport(qualitative: {
     throw new Error(`Failed to insert full_report_snapshots row: ${error.message}`);
   }
   return data;
+}
+
+/**
+ * Patches the latest full_report_snapshots row's `watchlist` column with a
+ * freshly recomputed status array (same computation writeFullReport uses).
+ * Exists because that row otherwise only refreshes when write_full_report
+ * runs (during "run crash check") — a target change from write_watchlist
+ * during a separate, later Portfolio Review would otherwise sit stale on
+ * the Full Report page until the next crash check, silently contradicting
+ * the Portfolio Review section's own narrative about the very same change
+ * (observed live 2026-07-16: CCJ's updated $70 target wasn't reflected in
+ * the watchlist table for two days). No-ops if no full_report_snapshots
+ * row exists yet — nothing to patch, and write_full_report will create the
+ * first one whenever the next crash check runs.
+ */
+async function getRecentFullReportSnapshots(limit: number): Promise<{ id: string }[]> {
+  const { data, error } = await supabase
+    .from("full_report_snapshots")
+    .select("id")
+    .order("run_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to read full_report_snapshots: ${error.message}`);
+  }
+  return data ?? [];
+}
+
+export async function refreshFullReportWatchlist(tickers: WatchlistTicker[]): Promise<void> {
+  const [latest] = await getRecentFullReportSnapshots(1);
+  if (!latest) return;
+
+  const prices = await Promise.all(tickers.map((t) => getLatestDataPoint(t.symbol)));
+  const watchlist = computeWatchlistStatus(tickers, prices).map(
+    ({ max_position_usd: _maxPositionUsd, ...rest }) => rest,
+  );
+
+  const { error } = await supabase.from("full_report_snapshots").update({ watchlist }).eq("id", latest.id);
+  if (error) {
+    throw new Error(`Failed to refresh full_report_snapshots.watchlist: ${error.message}`);
+  }
 }
 
 export interface PortfolioReviewTickerEntry {

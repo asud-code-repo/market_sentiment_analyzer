@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -199,6 +199,11 @@ server.registerTool(
   async (input) => {
     const written = writeWatchlist(input.tickers, `Claude (portfolio review): ${input.change_summary}`);
     await syncWatchlistTickers(input.tickers.map((t) => t.symbol));
+    // Keeps the Full Report page's cached watchlist table from going stale
+    // relative to this change — otherwise it'd only refresh on the next
+    // write_full_report call (during "run crash check"), potentially days
+    // later, contradicting whatever a Portfolio Review just wrote about it.
+    await refreshFullReportWatchlist(input.tickers);
     return json({ written });
   },
 );
