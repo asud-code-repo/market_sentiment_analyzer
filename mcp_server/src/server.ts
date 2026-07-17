@@ -6,6 +6,7 @@ import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
+import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -168,6 +169,32 @@ server.registerTool(
       updated_at: watchlist.updated_at,
       tickers: computeWatchlistStatus(watchlist.tickers, prices),
     });
+  },
+);
+
+server.registerTool(
+  "get_series_deltas",
+  {
+    description:
+      "Returns 3-day and 7-day calendar-day deltas (not check-to-check gaps) for one or more " +
+      "data_points series, fulfilling crash-check-rules.md's Delta standard — previously no tool " +
+      "exposed historical lookback values, so deltas could not be computed at all. Looks up the most " +
+      "recent value on or before each target date (markets/FRED don't publish every calendar day), " +
+      "anchored to the series' own latest observation date, not 'today'. For the 6-indicator panel " +
+      "pass series_ids: VIXCLS, BAMLH0A0HYM2 (already converted to bps here, matching " +
+      "get_indicator_panel's hy_spread_bps — do not re-multiply), SP500, DGS10, SAHMREALTIME " +
+      "(Fed pivot signal has no numeric series, no delta possible). For the watchlist pass each " +
+      "ticker symbol. Returns null for a horizon if no data exists that far back yet — report as " +
+      "unavailable, never estimate or fabricate a delta yourself. Note: SAHMREALTIME publishes " +
+      "monthly, so its delta reflects change since the last available monthly reading, not a literal " +
+      "3/7 calendar-day window — mention that caveat if reporting it.",
+    inputSchema: {
+      series_ids: z.array(z.string()).min(1),
+    },
+  },
+  async (input) => {
+    const deltas = await Promise.all(input.series_ids.map((id) => computeSeriesDelta(id)));
+    return json({ deltas });
   },
 );
 
