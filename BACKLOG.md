@@ -95,17 +95,15 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
 
 ## Data & infrastructure
 
-- **Delta-standard (3-day/7-day Δ) can't actually be computed yet.** The
-  rules doc requires every indicator/ticker to show a 3-day and 7-day
-  delta, but no MCP tool exposes historical "N-days-ago" lookback values —
-  they only return the latest reading. The underlying history already
-  exists in `data_points` (5yr FRED backfill, 2yr ticker backfill); this
-  needs a new tool/extension to actually surface it. Verified live: Claude
-  correctly declined to fabricate these numbers rather than making them up,
-  so the gap is graceful, not silently wrong — just unfulfilled. A separate
-  external methodology review (2026-07-16, see below) independently
-  flagged this same gap as a "rules doc mandates unrenderable output"
-  dead-code smell — now first in the active build queue.
+- ~~Delta-standard (3-day/7-day Δ) can't actually be computed~~ — **built**.
+  `get_series_deltas` (`mcp_server/src/lib/seriesDelta.ts`, commit
+  b1b6b91) exposes historical N-days-ago lookback values by querying
+  `data_points` directly — anchored to each series' own latest observation
+  date (not "today"), since FRED series routinely lag. Verified against
+  live data: matched a real crash-check report exactly (VIX 15.67, HY
+  spread 271bps, S&P 7572.4, 10yr 4.58%). An external methodology review
+  (2026-07-16, see below) independently flagged this same gap the same day
+  this got picked up.
 
 - **Wave 2/3 threshold backtest finding.** Backtested the wave-authorization
   thresholds against real 2016–2026 history: Wave 3 (drawdown≥35% &
@@ -119,21 +117,23 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   *accelerator* rather than a hard gate — flagged as Bucket 3, needs a
   dedicated discussion before any change, not a quick sign-off.
 
-- **External methodology review, 2026-07-16 — triaged into 3 buckets.**
-  Ran `reference_docs/architecture-summary-for-external-review.md` through
-  a separate model; findings verified against actual code before accepting
+- **External methodology review, 2026-07-16 — triaged into 3 buckets,
+  Bucket 1 done.** Ran
+  `reference_docs/architecture-summary-for-external-review.md` through a
+  separate model; findings verified against actual code before accepting
   (e.g. confirmed `ingestion/src/sources/fred.ts` has no breadth-indicator
   source, confirming a "dead code" claim). Full triage in project memory
   (`backlog_external_review_2026_07_16.md`):
-  - **Bucket 1 (code-only, building now)**: the delta-lookback tool above;
-    two new FRED series (`CCSA` continuing claims alongside existing
-    `ICSA`, `BAMLC0A0CM` IG spreads alongside existing HY) plus two
-    derived-from-existing-data indicators (variance risk premium, a MOVE
-    proxy via 20-day realized `DGS10` vol) — all Tier 2 context, no gate
-    changes; ingestion plausibility bounds (day-over-day sigma check
-    quarantining outlier Tier 1 values, since the confirmation rule
-    protects against market noise but not a bad print repeating across 2
-    ingestion dates).
+  - ~~**Bucket 1 (code-only)**~~ — **built and verified against real
+    data.** `get_series_deltas` (commit b1b6b91, closes the delta-standard
+    item above — matched a live report exactly: VIX 15.67, HY 271bps, S&P
+    7572.4, 10yr 4.58%); `CCSA`/`BAMLC0A0CM` added to `get_context_indicators`
+    (commit 6de3484); an ingestion plausibility guard (commit 4832f11) —
+    deliberately hard historical-range bounds, not a statistical filter
+    (which would risk rejecting the first day of a real crisis as
+    "anomalous"), verified VIX 82.5 and a real -15% S&P day both correctly
+    pass while VIX 800/negative spreads/a decimal-shift error correctly
+    get quarantined (skipped, never written).
   - **Bucket 2 (rules-doc changes, needs one v6 redline sign-off session)**:
     wave triggers restated in drawdown % instead of absolute S&P levels
     (confirmed real decay — Wave 1's "$6,200" was ~-17% from ATH when
