@@ -347,6 +347,16 @@ const CONTEXT_INFO = {
     format: (v) => `$${(v / 1000).toFixed(1)}B`,
     signal: () => "Closest free proxy for consumer/card spending strength",
   },
+  ccsa: {
+    label: "Continuing Jobless Claims",
+    format: (v) => `${(v / 1000).toFixed(0)}K`,
+    signal: () => "Read alongside Initial Jobless Claims — rising here while initial claims stay flat means laid-off workers are struggling to find new jobs",
+  },
+  bamlc0a0cm: {
+    label: "IG Credit Spread",
+    format: (v) => `${Math.round(v * 100)}bps`,
+    signal: () => "Read alongside the HY spread — IG widening while HY holds is an earlier quality-flight signal",
+  },
 };
 
 function renderContextIndicators(latest) {
@@ -365,6 +375,8 @@ function renderContextIndicators(latest) {
     drcclacbs: latest.DRCCLACBS,
     dcoilwtico: latest.DCOILWTICO,
     rsafs: latest.RSAFS,
+    ccsa: latest.CCSA,
+    bamlc0a0cm: latest.BAMLC0A0CM,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -716,7 +728,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM"];
       const contextRows = await fetchFromSupabase(
         `data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&order=observation_date.desc&limit=500`,
       );
