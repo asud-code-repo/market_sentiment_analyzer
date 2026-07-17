@@ -102,7 +102,10 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   exists in `data_points` (5yr FRED backfill, 2yr ticker backfill); this
   needs a new tool/extension to actually surface it. Verified live: Claude
   correctly declined to fabricate these numbers rather than making them up,
-  so the gap is graceful, not silently wrong — just unfulfilled.
+  so the gap is graceful, not silently wrong — just unfulfilled. A separate
+  external methodology review (2026-07-16, see below) independently
+  flagged this same gap as a "rules doc mandates unrenderable output"
+  dead-code smell — now first in the active build queue.
 
 - **Wave 2/3 threshold backtest finding.** Backtested the wave-authorization
   thresholds against real 2016–2026 history: Wave 3 (drawdown≥35% &
@@ -111,7 +114,41 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
   fired at all in 2022, despite a real 24%+ drawdown that year, because VIX
   never sustained above 35 in that "grinding" bear market. Worth a second
   look at whether the joint drawdown-AND-VIX construction is calibrated
-  right — not acted on yet, just flagged so it isn't lost.
+  right — not acted on yet, just flagged so it isn't lost. An external
+  review (below) independently proposed a specific fix: VIX as an
+  *accelerator* rather than a hard gate — flagged as Bucket 3, needs a
+  dedicated discussion before any change, not a quick sign-off.
+
+- **External methodology review, 2026-07-16 — triaged into 3 buckets.**
+  Ran `reference_docs/architecture-summary-for-external-review.md` through
+  a separate model; findings verified against actual code before accepting
+  (e.g. confirmed `ingestion/src/sources/fred.ts` has no breadth-indicator
+  source, confirming a "dead code" claim). Full triage in project memory
+  (`backlog_external_review_2026_07_16.md`):
+  - **Bucket 1 (code-only, building now)**: the delta-lookback tool above;
+    two new FRED series (`CCSA` continuing claims alongside existing
+    `ICSA`, `BAMLC0A0CM` IG spreads alongside existing HY) plus two
+    derived-from-existing-data indicators (variance risk premium, a MOVE
+    proxy via 20-day realized `DGS10` vol) — all Tier 2 context, no gate
+    changes; ingestion plausibility bounds (day-over-day sigma check
+    quarantining outlier Tier 1 values, since the confirmation rule
+    protects against market noise but not a bad print repeating across 2
+    ingestion dates).
+  - **Bucket 2 (rules-doc changes, needs one v6 redline sign-off session)**:
+    wave triggers restated in drawdown % instead of absolute S&P levels
+    (confirmed real decay — Wave 1's "$6,200" was ~-17% from ATH when
+    written, now ~-18.1% and drifting as new ATHs land); a defined
+    event/horizon for the crash-probability % (currently unfalsifiable —
+    "13%" of *what*, by *when*); the breadth-band dead-code decision (wire
+    a source or delete it); stale "checks run 6-7x/day" language cleanup.
+  - **Bucket 3 (deployment-logic redesign, dedicated discussion)**: VIX as
+    accelerator not gate (see above); Fed pivot signal conditioning (cut +
+    weak labor = RED, cut + clean labor = AMBER, avoiding a phantom RED
+    from a benign easing cycle); 10yr rate-of-change overlay (level band
+    confirmed stuck AMBER ~4.5-4.6% for this system's entire life —
+    genuinely uninformative); Warsh MODERATE/DOVISH mechanical criteria
+    (closing the gap the rules doc has deliberately left open pending
+    user sign-off).
 
 - ~~Trigger notifications on threshold crossings~~ — **built**. A free
   ntfy.sh push notification (`rule_engine/src/lib/notify.ts`) fires the
