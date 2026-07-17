@@ -1,169 +1,59 @@
 # Backlog
 
 Things deliberately deferred, not forgotten. Grouped by area, not priority.
+Resolved items are removed once done rather than kept struck-through —
+full history of what was built and how lives in project memory, not here.
 
 ## Security & access
 
-- ~~Cloudflare Access lockdown on `dashboard_site`~~ — **resolved as a
-  deliberate decision, not deferred.** The data is safe by design
-  (RLS-scoped anon key, macro-only tables), and the user wants to be able
-  to share this page with others — a single-email Access policy works
-  against that goal. Decided: leave it public. Cloudflare Access is
-  reserved specifically for the confidential Full Report page below, where
-  restricting access to just the user *is* the point.
+- **Cloudflare Access policy coverage of preview-deployment URLs** on
+  `full_report_site`. A preview deployment gets a separate hostname from
+  production, and the Access Application's domain config only currently
+  covers the production URL. Low priority for a single-user page — revisit
+  if it ever matters.
 
-- ~~"Full Report" Cloudflare Pages project~~ — **live**, at
-  `market-sentiment-full-report.pages.dev`. Distinct from the existing
-  public `dashboard_site` (unchanged). Shows the brokerage watchlist
-  (tickers + wave price targets), the crash-type diagnosis narrative, and
-  the *qualitative* parts of the personal portfolio snapshot — all
-  previously chat-only. Cloudflare Access (One-Time-PIN login, gmail-gated)
-  + a **Cloudflare Pages Function** (`full_report_site/functions/index.ts`)
-  doing server-side Supabase queries with the `service_role` key, never
-  exposed to the browser. Data lives in a separate Supabase table
-  (`full_report_snapshots`, RLS deny-all for anon/authenticated). Layout:
-  **Option B "Bridge"** (4-stat context strip + crash-type diagnosis +
-  dense single-line watchlist). History writes from day one, no browsing
-  UI in v1. Verified end-to-end 2026-07-14 (Access login → Pages Function →
-  Supabase query all confirmed working) — see project memory for the
-  deploy/Access gotchas hit along the way. Not covered: Access policy
-  coverage of Cloudflare Pages preview-deployment URLs — low priority for
-  a single-user page.
-
-  **Update 2026-07-16 — Portfolio Opportunity Review merged in too, live and
-  verified.** The earlier "`portfolio-review-template.html` is permanently
-  chat-only, never published" exclusion was explicitly reversed by the
-  user. New `portfolio_review_snapshots` table (same deny-all RLS pattern,
-  migration applied and anon-permission-denied re-verified) +
-  `write_portfolio_review` MCP tool (drift recomputed server-side, every
-  free-text field guardrail-checked) + a new page section (verdict, drift
-  bars, ticker thesis cards merged with live watchlist status, macro
-  cross-reference, and a server-side-rendered risk radar chart replicating
-  the template's hexagon SVG math). Position-sizing dollar figures
-  (`max_position_usd`) still never persisted — everything else now does.
-  Ran a real Portfolio Opportunity Review and confirmed every new section
-  renders correctly via a PDF export of the live page. Found and fixed one
-  real bug from that test: `full_report_snapshots.watchlist` only refreshed
-  on `write_full_report` calls, so a target change from `write_watchlist`
-  during this Portfolio Review (CCJ's Wave 1 target, $44→$70) sat stale in
-  the watchlist table, directly contradicting the Portfolio Review
-  section's own narrative right below it. `write_watchlist` now also
-  patches the latest `full_report_snapshots` row's watchlist immediately.
-
-  A second bug surfaced from the same test: the "Portfolio Drift" section
-  showed only standing flags, no actual allocation bars — `computePortfolioDrift()`
-  treated "has `dry_powder_usd`" and "has a full target breakdown" as
-  mutually exclusive, so `tactical_401k` (which has both) had its
-  legitimate fund-level drift silently suppressed entirely. Fixed (commit
-  049b5c4) per explicit user preference for full visibility: the
-  wave-gated standing flag now appears *alongside* full fund-level entries,
-  not instead of them — verified against the real portfolio file (all 7
-  funds now show, including the dry-powder fund's own large, intentional
-  deviation). Also improves `get_portfolio_drift` directly, not just this
-  page. Drift row labels were then cleaned up (commit 7971edc): grouped by
-  account instead of repeating the full label on every row, and raw
-  snake_case fund keys (`nyl_anchor`) formatted into readable names (`NYL
-  Anchor`).
-
-  **Third, more serious bug**: a manually-triggered "run crash check" on
-  2026-07-16 revealed `write_full_report` was completely broken — every
-  call rejected `crash_type_diagnosis` as a string no matter what was
-  sent. Root cause confirmed directly via `z.toJSONSchema()`: this was the
-  only nullable-object field across all 4 write tools
-  (`.object({...}).nullable()`), which generates an `anyOf: [{type:
-  "object"}, {type: "null"}]` union schema that the client apparently
-  can't serialize an object against. Fixed (commit 0dd5a3e): switched to
-  `.optional()` (a clean, non-union object schema) — the model must now
-  omit the field entirely rather than pass `null` when no crash type was
-  diagnosed. This explains the page's persistent stale "Run at" timestamp
-  independent of whether the 2pm scheduled task itself has been firing —
-  that question is still open, and this bug would have blocked it either
-  way. Not yet re-verified live; needs a Claude Desktop restart and a
-  retry.
-
-- ~~No code-level guard against personal dollar figures leaking into
-  Supabase~~ — **implemented, both write paths.** `write_snapshot`'s `notes`
-  field and the new `write_full_report`'s `portfolio_context`/
-  `crash_type_diagnosis` fields both cross-reference real dollar figures
-  from `local_state/portfolio.yaml` (`_usd`/`_cad` keys, ≥$1,000) against
-  incoming text (raw and comma-formatted, with substring-boundary
-  protection) and throw before persisting if a match is found, rather than
-  relying on prompt instruction alone. Explicitly rejected as an
-  alternative: reducing `local_state/portfolio.yaml`'s own precision — that
-  file needs to stay exact for `get_deployment_plan`/`get_portfolio_drift`
-  to keep working.
+- **`write_full_report`'s schema fix not yet confirmed with a live retry.**
+  The tool was completely broken (nullable-object schema rejected
+  `crash_type_diagnosis` no matter what was sent) — fixed and type-checked
+  (commit 0dd5a3e), but no successful `write_full_report` call has actually
+  happened since. Needs a Claude Desktop restart to pick up the change,
+  then a retry (manual or the next crash check) to confirm it actually
+  works end to end now.
 
 ## Data & infrastructure
-
-- ~~Delta-standard (3-day/7-day Δ) can't actually be computed~~ — **built**.
-  `get_series_deltas` (`mcp_server/src/lib/seriesDelta.ts`, commit
-  b1b6b91) exposes historical N-days-ago lookback values by querying
-  `data_points` directly — anchored to each series' own latest observation
-  date (not "today"), since FRED series routinely lag. Verified against
-  live data: matched a real crash-check report exactly (VIX 15.67, HY
-  spread 271bps, S&P 7572.4, 10yr 4.58%). An external methodology review
-  (2026-07-16, see below) independently flagged this same gap the same day
-  this got picked up.
 
 - **Wave 2/3 threshold backtest finding.** Backtested the wave-authorization
   thresholds against real 2016–2026 history: Wave 3 (drawdown≥35% &
   VIX>45) never fired in 2020 despite VIX peaking at 82 — the drawdown side
   missed the 35% bar by about a point. Wave 2 (drawdown≥24% & VIX>35) never
   fired at all in 2022, despite a real 24%+ drawdown that year, because VIX
-  never sustained above 35 in that "grinding" bear market. Worth a second
-  look at whether the joint drawdown-AND-VIX construction is calibrated
-  right — not acted on yet, just flagged so it isn't lost. An external
-  review (below) independently proposed a specific fix: VIX as an
-  *accelerator* rather than a hard gate — flagged as Bucket 3, needs a
-  dedicated discussion before any change, not a quick sign-off.
+  never sustained above 35 in that "grinding" bear market. An external
+  methodology review (2026-07-16) independently proposed a specific fix —
+  VIX as an *accelerator* rather than a hard gate — but this needs a
+  dedicated discussion before any change, not a quick sign-off (see below).
 
-- **External methodology review, 2026-07-16 — triaged into 3 buckets,
-  Bucket 1 done.** Ran
-  `reference_docs/architecture-summary-for-external-review.md` through a
-  separate model; findings verified against actual code before accepting
-  (e.g. confirmed `ingestion/src/sources/fred.ts` has no breadth-indicator
-  source, confirming a "dead code" claim). Full triage in project memory
-  (`backlog_external_review_2026_07_16.md`):
-  - ~~**Bucket 1 (code-only)**~~ — **built and verified against real
-    data.** `get_series_deltas` (commit b1b6b91, closes the delta-standard
-    item above — matched a live report exactly: VIX 15.67, HY 271bps, S&P
-    7572.4, 10yr 4.58%); `CCSA`/`BAMLC0A0CM` added to `get_context_indicators`
-    (commit 6de3484); an ingestion plausibility guard (commit 4832f11) —
-    deliberately hard historical-range bounds, not a statistical filter
-    (which would risk rejecting the first day of a real crisis as
-    "anomalous"), verified VIX 82.5 and a real -15% S&P day both correctly
-    pass while VIX 800/negative spreads/a decimal-shift error correctly
-    get quarantined (skipped, never written). Also fixed (commit
-    07124f8): `dashboard_site/index.html` has its own **independent**
-    hardcoded contextual-indicator series list (client-side JS querying
-    `data_points` directly) separate from the MCP tool — missed on the
-    first pass, so the two new series weren't actually showing up
-    anywhere until this got added too.
+- **External methodology review, 2026-07-16 — Buckets 2 & 3 still open.**
+  A separate model reviewed the full architecture + rules doc (see
+  `reference_docs/architecture-summary-for-external-review.md`); findings
+  were verified against actual code before accepting. Bucket 1 (code-only:
+  delta-lookback tool, 2 new FRED series, ingestion plausibility guard) is
+  done. Remaining:
   - **Bucket 2 (rules-doc changes, needs one v6 redline sign-off session)**:
     wave triggers restated in drawdown % instead of absolute S&P levels
     (confirmed real decay — Wave 1's "$6,200" was ~-17% from ATH when
     written, now ~-18.1% and drifting as new ATHs land); a defined
     event/horizon for the crash-probability % (currently unfalsifiable —
     "13%" of *what*, by *when*); the breadth-band dead-code decision (wire
-    a source or delete it); stale "checks run 6-7x/day" language cleanup.
+    a source or delete it — no ingestion source exists for "% of stocks
+    above 200dma"); stale "checks run 6-7x/day" language cleanup.
   - **Bucket 3 (deployment-logic redesign, dedicated discussion)**: VIX as
-    accelerator not gate (see above); Fed pivot signal conditioning (cut +
-    weak labor = RED, cut + clean labor = AMBER, avoiding a phantom RED
-    from a benign easing cycle); 10yr rate-of-change overlay (level band
-    confirmed stuck AMBER ~4.5-4.6% for this system's entire life —
-    genuinely uninformative); Warsh MODERATE/DOVISH mechanical criteria
-    (closing the gap the rules doc has deliberately left open pending
-    user sign-off).
-
-- ~~Trigger notifications on threshold crossings~~ — **built**. A free
-  ntfy.sh push notification (`rule_engine/src/lib/notify.ts`) fires the
-  moment `confirmed_red_count` crosses up into 2+, comparing against the
-  prior `crash_checks` row so it only fires on the transition, not every
-  day the condition holds — runs inside the existing 10am ET `classify`
-  job, no new schedule needed. Topic name is the `NTFY_TOPIC` GitHub
-  secret. Delivery mechanism verified via a manual test push (confirmed
-  received on phone); the actual threshold-crossing code path hasn't been
-  exercised by a real transition yet (rare by design).
+    accelerator not gate (see Wave 2/3 finding above); Fed pivot signal
+    conditioning (cut + weak labor = RED, cut + clean labor = AMBER,
+    avoiding a phantom RED from a benign easing cycle); 10yr rate-of-change
+    overlay (level band confirmed stuck AMBER ~4.5-4.6% for this system's
+    entire life — genuinely uninformative); Warsh MODERATE/DOVISH
+    mechanical criteria (closing the gap the rules doc has deliberately
+    left open pending user sign-off).
 
 - **Idea, discuss later: package this as a Kubernetes / plug-and-play open
   source solution**, rather than this user's personal deployment (2x
@@ -179,67 +69,27 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
 
 ## Process & content
 
-- **Reassess recent shipped work after a week of real usage.** A lot
-  landed in a short window (Portfolio Opportunity Review template, the
-  switch to Massive for ticker prices, the historical backfills, the
-  Signal Tiering confirmation-window rule) — each validated once, not yet
-  observed over repeated real runs. Also folds in: whether
-  `dashboard_site` and the two chat-report templates should stay as
-  different as they currently are, once there's been time to live with the
-  split.
+- **Reassess recent shipped work after a week of real usage** (~2026-07-18
+  checkpoint). A lot landed in a short window — Portfolio Opportunity
+  Review merged into the Full Report page, the switch to Massive for
+  ticker prices, historical backfills, the Signal Tiering
+  confirmation-window rule, the delta-lookback tool, new context
+  indicators — each validated once, not yet observed over repeated real
+  runs. Also folds in: whether `dashboard_site` and the chat-report
+  templates should stay as different as they currently are.
 
 - **BrokerageLink watchlist ticker selection has no documented rationale.**
-  The 7 tickers each have a one-line theme tag (e.g. "energy/stagflation,"
-  "uranium/AI power") but no written reasoning for why that specific name
-  over an alternative in the same theme. The Portfolio Opportunity Review
-  process is the mechanism to close this gap — so far it's only
-  re-examined price *targets* (flagging one as likely stale), not whether
-  the underlying ticker choices themselves still hold up.
+  The 7 tickers each have a one-line theme tag but no written reasoning for
+  why that specific name over an alternative in the same theme. The
+  Portfolio Opportunity Review process is the mechanism to close this gap
+  — so far it's only re-examined price *targets* (CCJ's, most recently),
+  not whether the underlying ticker choices themselves still hold up.
 
-- **Automating the full daily analysis — in testing.** The daily GitHub
-  Action still only runs deterministic classification; the full qualitative
-  synthesis (crash probability, narrative, crash-type diagnosis) used to
-  only happen when a chat session was manually triggered. As of 2026-07-14,
-  the user has a **Claude Desktop native scheduled task** running "run
-  crash check" daily at **2pm** (chosen as non-peak, to dodge the earlier
-  unexplained peak-hours skip) — no GitHub Action, no direct API billing,
-  just the existing Desktop subscription running the same workflow a human
-  would. This means `write_snapshot` and `write_full_report` now persist
-  unattended, with no human review before writing — the dollar-figure
-  guardrail still catches that one specific failure mode, but not a bad
-  probability estimate or a garbled diagnosis.
-
-  A related risk surfaced when checking whether 7am ingestion + 7:30am
-  Claude was a safe pairing: `ingest.yml`'s actual run history shows
-  GitHub's cron trigger has been delayed **up to 62 minutes** past its
-  nominal 7am ET schedule — a fixed-offset scheduled Claude run could
-  silently analyze yesterday's stale `crash_checks` row with no warning.
-  **Fixed**: a new `data_freshness` check (`mcp_server/src/lib/
-  freshness.ts`, commit 635b82d) compares the latest row's date against
-  the expected ingestion date (accounting for weekends) and now makes step
-  1 of the workflow stop and report staleness instead of proceeding —
-  covers both manual and the unattended 2pm run. Also moved ingestion from
-  7am to **10am ET** (commit 7dcf430) for extra buffer (~4hrs before the
-  2pm run) — not strictly necessary given the freshness check, but cheap
-  insurance against a wasted/skipped run on an unusually-late ingestion day.
-  Final daily pipeline: **ingestion 10am ET → Claude analysis 2pm ET**.
-
-  **Not yet confirmed:** whether 2pm actually avoids the original skip
-  issue, whether the writes landing in `crash_checks`/`full_report_snapshots`
-  look correct, or whether the freshness check itself has actually
-  triggered/behaved correctly on a real stale-data day — check back after
-  a couple days of real runs.
-
-- ~~PWA / phone-friendly reporting site(s)~~ — **built and confirmed
-  working.** `manifest.json` + generated icons (shared pulse/sparkline
-  glyph, blue accent for `dashboard_site`, red accent for
-  `full_report_site`) + `apple-touch-icon`/`theme-color` tags. Deliberately
-  manifest-only, no service worker — avoids caching `full_report_site`'s
-  Access-gated content in a way that could outlive a logged-out session, or
-  showing stale financial data while offline. Chrome-on-iPhone has no
-  install option at all (Apple restricts "Add to Home Screen" to Safari
-  specifically); iOS Safari also ignores the manifest's `display:
-  standalone` field and needs its own `apple-mobile-web-app-capable` meta
-  tag, added separately. Real Safari "Add to Home Screen" test on an
-  iPhone 16 confirmed working — standalone launch, no address bar, correct
-  icon.
+- **Daily automation reliability — not yet confirmed.** Pipeline is built
+  (ingestion 10am ET → Claude Desktop scheduled "run crash check" 2pm ET,
+  freshness-checked) but two things remain unverified: whether the 2pm
+  scheduled task actually fires reliably (a real stall was observed once,
+  waiting on an approval question that never got answered — unattended
+  runs have no one to answer it), and whether the data-freshness guardrail
+  has ever actually triggered/behaved correctly on a real stale-data day.
+  Check back after a few more days of real runs.
