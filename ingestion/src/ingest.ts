@@ -1,4 +1,5 @@
-import { writeDataPoints, type DataPoint } from "./lib/supabase.js";
+import { writeDataPoints, getLatestValue, type DataPoint } from "./lib/supabase.js";
+import { checkPlausibility } from "./lib/plausibility.js";
 import { fetchFred } from "./sources/fred.js";
 import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
@@ -47,9 +48,35 @@ async function main() {
   const successes = results.filter((r) => r.points);
 
   const allPoints = successes.flatMap((r) => r.points ?? []);
-  if (allPoints.length > 0) {
-    await writeDataPoints(allPoints);
-    console.log(`Wrote ${allPoints.length} data points from: ${successes.map((r) => r.name).join(", ")}`);
+
+  // Data-noise guard (see lib/plausibility.ts): the Signal Tiering
+  // confirmation rule protects against a single volatile day authorizing a
+  // wave, but not against a bad print sitting in data_points for 2+
+  // ingestion dates confirming itself. Quarantined points are skipped
+  // (never written) rather than written-but-flagged, so nothing downstream
+  // needs to know this check exists to stay correct.
+  const plausiblePoints: DataPoint[] = [];
+  const quarantined: string[] = [];
+  for (const point of allPoints) {
+    const previousValue = point.series_id === "SP500" ? await getLatestValue("SP500") : undefined;
+    const result = checkPlausibility(point, previousValue);
+    if (result.ok) {
+      plausiblePoints.push(point);
+    } else {
+      quarantined.push(result.reason ?? `${point.series_id}=${point.value} failed plausibility check`);
+    }
+  }
+
+  if (quarantined.length > 0) {
+    console.error(`${quarantined.length} data point(s) quarantined (not written) — implausible value, check the source manually:`);
+    for (const reason of quarantined) {
+      console.error(`  - ${reason}`);
+    }
+  }
+
+  if (plausiblePoints.length > 0) {
+    await writeDataPoints(plausiblePoints);
+    console.log(`Wrote ${plausiblePoints.length} data points from: ${successes.map((r) => r.name).join(", ")}`);
   }
 
   if (optionalFailures.length > 0) {

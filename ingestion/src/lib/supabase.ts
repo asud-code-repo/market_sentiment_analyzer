@@ -50,6 +50,26 @@ export async function writeDataPoints(points: DataPoint[]): Promise<void> {
 }
 
 /**
+ * Most recent known value for a series, or null if none exists yet. Used
+ * by the plausibility guard (see lib/plausibility.ts) to compare an
+ * incoming value against what's already on record before writing it.
+ */
+export async function getLatestValue(seriesId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("value")
+    .eq("series_id", seriesId)
+    .order("observation_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to read latest value for ${seriesId}: ${error.message}`);
+  }
+  return data?.value ?? null;
+}
+
+/**
  * The BrokerageLink watchlist ticker *list* (symbols only) lives in Supabase
  * so CI can read it without access to the gitignored local watchlist file —
  * see supabase/migrations/20260711000000_watchlist_tickers.sql. Returns []
