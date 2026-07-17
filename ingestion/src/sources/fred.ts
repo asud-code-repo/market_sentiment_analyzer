@@ -32,6 +32,17 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "RSAFS", unit: "usd_millions" }, // Advance retail sales, all stores — closest free proxy
                                           // to "consumer/credit-card spending"; FRED has no public
                                           // real-time card-swipe series, this is reported monthly.
+  { id: "CCSA", unit: "count" },         // Continuing jobless claims — pairs with ICSA (initial
+                                          // claims) above. Flagged by external methodology review
+                                          // 2026-07-16: initial claims can stay benign while
+                                          // continuing claims trend upward, so watching only ICSA
+                                          // misses the more informative half of the pair.
+  { id: "BAMLC0A0CM", unit: "percent" }, // ICE BofA US Investment Grade OAS — pairs with the
+                                          // existing HY spread (BAMLH0A0HYM2). IG spreads widening
+                                          // while HY holds steady is an earlier quality-flight
+                                          // signal than waiting for HY itself to move (external
+                                          // review 2026-07-16). Same percent->bps convention as HY
+                                          // applies when this is surfaced (see get_context_indicators).
 
   // CAD/USD FX rate for the RRSP's local_state/portfolio.yaml conversion —
   // was a hand-updated snapshot before this; see get_portfolio_snapshot in

@@ -288,13 +288,17 @@ server.registerTool(
     description:
       "Returns supplementary macro indicators — financial stress/conditions indices, breakeven " +
       "inflation, bank lending standards, reverse repo, the 2s10s yield curve spread, jobless " +
-      "claims, credit card delinquencies, WTI crude oil, and retail sales. These are informational " +
-      "context only — NOT part of the 6-indicator wave-authorization gate (that stays exactly " +
-      "VIX/HY spread/drawdown/10yr/Sahm/Fed pivot, per the user's own fixed rules). Use these to " +
-      "enrich narrative synthesis, never to override or supplement the RED count / wave_authorized decision.",
+      "claims (initial and continuing), credit card delinquencies, WTI crude oil, retail sales, and " +
+      "investment-grade credit spreads. These are informational context only — NOT part of the " +
+      "6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/Sahm/Fed " +
+      "pivot, per the user's own fixed rules). Continuing claims trending up while initial claims " +
+      "stay benign, or IG spreads widening while HY holds, are both earlier/quieter stress tells than " +
+      "waiting for the gating indicators themselves to move — worth cross-referencing together. Use " +
+      "these to enrich narrative synthesis, never to override or supplement the RED count / " +
+      "wave_authorized decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, drcclacbs, wti, retailSales] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg] =
       await Promise.all(
         [
           "STLFSI4",
@@ -305,9 +309,11 @@ server.registerTool(
           "DGS10",
           "DGS2",
           "ICSA",
+          "CCSA",
           "DRCCLACBS",
           "DCOILWTICO",
           "RSAFS",
+          "BAMLC0A0CM",
         ].map(getLatestDataPoint),
       );
 
@@ -328,9 +334,15 @@ server.registerTool(
       reverse_repo_usd_billions: rrpontsyd,
       yield_curve_2s10s: twoTenSpread,
       initial_jobless_claims: icsa,
+      continuing_jobless_claims: ccsa && { ...ccsa, signal: "read alongside initial_jobless_claims — a rising trend here while initial claims stay flat indicates workers are struggling to find new jobs after layoffs, a more informative labor-weakening signal than initial claims alone" },
       credit_card_delinquency_rate_pct: drcclacbs,
       wti_crude_usd_per_barrel: wti && { ...wti, signal: wti.value > 100 ? "above $100 — stagflation accelerant watch" : "below $100" },
       retail_sales_usd_millions: retailSales,
+      ig_credit_spread_bps: bamlIg && {
+        value: Math.round(bamlIg.value * 100 * 10) / 10,
+        observation_date: bamlIg.observation_date,
+        signal: "read alongside the gating HY spread — IG widening while HY holds steady is an earlier quality-flight tell than waiting for HY itself to move",
+      },
     });
   },
 );
