@@ -71,6 +71,11 @@
   .date-bar select { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); }
   .date-nav-btn { font-size: 12px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); cursor: pointer; }
   .date-nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  /* Hidden by default -- shown only in standalone/installed PWA mode via JS,
+     since a normal browser tab already has its own reload affordance
+     (pull-to-refresh / URL bar), which standalone mode strips away. */
+  #refresh-btn { display: none; flex-shrink: 0; }
 
   /* Alert banners */
   .banner { border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border); }
@@ -173,9 +178,12 @@
 </head>
 <body>
 <div class="wrap">
-  <div>
-    <h1>Macro Crash Check — History</h1>
-    <p class="subtitle">Read-only view of macro/market state. No personal account data — see the local MCP tools for portfolio-specific figures.</p>
+  <div class="header-row">
+    <div>
+      <h1>Macro Crash Check — History</h1>
+      <p class="subtitle">Read-only view of macro/market state. No personal account data — see the local MCP tools for portfolio-specific figures.</p>
+    </div>
+    <button class="date-nav-btn" id="refresh-btn" title="Refresh">&#8635; Refresh</button>
   </div>
 
   <div id="error-container"></div>
@@ -709,6 +717,18 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
     e.target.textContent = showing ? "Table view" : "Chart view";
   });
   draw();
+}
+
+// navigator.standalone is the older iOS-Safari-specific check; the
+// display-mode media query is the standard, broader one (Android/modern
+// browsers). Either being true means this is the installed PWA, not a
+// normal browser tab.
+const isStandalonePwa =
+  window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+if (isStandalonePwa) {
+  const refreshBtn = document.getElementById("refresh-btn");
+  refreshBtn.style.display = "inline-block";
+  refreshBtn.addEventListener("click", () => location.reload());
 }
 
 async function main() {

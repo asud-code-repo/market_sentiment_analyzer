@@ -403,9 +403,24 @@ function renderShell(title: string, body: string): string {
 </head>
 <body>
 <div class="wrap">
-  <h1>${escapeHtml(title)}</h1>
+  <div class="header-row">
+    <h1>${escapeHtml(title)}</h1>
+    <button class="badge muted" id="refresh-btn" title="Refresh" style="display:none; cursor:pointer; border:none;">&#8635; Refresh</button>
+  </div>
   ${body}
 </div>
+<script>
+  // navigator.standalone is the older iOS-Safari-specific check; the
+  // display-mode media query is the standard, broader one. Either being
+  // true means this is the installed PWA, not a normal browser tab -- a
+  // normal tab already has its own reload affordance that standalone mode
+  // strips away.
+  if (window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches) {
+    var refreshBtn = document.getElementById("refresh-btn");
+    refreshBtn.style.display = "inline-block";
+    refreshBtn.addEventListener("click", function () { location.reload(); });
+  }
+</script>
 </body>
 </html>`;
 }
@@ -429,6 +444,7 @@ const PAGE_CSS = `
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page); color: var(--text-primary); margin: 0; padding: 24px; }
   .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
   h1 { font-size: 20px; margin: 0; }
+  .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
   .subtitle a { color: var(--neutral-blue); }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
