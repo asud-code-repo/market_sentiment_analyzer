@@ -133,7 +133,12 @@ Things deliberately deferred, not forgotten. Grouped by area, not priority.
     (which would risk rejecting the first day of a real crisis as
     "anomalous"), verified VIX 82.5 and a real -15% S&P day both correctly
     pass while VIX 800/negative spreads/a decimal-shift error correctly
-    get quarantined (skipped, never written).
+    get quarantined (skipped, never written). Also fixed (commit
+    07124f8): `dashboard_site/index.html` has its own **independent**
+    hardcoded contextual-indicator series list (client-side JS querying
+    `data_points` directly) separate from the MCP tool — missed on the
+    first pass, so the two new series weren't actually showing up
+    anywhere until this got added too.
   - **Bucket 2 (rules-doc changes, needs one v6 redline sign-off session)**:
     wave triggers restated in drawdown % instead of absolute S&P levels
     (confirmed real decay — Wave 1's "$6,200" was ~-17% from ATH when
