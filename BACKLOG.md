@@ -55,6 +55,20 @@ full history of what was built and how lives in project memory, not here.
     mechanical criteria (closing the gap the rules doc has deliberately
     left open pending user sign-off).
 
+- **Idea, discuss later: cross-indicator divergence detection.** The rule
+  engine classifies indicators individually (VIX band, HY band, etc.) but
+  never looks at relationships between them — so a real signal like
+  "credit spreads aren't confirming an equity wobble" only ever surfaces
+  informally, in the LLM's narrative, run to run. Surfaced 2026-07-18 via
+  another periodic external review; deliberately held pending the
+  reassess-after-a-week checkpoint above. Cheapest starting point when
+  picked up: IG-vs-HY and initial-vs-continuing-claims divergence (both
+  already-ingested series, just a subtraction + a calibrated threshold).
+  Full write-up, including where the review's proposal needed pushback
+  (data-depth, a vague "meaningfully" qualifier, skepticism on the
+  regime-dependent 10yr-vs-equities pair specifically), in project memory
+  (`backlog_cross_indicator_divergence_detection.md`).
+
 - **Idea, discuss later: package this as a Kubernetes / plug-and-play open
   source solution**, rather than this user's personal deployment (2x
   Cloudflare Pages, Supabase, GitHub Actions cron, a local stdio MCP server
