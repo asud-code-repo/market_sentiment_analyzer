@@ -69,6 +69,23 @@ full history of what was built and how lives in project memory, not here.
   regime-dependent 10yr-vs-equities pair specifically), in project memory
   (`backlog_cross_indicator_divergence_detection.md`).
 
+- **Idea, discuss later: portfolio drift methodology review.** Adopt the
+  5/25 rebalancing rule (Swedroe — threshold = min(5pp absolute, 25% of
+  the fund's own target)) in `computePortfolioDrift()` instead of the
+  current flat 5pp threshold; verified against real targets before
+  endorsing (mostly tightens thresholds on smaller-target funds, add a
+  ~2pp floor to avoid false-flagging on rounding noise). Three bigger,
+  unstarted scope questions from the same review: splitting
+  `get_portfolio_drift` into structural/tactical response fields (mostly
+  cosmetic, the underlying logic already separates them), an age-based
+  glide-path target for the spouse 401k (moot for now — no target is
+  currently set for that account at all), and an effective-number-of-bets
+  diversification metric for the watchlist (real technique, but the
+  review's "concentrated" example cherry-picked 5 of 7 actual tickers —
+  unconfirmed whether the real watchlist needs this). `riskfolio-lib`
+  flagged as a free Python option if this gets built. Full write-up in
+  project memory (`backlog_portfolio_drift_methodology_review.md`).
+
 - **Idea, discuss later: package this as a Kubernetes / plug-and-play open
   source solution**, rather than this user's personal deployment (2x
   Cloudflare Pages, Supabase, GitHub Actions cron, a local stdio MCP server
