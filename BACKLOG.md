@@ -99,11 +99,19 @@ full history of what was built and how lives in project memory, not here.
   — so far it's only re-examined price *targets* (CCJ's, most recently),
   not whether the underlying ticker choices themselves still hold up.
 
-- **Daily automation reliability — not yet confirmed.** Pipeline is built
-  (ingestion 10am ET → Claude Desktop scheduled "run crash check" 2pm ET,
-  freshness-checked) but two things remain unverified: whether the 2pm
-  scheduled task actually fires reliably (a real stall was observed once,
-  waiting on an approval question that never got answered — unattended
-  runs have no one to answer it), and whether the data-freshness guardrail
-  has ever actually triggered/behaved correctly on a real stale-data day.
-  Check back after a few more days of real runs.
+- **Daily automation reliability — two real bugs found and fixed
+  2026-07-28, not yet reconfirmed live.** A multi-day gap in persisted
+  reports (last real report 7/24, bare null-probability rows on 7/27-7/28
+  despite healthy ingestion) traced to two sequential bugs, found by
+  querying Supabase directly rather than guessing: (1) the scheduled task
+  wasn't scoped to the Claude Project, so `project-instructions.md` was
+  never loaded — fixed by deleting and recreating the task scoped to
+  "Market Sentiment Analyzer" (Claude Desktop doesn't allow changing this
+  on an existing task). (2) Even after that fix, the model skipped
+  `write_snapshot`/`write_full_report` on a calm day, citing a "skip
+  persistence if nothing changed" protocol that was never actually
+  written anywhere — it had generalized `crash-check-rules.md`'s
+  "automated refresh vs. full report" *display-formatting* distinction
+  into a persistence decision. Fixed with an explicit always-persist line
+  in `project-instructions.md` (commit 5709cff). Check `crash_checks`/
+  `full_report_snapshots` after the next run to confirm a real row lands.
