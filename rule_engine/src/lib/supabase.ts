@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { ConfirmationEntry } from "../rules.js";
+import type { DivergenceFlag } from "../divergence.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -91,6 +92,7 @@ export interface CrashCheckInsert {
   warsh_hard_rules_active: boolean;
   trigger_status: unknown;
   raw_source_data: unknown;
+  divergence_flags: DivergenceFlag[];
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {

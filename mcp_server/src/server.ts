@@ -7,7 +7,6 @@ import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
-import { computeDivergences } from "./lib/divergence.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -295,9 +294,11 @@ server.registerTool(
       "claims (initial and continuing), credit card delinquencies, WTI crude oil, retail sales, and " +
       "investment-grade credit spreads. These are informational context only — NOT part of the " +
       "6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/Sahm/Fed " +
-      "pivot, per the user's own fixed rules). `divergence_flags` are computed deterministically here " +
-      "(not left for you to eyeball) — report `diverging: true` pairs as-is, never independently judge " +
-      "whether two series have decoupled from their own reading of the raw numbers. Note that " +
+      "pivot, per the user's own fixed rules). `divergence_flags` are computed deterministically once " +
+      "daily by the rule engine (not by you, and not recomputed here — this reads the persisted value " +
+      "from the latest crash_checks row, the same one dashboard_site reads) — report `diverging: true` " +
+      "pairs as-is, never independently judge whether two series have decoupled from your own reading " +
+      "of the raw numbers. Note that " +
       "vix_vs_hy_credit_spread's `diverging: true` is a reassuring read (equity-specific noise, not " +
       "systemic stress), unlike the other two pairs where `diverging: true` is the concerning case — " +
       "read each pair's own `detail` text, don't assume 'diverging' always means 'worse'. " +
@@ -311,7 +312,7 @@ server.registerTool(
       "synthesis, never to override or supplement the RED count / wave_authorized decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, divergenceFlags] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -328,8 +329,9 @@ server.registerTool(
         getLatestDataPoint("RSAFS"),
         getLatestDataPoint("BAMLC0A0CM"),
         getLatestDataPoint("CGBD2024"),
-        computeDivergences(),
+        getRecentCrashChecks(1),
       ]);
+    const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
 
     const twoTenSpread =
       dgs10 && dgs2

@@ -1,5 +1,6 @@
 import { getLatestDataPoint, getLatestCrashCheck, insertCrashCheck } from "./lib/supabase.js";
 import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
+import { computeDivergences } from "./divergence.js";
 import {
   bandVix,
   bandHySpreadBps,
@@ -79,6 +80,8 @@ export async function classify(): Promise<void> {
     (fedPivotColor === "RED" ? 1 : 0);
   const waveAuthorized = isWaveAuthorized(confirmedRedCount);
 
+  const divergenceFlags = await computeDivergences();
+
   await insertCrashCheck({
     sp500_level: sp500.value,
     sp500_ath: sp500Ath.value,
@@ -104,6 +107,7 @@ export async function classify(): Promise<void> {
     warsh_classification_date: prior?.warsh_classification_date ?? null,
     warsh_hard_rules_active: prior?.warsh_hard_rules_active ?? false,
     trigger_status: prior?.trigger_status ?? [],
+    divergence_flags: divergenceFlags,
     raw_source_data: {
       vix, hySpread, sp500, sp500Ath, treasury10y, sahmRule,
       note: "fed_pivot_signal and warsh_* fields carried forward from prior row — not derived here",

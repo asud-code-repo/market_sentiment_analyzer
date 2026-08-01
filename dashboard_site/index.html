@@ -145,6 +145,16 @@
   .trigger-item .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
   .trigger-item .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
+  .divergence-list { display: flex; flex-direction: column; gap: 10px; }
+  .divergence-item { padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
+  .divergence-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .divergence-head .title { font-size: 13px; font-weight: 600; }
+  .divergence-series { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+  .divergence-series-item .label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  .divergence-series-item .value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .divergence-series-item .value .delta-inline { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px; }
+  .divergence-item .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
   .notes-text { font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
 
   /* Trend charts */
@@ -464,6 +474,61 @@ function pillClass(color) {
   return "muted";
 }
 
+const DIVERGENCE_PAIR_LABELS = {
+  ig_vs_hy_credit_spread: "IG vs. HY Credit Spread",
+  initial_vs_continuing_claims: "Initial vs. Continuing Claims",
+  vix_vs_hy_credit_spread: "VIX vs. HY Credit Spread",
+};
+
+function fmtDivergenceValue(series) {
+  if (series.value == null) return "—";
+  const value = series.unit === "count" ? series.value.toLocaleString("en-US") : series.value;
+  return `${value}${series.unit === "bps" ? " bps" : series.unit === "index" ? "" : ""}`;
+}
+
+function fmtDivergenceDelta(series) {
+  if (series.delta_7d == null) return "";
+  const sign = series.delta_7d > 0 ? "+" : "";
+  const delta = series.unit === "count" ? series.delta_7d.toLocaleString("en-US") : series.delta_7d;
+  return `<span class="delta-inline">${sign}${delta} / 7d</span>`;
+}
+
+function renderDivergenceFlags(flags) {
+  if (!Array.isArray(flags) || flags.length === 0) return "";
+  return `
+    <p class="eyebrow" style="margin-top:16px;">Signal Relationships</p>
+    <div class="divergence-list">
+      ${flags
+        .map((f) => {
+          // VIX-vs-HY is the one pair where diverging:true is reassuring, not
+          // concerning — must not share the warning pill with the other two.
+          const isReassuringPair = f.pair === "vix_vs_hy_credit_spread";
+          const pillCls = f.diverging ? (isReassuringPair ? "good" : "warning") : "muted";
+          const pillText = f.diverging ? (isReassuringPair ? "Decoupled (reassuring)" : "Diverging") : "Tracking together";
+          return `
+          <div class="divergence-item">
+            <div class="divergence-head">
+              <span class="title">${DIVERGENCE_PAIR_LABELS[f.pair] || f.pair}</span>
+              <span class="pill ${pillCls}">${pillText}</span>
+            </div>
+            <div class="divergence-series">
+              <div class="divergence-series-item">
+                <div class="label">${f.series_a.label}</div>
+                <div class="value">${fmtDivergenceValue(f.series_a)} ${fmtDivergenceDelta(f.series_a)}</div>
+              </div>
+              <div class="divergence-series-item">
+                <div class="label">${f.series_b.label}</div>
+                <div class="value">${fmtDivergenceValue(f.series_b)} ${fmtDivergenceDelta(f.series_b)}</div>
+              </div>
+            </div>
+            <div class="desc">${f.detail}</div>
+          </div>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
@@ -564,6 +629,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
         ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
       </div>
       ${scenarioSection}
+      ${renderDivergenceFlags(row.divergence_flags)}
       ${triggerSection}
       ${notesSection}
     </div>
@@ -746,7 +812,7 @@ if (isStandalonePwa) {
 async function main() {
   try {
     ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes&order=run_at.asc&limit=1000",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes,divergence_flags&order=run_at.asc&limit=1000",
     );
 
     if (ALL_ROWS.length === 0) {

@@ -25,6 +25,23 @@ export interface ConfirmationEntry {
   first_breach_date: string;
 }
 
+/** Mirrors rule_engine/src/divergence.ts's DivergenceFlag — separate TS
+ * project, so duplicated rather than shared across a package boundary. */
+export interface DivergenceSeriesInfo {
+  label: string;
+  value: number;
+  unit: string;
+  delta_7d: number | null;
+}
+
+export interface DivergenceFlag {
+  pair: string;
+  diverging: boolean;
+  detail: string;
+  series_a: DivergenceSeriesInfo;
+  series_b: DivergenceSeriesInfo;
+}
+
 // Mirrors the crash_checks columns — see supabase/migrations/20260708000000_stage1_schema.sql
 export interface CrashCheckRow {
   id: string;
@@ -63,6 +80,7 @@ export interface CrashCheckRow {
   trigger_status: unknown;
   notes: string | null;
   raw_source_data: unknown;
+  divergence_flags: DivergenceFlag[] | null;
   created_at: string;
 }
 
