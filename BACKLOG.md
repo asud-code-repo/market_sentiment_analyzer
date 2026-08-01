@@ -47,15 +47,20 @@ full history of what was built and how lives in project memory, not here.
     mechanical criteria (closing the gap the rules doc has deliberately
     left open pending user sign-off).
 
-- ~~Cross-indicator divergence detection~~ — **the two cheapest pairs are
-  built.** `mcp_server/src/lib/divergence.ts` computes IG-vs-HY and
-  initial-vs-continuing-claims divergence deterministically (reusing
-  `get_series_deltas`), wired into `get_context_indicators` as
-  `divergence_flags` — replaces the old approach of handing the model two
-  raw numbers and a hint to compare itself. Verified live (both currently
-  `false`). Thresholds are a first cut, not backtested. **Still open**:
-  rolling-correlation infrastructure and the regime-dependent
-  10yr-vs-equities pair — deliberately deferred, see project memory
+- ~~Cross-indicator divergence detection~~ — **3 pairs built.**
+  `mcp_server/src/lib/divergence.ts` computes IG-vs-HY,
+  initial-vs-continuing-claims, and VIX-vs-HY divergence deterministically
+  (reusing `get_series_deltas`), wired into `get_context_indicators` as
+  `divergence_flags` — replaces the old approach of handing the model raw
+  numbers and a hint to compare itself. Verified live (all currently
+  `false`). Thresholds are a first cut, not backtested. Note: VIX-vs-HY's
+  `diverging: true` is the *reassuring* case (equity-specific noise, not
+  systemic stress) — opposite of the other two pairs, documented
+  explicitly so it isn't misread. **Still open**: rolling-correlation
+  infrastructure, the regime-dependent 10yr-vs-equities pair, and the
+  reverse HY-vs-VIX direction (HY widening without VIX confirming —
+  arguably the more concerning direction, since credit often leads
+  equity) — deliberately deferred, see project memory
   (`backlog_cross_indicator_divergence_detection.md`).
 
 - ~~Portfolio drift methodology — the 5/25 rule~~ — **built.**
