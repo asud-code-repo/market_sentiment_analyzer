@@ -47,12 +47,14 @@ async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Pro
   return data?.value ?? null;
 }
 
-// BAMLH0A0HYM2 is stored in data_points as a raw percent (e.g. 3.2), but
-// every other part of this system (classify.ts, get_indicator_panel's
-// hy_spread_bps field) reports HY spread in basis points (x100) — matching
-// that existing convention here so a delta isn't accidentally reported
-// two orders of magnitude off from the value it's a delta of.
-const BPS_SERIES = new Set(["BAMLH0A0HYM2"]);
+// BAMLH0A0HYM2/BAMLC0A0CM (HY/IG credit spreads) are stored in data_points
+// as raw percent (e.g. 3.2), but every other part of this system
+// (classify.ts, get_indicator_panel's hy_spread_bps field,
+// get_context_indicators' ig_credit_spread_bps field) reports spreads in
+// basis points (x100) — matching that existing convention here so a delta
+// isn't accidentally reported two orders of magnitude off from the value
+// it's a delta of.
+const BPS_SERIES = new Set(["BAMLH0A0HYM2", "BAMLC0A0CM"]);
 
 /**
  * Looks up the series' current value fresh (not trusted from caller input)

@@ -7,6 +7,7 @@ import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
+import { computeDivergences } from "./lib/divergence.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -139,14 +140,17 @@ server.registerTool(
   {
     description:
       "Compares actual holdings_pct against long_term_target_pct for every account that defines " +
-      "both, flagging funds drifted more than 5 percentage points from target (same rebalancing-band " +
-      "convention mainstream robo-advisors use). Purely mechanical — no macro judgment. The tactical " +
-      "401k's dry-powder fund shows up here too (full visibility) even though its large deviation is " +
-      "deliberate, not neglect — a standing flag alongside it explains that, rather than the tool " +
-      "hiding the fund entirely. Accounts with a known structural_issue but no formal target (e.g. " +
-      "spouse 401k) are surfaced as a standing flag instead. Part of the Portfolio Opportunity Review " +
-      "process, layered under the crash-check indicator panel: this answers 'is each account still " +
-      "close to its own stated target' independent of the macro regime.",
+      "both, flagging funds whose drift exceeds the fund's own threshold (each entry's threshold_pts, " +
+      "the 5/25 rule — whichever is smaller of 5 percentage points absolute or 25% of that fund's own " +
+      "target, floored at 2pts). This self-scales instead of using one flat number for every fund: the " +
+      "same 5pt drift matters far more on a 5% target than a 30% one. Purely mechanical — no macro " +
+      "judgment, and the threshold is computed here, not something to recompute or second-guess. The " +
+      "tactical 401k's dry-powder fund shows up here too (full visibility) even though its large " +
+      "deviation is deliberate, not neglect — a standing flag alongside it explains that, rather than " +
+      "the tool hiding the fund entirely. Accounts with a known structural_issue but no formal target " +
+      "(e.g. spouse 401k) are surfaced as a standing flag instead. Part of the Portfolio Opportunity " +
+      "Review process, layered under the crash-check indicator panel: this answers 'is each account " +
+      "still close to its own stated target' independent of the macro regime.",
   },
   async () => json(computePortfolioDrift(readPortfolio())),
 );
@@ -291,31 +295,30 @@ server.registerTool(
       "claims (initial and continuing), credit card delinquencies, WTI crude oil, retail sales, and " +
       "investment-grade credit spreads. These are informational context only — NOT part of the " +
       "6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/Sahm/Fed " +
-      "pivot, per the user's own fixed rules). Continuing claims trending up while initial claims " +
-      "stay benign, or IG spreads widening while HY holds, are both earlier/quieter stress tells than " +
-      "waiting for the gating indicators themselves to move — worth cross-referencing together. Use " +
-      "these to enrich narrative synthesis, never to override or supplement the RED count / " +
-      "wave_authorized decision.",
+      "pivot, per the user's own fixed rules). `divergence_flags` are computed deterministically here " +
+      "(not left for you to eyeball) — report `diverging: true` pairs as-is, never independently judge " +
+      "whether two series have decoupled from their own reading of the raw numbers. Use these to " +
+      "enrich narrative synthesis, never to override or supplement the RED count / wave_authorized " +
+      "decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg] =
-      await Promise.all(
-        [
-          "STLFSI4",
-          "NFCI",
-          "T10YIE",
-          "DRTSCILM",
-          "RRPONTSYD",
-          "DGS10",
-          "DGS2",
-          "ICSA",
-          "CCSA",
-          "DRCCLACBS",
-          "DCOILWTICO",
-          "RSAFS",
-          "BAMLC0A0CM",
-        ].map(getLatestDataPoint),
-      );
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, divergenceFlags] =
+      await Promise.all([
+        getLatestDataPoint("STLFSI4"),
+        getLatestDataPoint("NFCI"),
+        getLatestDataPoint("T10YIE"),
+        getLatestDataPoint("DRTSCILM"),
+        getLatestDataPoint("RRPONTSYD"),
+        getLatestDataPoint("DGS10"),
+        getLatestDataPoint("DGS2"),
+        getLatestDataPoint("ICSA"),
+        getLatestDataPoint("CCSA"),
+        getLatestDataPoint("DRCCLACBS"),
+        getLatestDataPoint("DCOILWTICO"),
+        getLatestDataPoint("RSAFS"),
+        getLatestDataPoint("BAMLC0A0CM"),
+        computeDivergences(),
+      ]);
 
     const twoTenSpread =
       dgs10 && dgs2
@@ -334,15 +337,16 @@ server.registerTool(
       reverse_repo_usd_billions: rrpontsyd,
       yield_curve_2s10s: twoTenSpread,
       initial_jobless_claims: icsa,
-      continuing_jobless_claims: ccsa && { ...ccsa, signal: "read alongside initial_jobless_claims — a rising trend here while initial claims stay flat indicates workers are struggling to find new jobs after layoffs, a more informative labor-weakening signal than initial claims alone" },
+      continuing_jobless_claims: ccsa && { ...ccsa, signal: "see divergence_flags.initial_vs_continuing_claims for the computed divergence read against initial_jobless_claims" },
       credit_card_delinquency_rate_pct: drcclacbs,
       wti_crude_usd_per_barrel: wti && { ...wti, signal: wti.value > 100 ? "above $100 — stagflation accelerant watch" : "below $100" },
       retail_sales_usd_millions: retailSales,
       ig_credit_spread_bps: bamlIg && {
         value: Math.round(bamlIg.value * 100 * 10) / 10,
         observation_date: bamlIg.observation_date,
-        signal: "read alongside the gating HY spread — IG widening while HY holds steady is an earlier quality-flight tell than waiting for HY itself to move",
+        signal: "see divergence_flags.ig_vs_hy_credit_spread for the computed divergence read against the gating HY spread",
       },
+      divergence_flags: divergenceFlags,
     });
   },
 );

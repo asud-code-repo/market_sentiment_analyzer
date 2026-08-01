@@ -150,6 +150,7 @@ export interface DriftEntry {
   actual_pct: number;
   target_pct: number;
   drift_pts: number;
+  threshold_pts: number;
   status: "ON_TARGET" | "DRIFTED";
 }
 
@@ -161,11 +162,18 @@ export interface AccountDrift {
   has_drifted: boolean;
 }
 
-// Matches the rebalancing-band convention used by mainstream robo-advisors
-// (Betterment/Wealthfront-style drift monitoring): flag a fund once it's off
-// its long-term target by more than this many percentage points, rather than
-// rebalancing on every tiny wiggle.
-const DRIFT_THRESHOLD_PTS = 5;
+// The 5/25 rule (Swedroe): a fund's own drift threshold is whichever is
+// SMALLER of 5 percentage points absolute, or 25% of that fund's own
+// target — not a single flat number for every fund. A flat threshold either
+// over-triggers on small targets or under-triggers on large ones: a 5pt
+// drift on a 30% target is a modest ~17% relative move, but the same 5pt
+// drift on a 5% target means the position has doubled. Self-scaling fixes
+// this. A 2pt floor keeps the threshold from getting so tight on very small
+// targets that ordinary rounding noise (e.g. from a brokerage screenshot)
+// would false-flag as DRIFTED.
+function driftThresholdPts(targetPct: number): number {
+  return Math.max(2, Math.min(5, targetPct * 0.25));
+}
 
 /**
  * Compares actual holdings_pct against long_term_target_pct for every
@@ -222,12 +230,14 @@ export function computePortfolioDrift(portfolio: unknown): {
         const actual = holdings[fund] ?? 0;
         const tgt = target[fund] ?? 0;
         const drift = Math.round((actual - tgt) * 10) / 10;
+        const threshold = driftThresholdPts(tgt);
         return {
           fund,
           actual_pct: actual,
           target_pct: tgt,
           drift_pts: drift,
-          status: Math.abs(drift) > DRIFT_THRESHOLD_PTS ? "DRIFTED" : "ON_TARGET",
+          threshold_pts: threshold,
+          status: Math.abs(drift) > threshold ? "DRIFTED" : "ON_TARGET",
         };
       });
       entries.sort((a, b) => Math.abs(b.drift_pts) - Math.abs(a.drift_pts));
