@@ -14,6 +14,20 @@ full history of what was built and how lives in project memory, not here.
 
 ## Data & infrastructure
 
+- ~~30yr Treasury yield (`DGS30`)~~ — **built, and immediately relevant.**
+  Had been ingested since this system's very first setup but never
+  surfaced anywhere — found while checking for other already-documented-
+  but-unwired rules doc bands. `crash-check-rules.md` already defines its
+  threshold ("above 5.0% = bond vigilante signal"); wired into
+  `get_context_indicators` and `dashboard_site` using that existing
+  threshold. Verified live: **current reading is 5.21%, already above the
+  threshold** — real signal that had zero visibility until now. Worth
+  checking whether other rules-doc-documented bands (Shiller CAPE, CME
+  FedWatch rate-hike probability, both also listed under "Additional
+  bond-market bands") have a similar gap — those two aren't currently
+  ingested at all though, so they'd need real new sourcing work, not just
+  wiring.
+
 - ~~Recent-grad unemployment indicator (`CGBD2024`)~~ — **built and live.**
   Added as Tier 2/3 context (FRED's BLS/CPS proxy for the NY Fed's own
   "recent college grad" research, which isn't itself on FRED), specifically
