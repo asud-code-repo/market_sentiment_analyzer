@@ -304,11 +304,14 @@ server.registerTool(
       "recent_grad_unemployment_rate_pct is structural/secular (AI + remote-work displacement of " +
       "entry-level hiring), not cyclical — never treat it as a crash-timing signal, but it IS relevant " +
       "ambiguous evidence for the NVDA 'AI recovery trough bet' thesis specifically during a Portfolio " +
-      "Opportunity Review (see project-instructions.md). Use these to enrich narrative synthesis, never " +
-      "to override or supplement the RED count / wave_authorized decision.",
+      "Opportunity Review (see project-instructions.md). thirty_year_treasury_pct has been ingested " +
+      "since this system's start but was never surfaced until now — crash-check-rules.md's own " +
+      "'Additional bond-market bands' already define its threshold (above 5.0% = bond vigilante " +
+      "signal), used here directly rather than inventing a new one. Use these to enrich narrative " +
+      "synthesis, never to override or supplement the RED count / wave_authorized decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, divergenceFlags] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, divergenceFlags] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -317,6 +320,7 @@ server.registerTool(
         getLatestDataPoint("RRPONTSYD"),
         getLatestDataPoint("DGS10"),
         getLatestDataPoint("DGS2"),
+        getLatestDataPoint("DGS30"),
         getLatestDataPoint("ICSA"),
         getLatestDataPoint("CCSA"),
         getLatestDataPoint("DRCCLACBS"),
@@ -356,6 +360,10 @@ server.registerTool(
       recent_grad_unemployment_rate_pct: recentGradUnemployment && {
         ...recentGradUnemployment,
         signal: "structural/secular (AI + remote-work displacement of entry-level hiring), not cyclical — not a crash-timing signal, but ambiguous evidence for the NVDA 'AI recovery trough bet' thesis during a Portfolio Opportunity Review",
+      },
+      thirty_year_treasury_pct: dgs30 && {
+        ...dgs30,
+        signal: dgs30.value > 5.0 ? "ABOVE 5.0% — bond vigilante signal per crash-check-rules.md" : "below the 5.0% bond-vigilante threshold",
       },
       divergence_flags: divergenceFlags,
     });
