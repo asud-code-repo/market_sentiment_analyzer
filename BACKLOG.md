@@ -14,6 +14,14 @@ full history of what was built and how lives in project memory, not here.
 
 ## Data & infrastructure
 
+- **Recent-grad unemployment indicator (`CGBD2024`) — built, needs a
+  backfill run to actually show data.** Added as Tier 2/3 context (FRED's
+  BLS/CPS proxy for the NY Fed's own "recent college grad" research,
+  which isn't itself on FRED), specifically wired into the NVDA "AI
+  recovery trough bet" thesis re-underwrite step. No data in Supabase yet
+  — needs the "One-time data_points backfill" Action re-run (picks it up
+  automatically, same as `CCSA`/`BAMLC0A0CM` did).
+
 - **Wave 2/3 threshold backtest finding.** Backtested the wave-authorization
   thresholds against real 2016–2026 history: Wave 3 (drawdown≥35% &
   VIX>45) never fired in 2020 despite VIX peaking at 82 — the drawdown side
