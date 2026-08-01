@@ -14,13 +14,21 @@ full history of what was built and how lives in project memory, not here.
 
 ## Data & infrastructure
 
-- **Recent-grad unemployment indicator (`CGBD2024`) — built, needs a
-  backfill run to actually show data.** Added as Tier 2/3 context (FRED's
-  BLS/CPS proxy for the NY Fed's own "recent college grad" research,
-  which isn't itself on FRED), specifically wired into the NVDA "AI
-  recovery trough bet" thesis re-underwrite step. No data in Supabase yet
-  — needs the "One-time data_points backfill" Action re-run (picks it up
-  automatically, same as `CCSA`/`BAMLC0A0CM` did).
+- ~~Recent-grad unemployment indicator (`CGBD2024`)~~ — **built and live.**
+  Added as Tier 2/3 context (FRED's BLS/CPS proxy for the NY Fed's own
+  "recent college grad" research, which isn't itself on FRED), specifically
+  wired into the NVDA "AI recovery trough bet" thesis re-underwrite step.
+  Regular daily ingestion already picked up its first live reading without
+  needing a backfill (ingestion always fetches each series' latest point
+  regardless of backfill status) — a backfill run is still worth doing for
+  historical *depth* (deltas, future trend charts), just not required for
+  the indicator to show a current value. Also surfaced and fixed a real bug
+  while verifying this on the live dashboard: `dashboard_site`'s Contextual
+  Indicators grid used one combined query across all context series, which
+  silently dropped low-frequency series (`DRCCLACBS`, `DRTSCILM`) once
+  enough daily series existed to crowd them out of the shared row limit —
+  not missing data, a fetch-logic bug. Fixed (one query per series, same
+  pattern `mcp_server` already used correctly) and verified live.
 
 - **Wave 2/3 threshold backtest finding.** Backtested the wave-authorization
   thresholds against real 2016–2026 history: Wave 3 (drawdown≥35% &
@@ -101,14 +109,18 @@ full history of what was built and how lives in project memory, not here.
 
 ## Process & content
 
-- **Reassess recent shipped work after a week of real usage** (~2026-07-18
-  checkpoint). A lot landed in a short window — Portfolio Opportunity
-  Review merged into the Full Report page, the switch to Massive for
-  ticker prices, historical backfills, the Signal Tiering
-  confirmation-window rule, the delta-lookback tool, new context
-  indicators — each validated once, not yet observed over repeated real
-  runs. Also folds in: whether `dashboard_site` and the chat-report
-  templates should stay as different as they currently are.
+- **Reassess recent shipped work after a week of real usage — overdue.**
+  Originally set for a ~2026-07-18 checkpoint; it's now 2026-08-01, two
+  weeks past it, with even more landed since (the 5/25 rebalancing rule,
+  three divergence-detection pairs, the recent-grad unemployment
+  indicator, two real bugs found and fixed in the daily scheduled task,
+  a dashboard fetch-logic bug) on top of the original list — Portfolio
+  Opportunity Review merged into the Full Report page, the switch to
+  Massive for ticker prices, historical backfills, the Signal Tiering
+  confirmation-window rule. Each validated once at build time, not yet
+  observed over a real stretch of repeated daily runs. Also folds in:
+  whether `dashboard_site` and the chat-report templates should stay as
+  different as they currently are.
 
 - **BrokerageLink watchlist ticker selection has no documented rationale.**
   The 7 tickers each have a one-line theme tag but no written reasoning for
