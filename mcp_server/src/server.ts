@@ -297,7 +297,10 @@ server.registerTool(
       "6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/Sahm/Fed " +
       "pivot, per the user's own fixed rules). `divergence_flags` are computed deterministically here " +
       "(not left for you to eyeball) — report `diverging: true` pairs as-is, never independently judge " +
-      "whether two series have decoupled from their own reading of the raw numbers. Use these to " +
+      "whether two series have decoupled from their own reading of the raw numbers. Note that " +
+      "vix_vs_hy_credit_spread's `diverging: true` is a reassuring read (equity-specific noise, not " +
+      "systemic stress), unlike the other two pairs where `diverging: true` is the concerning case — " +
+      "read each pair's own `detail` text, don't assume 'diverging' always means 'worse'. Use these to " +
       "enrich narrative synthesis, never to override or supplement the RED count / wave_authorized " +
       "decision.",
   },
