@@ -365,6 +365,11 @@ const CONTEXT_INFO = {
     format: (v) => `${Math.round(v * 100)}bps`,
     signal: () => "Read alongside the HY spread — IG widening while HY holds is an earlier quality-flight signal",
   },
+  cgbd2024: {
+    label: "Recent Grad Unemployment",
+    format: (v) => `${v.toFixed(1)}%`,
+    signal: () => "Structural (AI/remote-work displacement), not cyclical — not a crash-timing signal",
+  },
 };
 
 function renderContextIndicators(latest) {
@@ -385,6 +390,7 @@ function renderContextIndicators(latest) {
     rsafs: latest.RSAFS,
     ccsa: latest.CCSA,
     bamlc0a0cm: latest.BAMLC0A0CM,
+    cgbd2024: latest.CGBD2024,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -748,7 +754,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024"];
       const contextRows = await fetchFromSupabase(
         `data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&order=observation_date.desc&limit=500`,
       );

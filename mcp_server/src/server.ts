@@ -300,12 +300,15 @@ server.registerTool(
       "whether two series have decoupled from their own reading of the raw numbers. Note that " +
       "vix_vs_hy_credit_spread's `diverging: true` is a reassuring read (equity-specific noise, not " +
       "systemic stress), unlike the other two pairs where `diverging: true` is the concerning case — " +
-      "read each pair's own `detail` text, don't assume 'diverging' always means 'worse'. Use these to " +
-      "enrich narrative synthesis, never to override or supplement the RED count / wave_authorized " +
-      "decision.",
+      "read each pair's own `detail` text, don't assume 'diverging' always means 'worse'. " +
+      "recent_grad_unemployment_rate_pct is structural/secular (AI + remote-work displacement of " +
+      "entry-level hiring), not cyclical — never treat it as a crash-timing signal, but it IS relevant " +
+      "ambiguous evidence for the NVDA 'AI recovery trough bet' thesis specifically during a Portfolio " +
+      "Opportunity Review (see project-instructions.md). Use these to enrich narrative synthesis, never " +
+      "to override or supplement the RED count / wave_authorized decision.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, divergenceFlags] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, divergenceFlags] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -320,6 +323,7 @@ server.registerTool(
         getLatestDataPoint("DCOILWTICO"),
         getLatestDataPoint("RSAFS"),
         getLatestDataPoint("BAMLC0A0CM"),
+        getLatestDataPoint("CGBD2024"),
         computeDivergences(),
       ]);
 
@@ -348,6 +352,10 @@ server.registerTool(
         value: Math.round(bamlIg.value * 100 * 10) / 10,
         observation_date: bamlIg.observation_date,
         signal: "see divergence_flags.ig_vs_hy_credit_spread for the computed divergence read against the gating HY spread",
+      },
+      recent_grad_unemployment_rate_pct: recentGradUnemployment && {
+        ...recentGradUnemployment,
+        signal: "structural/secular (AI + remote-work displacement of entry-level hiring), not cyclical — not a crash-timing signal, but ambiguous evidence for the NVDA 'AI recovery trough bet' thesis during a Portfolio Opportunity Review",
       },
       divergence_flags: divergenceFlags,
     });

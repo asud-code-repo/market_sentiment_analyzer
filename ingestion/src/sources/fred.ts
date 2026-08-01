@@ -43,6 +43,17 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // signal than waiting for HY itself to move (external
                                           // review 2026-07-16). Same percent->bps convention as HY
                                           // applies when this is surfaced (see get_context_indicators).
+  { id: "CGBD2024", unit: "percent" },   // Unemployment rate, college graduates w/ bachelor's
+                                          // degree, 20-24yrs (BLS/CPS via FRED, monthly, not
+                                          // seasonally adjusted). A structural/secular signal, not
+                                          // cyclical — deliberately NOT part of the 6-indicator gate.
+                                          // Closest FRED-native proxy to the NY Fed's own "recent
+                                          // college grad" research (which isn't itself on FRED and
+                                          // would need scraping to automate) — different age bracket
+                                          // (20-24 vs NY Fed's 22-27) and methodology, same
+                                          // underlying CPS survey. Worth cross-referencing with a
+                                          // watchlist thesis re-underwrite for AI-trough-bet tickers,
+                                          // not the crash panel (external review 2026-08-01).
 
   // CAD/USD FX rate for the RRSP's local_state/portfolio.yaml conversion —
   // was a hand-updated snapshot before this; see get_portfolio_snapshot in
