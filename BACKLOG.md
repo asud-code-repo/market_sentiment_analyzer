@@ -77,20 +77,27 @@ full history of what was built and how lives in project memory, not here.
     mechanical criteria (closing the gap the rules doc has deliberately
     left open pending user sign-off).
 
-- ~~Cross-indicator divergence detection~~ — **3 pairs built.**
-  `mcp_server/src/lib/divergence.ts` computes IG-vs-HY,
-  initial-vs-continuing-claims, and VIX-vs-HY divergence deterministically
-  (reusing `get_series_deltas`), wired into `get_context_indicators` as
-  `divergence_flags` — replaces the old approach of handing the model raw
-  numbers and a hint to compare itself. Verified live (all currently
-  `false`). Thresholds are a first cut, not backtested. Note: VIX-vs-HY's
+- ~~Cross-indicator divergence detection~~ — **3 pairs built, now persisted
+  and shown on dashboard_site.** Computation moved from
+  `mcp_server/src/lib/divergence.ts` into `rule_engine/src/divergence.ts`
+  — runs once daily inside `classify()` (same place the 6-indicator panel
+  is computed) and persists to a new `crash_checks.divergence_flags` jsonb
+  column (migration `20260801000000_divergence_flags.sql` — **not yet
+  applied by the user via the Supabase SQL editor**). `get_context_indicators`
+  now reads that persisted value instead of recomputing, and
+  `dashboard_site` gets a new "Signal Relationships" card (status pill +
+  both series' value/7d-delta) reading the same column — single source of
+  truth for both surfaces, matching the Rule Engine Output Contract.
+  Thresholds are still a first cut, not backtested. Note: VIX-vs-HY's
   `diverging: true` is the *reassuring* case (equity-specific noise, not
-  systemic stress) — opposite of the other two pairs, documented
-  explicitly so it isn't misread. **Still open**: rolling-correlation
-  infrastructure, the regime-dependent 10yr-vs-equities pair, and the
-  reverse HY-vs-VIX direction (HY widening without VIX confirming —
-  arguably the more concerning direction, since credit often leads
-  equity) — deliberately deferred, see project memory
+  systemic stress) — opposite of the other two pairs, preserved in both
+  the computation and the dashboard's pill color (green, not warning).
+  Not yet verified end-to-end live — needs the migration applied and a
+  `classify()` run. **Still open**: rolling-correlation infrastructure,
+  the regime-dependent 10yr-vs-equities pair, and the reverse HY-vs-VIX
+  direction (HY widening without VIX confirming — arguably the more
+  concerning direction, since credit often leads equity) — deliberately
+  deferred, see project memory
   (`backlog_cross_indicator_divergence_detection.md`).
 
 - ~~Portfolio drift methodology — the 5/25 rule~~ — **built.**
