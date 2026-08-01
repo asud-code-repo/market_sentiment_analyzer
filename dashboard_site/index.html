@@ -755,14 +755,25 @@ async function main() {
     // date navigation or the trend charts below, which depend on nothing here.
     try {
       const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024"];
-      const contextRows = await fetchFromSupabase(
-        `data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&order=observation_date.desc&limit=500`,
+      // One query per series, not a single combined "order by date, limit N"
+      // query across all of them — a shared limit silently crowds out
+      // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough
+      // daily series exist, since their genuinely-latest rows fall outside
+      // the top N when merged with daily series' constant churn (found live
+      // 2026-08-01: DRCCLACBS's real Jan-2026 value was being dropped this
+      // way, not actually missing data). Matches how mcp_server's
+      // getLatestDataPoint() already does this correctly, one series at a
+      // time.
+      const contextResults = await Promise.all(
+        CONTEXT_SERIES.map((series) =>
+          fetchFromSupabase(
+            `data_points?select=series_id,value&series_id=eq.${series}&order=observation_date.desc&limit=1`,
+          ),
+        ),
       );
-      // Global desc-by-date order means each series_id's first appearance here
-      // is its latest observation.
       const latestBySeriesId = {};
-      for (const r of contextRows) {
-        if (!(r.series_id in latestBySeriesId)) latestBySeriesId[r.series_id] = r.value;
+      for (const rows of contextResults) {
+        if (rows[0]) latestBySeriesId[rows[0].series_id] = rows[0].value;
       }
       renderContextIndicators(latestBySeriesId);
     } catch (err) {
