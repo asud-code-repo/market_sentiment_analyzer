@@ -49,7 +49,7 @@ FRED / EIA / Massive (market data)
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` |
 | **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
-| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
+| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
 | **MCP server** | Local stdio server exposing 13 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 4 persistence tools | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Full Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
 
@@ -69,6 +69,18 @@ inflation, continuing jobless claims, investment-grade credit spreads,
 and on `dashboard_site` — informational only, never part of the gate.
 `get_series_deltas` provides real 3-day/7-day historical lookback for any
 series, fulfilling the rules doc's delta-reporting requirement.
+
+**Cross-indicator divergence detection**: three pairs of normally-correlated
+series (IG-vs-HY credit spreads, initial-vs-continuing jobless claims,
+VIX-vs-HY credit spreads) are checked daily for a 7-day-delta split large
+enough to suggest they've decoupled — a relationship-level signal the
+6-indicator panel's individual bands can't see. Computed once in
+`classify()` and persisted to `crash_checks.divergence_flags`, so
+`get_context_indicators` and `dashboard_site`'s "Signal Relationships" card
+both read the same value rather than recomputing it independently. VIX-vs-HY
+is the one pair where a flagged divergence is the *reassuring* reading
+(equity-specific noise, not confirmed credit stress) — the opposite of the
+other two.
 
 ## Security model — split storage
 
