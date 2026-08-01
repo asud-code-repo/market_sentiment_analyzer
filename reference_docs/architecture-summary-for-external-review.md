@@ -59,7 +59,7 @@ FRED / EIA / Massive.com (market & macro data)
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` (full text reproduced below) |
 | **Ingestion** | Pulls FRED/EIA macro series + Massive.com watchlist ticker prices daily | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
-| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, threshold-crossing push notifications — pure functions, no LLM | `rule_engine/` |
+| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, cross-indicator divergence detection, threshold-crossing push notifications — pure functions, no LLM | `rule_engine/` |
 | **MCP server** | Local stdio server exposing tools to Claude Desktop (indicator panel, portfolio drift, watchlist status, deployment plan, 4 write/persistence tools, data-freshness check) | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private "Full Report" page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
 
@@ -71,6 +71,32 @@ authorizes only when 3+ are simultaneously RED, **and** each RED reading has hel
 across 2+ distinct daily ingestion dates (not just repeated same-day checks) — see
 Signal Tiering below. Full thresholds and wave math are in the rules doc reproduced
 in full below.
+
+## Cross-indicator divergence detection (not in the rules doc — code-only)
+
+Three pairs of normally-correlated series are checked daily for a 7-day-delta
+split large enough to suggest they've decoupled — a relationship-level signal
+the 6-indicator panel's individual bands can't see on their own:
+
+- **IG vs. HY credit spreads** — IG widening while HY holds flat can read as
+  an early quality-flight signal ahead of the gating HY spread moving.
+- **Initial vs. continuing jobless claims** — continuing claims rising while
+  initial claims stay flat suggests laid-off workers are taking longer to
+  find new jobs (labor-market cooling, distinct from a fresh layoff wave).
+- **VIX vs. HY credit spreads** — the one pair where a flagged divergence is
+  the *reassuring* reading, not the concerning one: VIX spiking without HY
+  confirming reads as equity-specific noise, not stress broad enough to move
+  credit markets. Consumers of this flag must not treat "diverging" as
+  uniformly bad across all three pairs.
+
+Computed once daily inside `rule_engine`'s `classify()`, persisted to
+`crash_checks.divergence_flags` (each entry carries both series' current
+value and 7-day delta, not just a boolean) — `mcp_server`'s
+`get_context_indicators` and `dashboard_site`'s "Signal Relationships" card
+both read that one persisted value rather than each computing their own copy,
+consistent with the Rule Engine Output Contract below. Thresholds are a first
+cut, not backtested/calibrated. Not part of the 3-of-6 wave-authorization
+gate — informational only, same tier as the other contextual indicators.
 
 ## Security model — split storage (why this matters for any rule changes)
 
@@ -610,13 +636,15 @@ trend confirmation), explicitly labeled.
   draft, not implemented — the actual probability is 100% LLM-judgment today, by
   original design, with the formula kept only as a starting point for a future
   deterministic version. Not back-tested against historical data.
-- **Delta-standard (3-day/7-day Δ)** required by the formatting rules can't
-  actually be computed yet — no tool exposes historical N-days-ago lookback values
-  despite the underlying history existing in `data_points`.
 - **BrokerageLink watchlist ticker selection** has no documented rationale beyond
   a one-line theme tag per ticker — the Portfolio Opportunity Review process is
   meant to close this gap but has so far only re-examined price targets, not
   whether the underlying ticker choices themselves still hold up.
+- **Divergence detection remaining scope**: the 3 pairs above are built and
+  live; rolling-correlation infrastructure, a regime-dependent 10yr-vs-equities
+  pair, and the reverse HY-vs-VIX direction (HY widening without VIX
+  confirming — arguably the more concerning direction, since credit often
+  leads equity) are deliberately deferred, not started.
 
 ## What NOT to change without a strong reason
 
