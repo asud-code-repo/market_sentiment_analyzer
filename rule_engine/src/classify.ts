@@ -57,7 +57,7 @@ export async function classify(): Promise<void> {
   const fedPivotColor = bandFedPivotSignal(fedPivotSignal);
 
   const redCount = countReds([vixColor, hySpreadColor, spDrawdownColor, treasury10yColor, sahmRuleColor, fedPivotColor]);
-  const waveActive = activeWave(sp500.value, vix.value);
+  const waveActive = activeWave(drawdown, vix.value);
 
   // Signal Tiering & Confirmation Windows (crash-check-rules.md v5): each of
   // the 5 numeric Tier-1 indicators must hold its color across 2+ distinct

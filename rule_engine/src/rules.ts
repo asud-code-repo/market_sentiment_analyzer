@@ -54,17 +54,22 @@ export function isWaveAuthorized(redCount: number): boolean {
 export type WaveActive = "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";
 
 /**
- * S&P/VIX price-level wave triggers — separate gate from the RED-count
- * authorization above. Thresholds are fixed, user-set values from the rules
- * doc (see crash-check-rules.md "Wave Deployment Thresholds") — per the
+ * S&P drawdown / VIX wave triggers — separate gate from the RED-count
+ * authorization above. Drawdown thresholds are ATH-relative percentages
+ * (the low end of each wave's documented drawdown range in crash-check-
+ * rules.md "Wave Deployment Thresholds"), not fixed nominal S&P index
+ * levels — a fixed level like "S&P <= 6200" decays as the index's nominal
+ * level rises over time, while a drawdown percentage stays meaningful
+ * regardless of when it's evaluated. VIX thresholds stay absolute since VIX
+ * is already a normalized measure, not subject to the same decay. Per the
  * build spec's own non-goal, the rule engine executes these faithfully and
  * never proposes/auto-updates them. Checked highest-wave-first since a deep
  * drawdown satisfies the lower waves' conditions too.
  */
-export function activeWave(sp500Level: number, vix: number): WaveActive {
-  if (sp500Level <= 4800 && vix > 45) return "WAVE_3";
-  if (sp500Level <= 5600 && vix > 35) return "WAVE_2";
-  if (sp500Level <= 6200 && vix > 28) return "WAVE_1";
+export function activeWave(drawdownPct: number, vix: number): WaveActive {
+  if (drawdownPct >= 35 && vix > 45) return "WAVE_3";
+  if (drawdownPct >= 24 && vix > 35) return "WAVE_2";
+  if (drawdownPct >= 16 && vix > 28) return "WAVE_1";
   return "NONE";
 }
 

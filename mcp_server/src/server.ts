@@ -5,6 +5,7 @@ import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
+import { readWaveDeploymentState, recordWaveDeployment } from "./lib/waveDeploymentState.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
@@ -372,18 +373,36 @@ server.registerTool(
   },
 );
 
+const WAVE_ORDER: Wave[] = ["WAVE_1", "WAVE_2", "WAVE_3"];
+
+const HARD_RULES = [
+  "Never sell existing equity positions on the way down",
+  "Never deploy all 3 waves in the same week",
+  "Never fire a wave off an unconfirmed threshold breach (confirmed on fewer than 2 distinct ingestion dates)",
+  "Never go 100% stable-value mid-crash",
+  "Never stop 401k paycheck contributions during a crash",
+  "Never touch the passive long-duration account (RRSP-equivalent) during a crash",
+  "Never apply wave deployment logic to accounts with no deployment mechanism (e.g. spouse 401k) — monitor only",
+];
+
 server.registerTool(
   "get_deployment_plan",
   {
     description:
       "Computes the exact dollar breakdown for the tactical 401k's dry-powder deployment, given " +
-      "the current wave status and crash type (if diagnosed) — combining the live dry_powder_usd " +
-      "figure from the local portfolio file with the fixed % splits from crash-check-rules.md. " +
-      "This replaces doing that arithmetic yourself: read this tool's output directly rather than " +
-      "computing dollar amounts from get_indicator_panel + get_portfolio_snapshot by hand. Fund " +
-      "descriptions here are generic (matching the rules doc) — cross-reference " +
+      "the current wave status, wave_authorized (confirmed 3-of-6 RED gate — required in addition " +
+      "to wave_active's price/VIX trigger, not either alone), crash type (if diagnosed), and which " +
+      "waves have already been executed (local wave_deployment_state — set via " +
+      "record_wave_deployment, never inferred). If a deeper wave's threshold is met before a " +
+      "shallower one was ever separately confirmed, this returns the cumulative breakdown for every " +
+      "not-yet-executed wave up to and including the current one, not just the deepest wave's slice " +
+      "— e.g. hitting Wave 3 conditions with nothing executed yet returns Wave 1 + Wave 2 + Wave 3 " +
+      "combined. This replaces doing that arithmetic yourself: read this tool's output directly " +
+      "rather than computing dollar amounts from get_indicator_panel + get_portfolio_snapshot by " +
+      "hand. Fund descriptions here are generic (matching the rules doc) — cross-reference " +
       "get_portfolio_snapshot for the actual fund names when reporting to the user; never persist " +
-      "dollar figures via write_snapshot.",
+      "dollar figures via write_snapshot. Call record_wave_deployment after trades are actually " +
+      "placed, so this tool doesn't re-propose an already-executed wave next time.",
   },
   async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -395,30 +414,78 @@ server.registerTool(
     if (!waveActive || waveActive === "NONE") {
       return json({
         wave_active: "NONE",
-        message: "No wave currently authorized — nothing to deploy. Dry powder stays fully in stable value.",
+        message: "No wave currently active — nothing to deploy. Dry powder stays fully in stable value.",
       });
     }
 
+    if (!latest.wave_authorized) {
+      return json({
+        wave_active: waveActive,
+        wave_authorized: false,
+        message:
+          `${waveActive}'s S&P drawdown/VIX threshold has been observed but is not yet authorized — ` +
+          "fewer than 3 of 6 indicators are confirmed RED (see get_indicator_panel's confirmed_red_count). " +
+          "No deployment plan until wave_authorized is true.",
+      });
+    }
+
+    const eligibleIndex = WAVE_ORDER.indexOf(waveActive);
+    const deploymentState = readWaveDeploymentState();
+    const pendingWaves = WAVE_ORDER.slice(0, eligibleIndex + 1).filter((w) => !deploymentState[w].executed);
+
     const dryPowderUsd = readDryPowderUsd();
-    const wavePlan = computeWaveDeployment(waveActive, dryPowderUsd);
+
+    if (pendingWaves.length === 0) {
+      return json({
+        wave_active: waveActive,
+        wave_authorized: true,
+        message: `All waves through ${waveActive} have already been executed (see wave_deployment_state) — nothing new to deploy.`,
+        deployment_state: deploymentState,
+      });
+    }
+
+    const wavePlans = pendingWaves.map((w) => ({ wave: w, ...computeWaveDeployment(w, dryPowderUsd) }));
 
     const crashType = latest.crash_type as CrashType | null;
     const crashTypeLayer = crashType ? computeCrashTypeLayer(crashType, dryPowderUsd) : null;
 
     return json({
       wave_active: waveActive,
+      wave_authorized: true,
       dry_powder_usd: dryPowderUsd,
-      wave_deployment: wavePlan,
+      pending_waves: pendingWaves,
+      wave_deployment: wavePlans,
+      ...(pendingWaves.length > 1
+        ? {
+            warning:
+              `${pendingWaves.length} waves (${pendingWaves.join(", ")}) are pending at once — per the hard rules, ` +
+              "never deploy all 3 waves in the same week. Stagger execution and call record_wave_deployment after each.",
+          }
+        : {}),
       crash_type: crashType,
       crash_type_layer: crashTypeLayer,
-      hard_rules: [
-        "Never sell existing equity positions on the way down",
-        "Never deploy all 3 waves in the same week",
-        "Never go 100% stable-value mid-crash",
-        "Never stop 401k paycheck contributions during a crash",
-        "Never touch the passive long-duration account (RRSP-equivalent) during a crash",
-      ],
+      hard_rules: HARD_RULES,
     });
+  },
+);
+
+server.registerTool(
+  "record_wave_deployment",
+  {
+    description:
+      "Records that a wave's deployment plan was actually executed in the brokerage — persists to " +
+      "the local wave_deployment_state file so get_deployment_plan stops re-proposing it and " +
+      "correctly returns only the incremental breakdown for any later wave. Call this only after " +
+      "the user confirms trades were actually placed, never speculatively or as part of just " +
+      "computing/showing a plan.",
+    inputSchema: {
+      wave: z.enum(["WAVE_1", "WAVE_2", "WAVE_3"]),
+      executed_date: z.string(),
+    },
+  },
+  async (input) => {
+    const state = recordWaveDeployment(input.wave, input.executed_date);
+    return json({ deployment_state: state });
   },
 );
 

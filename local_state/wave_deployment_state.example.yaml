@@ -1,0 +1,20 @@
+# Template for local_state/wave_deployment_state.yaml — copy this file,
+# rename to wave_deployment_state.yaml (already gitignored), and leave all
+# three waves at executed: false until you actually place the corresponding
+# trades in the brokerage. Read/written only by the locally-running MCP
+# server (stdio) — get_deployment_plan reads this to know which waves are
+# still pending vs. already executed; the record_wave_deployment tool is the
+# only thing that sets executed: true (never edited automatically, and
+# get_deployment_plan itself never writes here).
+
+WAVE_1:
+  executed: false
+  executed_date: null
+
+WAVE_2:
+  executed: false
+  executed_date: null
+
+WAVE_3:
+  executed: false
+  executed_date: null

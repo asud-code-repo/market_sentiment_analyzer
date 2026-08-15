@@ -178,29 +178,40 @@ Additional bond-market bands (Tier 1, elevated priority, informational):
 
 Deploy in 3 waves only — **never all at once, never two waves in the same
 week.** Amounts are % of the account's dry-powder pool (see
-`local_state/portfolio.yaml` for the live dollar figure). All S&P/VIX
-conditions below require confirmation per the Signal Tiering rule — true
-across 2+ distinct daily ingestion runs, not just repeated intraday checks
-against the same day's data — a single volatile trading day does not
-authorize deployment, even once that day's data has landed.
+`local_state/portfolio.yaml` for the live dollar figure). All S&P
+drawdown/VIX conditions below require confirmation per the Signal Tiering
+rule — true across 2+ distinct daily ingestion runs, not just repeated
+intraday checks against the same day's data — a single volatile trading day
+does not authorize deployment, even once that day's data has landed.
 
-**WAVE 1 fires when:** S&P ≤ 6,200 AND VIX > 28, both confirmed *(≈ -16 to
--20% drawdown from ATH baseline)*
+Triggers are expressed as **drawdown from the running all-time-high**, not
+fixed nominal S&P index levels — a fixed level like "S&P ≤ 6,200" decays as
+the index's nominal level rises over time (what was a ~16% drawdown when
+that number was chosen becomes a smaller, less meaningful move once the ATH
+has risen further), while a drawdown percentage stays meaningful regardless
+of when it's evaluated.
+
+A wave's drawdown/VIX condition being met is **not, by itself, authorization
+to deploy** — `get_deployment_plan` also requires `wave_authorized` (3 or
+more of the 6 indicators confirmed RED, per the wave-deployment-authorization
+rule above). A wave whose drawdown/VIX threshold has fired but where
+`wave_authorized` is still false is shown as observed-but-not-yet-authorized,
+not as a deployable plan.
+
+**WAVE 1 fires when:** S&P drawdown from ATH ≥ 16% AND VIX > 28, both confirmed
 → Move **~17.4% of dry powder**, split:
 - 50% → Healthcare-sector defensive equity fund
 - 25% → Real-estate/real-asset fund
 - 25% → International equity (add to existing position)
 
-**WAVE 2 fires when:** S&P ≤ 5,600 AND VIX > 35, both confirmed *(≈ -24 to
--30% drawdown)*
+**WAVE 2 fires when:** S&P drawdown from ATH ≥ 24% AND VIX > 35, both confirmed
 → Move **~21.7% of dry powder**, split:
 - 40% → Target-date/glide-path fund (add)
 - 32% → International equity (add again)
 - 16% → Energy sector ETF (via brokerage window)
 - 12% → Inflation-protected securities (TIPS, via brokerage window)
 
-**WAVE 3 fires when:** S&P ≤ 4,800 AND VIX > 45, both confirmed *(≈ -35 to
--40% drawdown)*
+**WAVE 3 fires when:** S&P drawdown from ATH ≥ 35% AND VIX > 45, both confirmed
 → Move **~17.4% of dry powder**, split:
 - 40% → US large-cap value/income fund (restore to prior weight)
 - 35% → Target-date/glide-path fund (final add)
@@ -208,6 +219,15 @@ authorize deployment, even once that day's data has landed.
 
 Total across all 3 waves: ~56.5% of dry powder. Remainder stays in stable value —
 deployment is intentionally partial, not full liquidation of the reserve.
+
+Deployment is **cumulative**: if a deep, fast drawdown reaches Wave 3's
+threshold without Wave 1/2 ever separately confirming first, `get_deployment_plan`
+returns the combined breakdown for every wave up to and including the
+current one that hasn't already been executed — not just Wave 3's slice —
+so the intended diversification across waves isn't skipped. Which waves have
+actually been executed is tracked in `local_state/wave_deployment_state.yaml`,
+set only via the `record_wave_deployment` tool after trades are actually
+placed — never inferred or set automatically.
 
 **Hard rules — never violate under any circumstances:**
 - Never sell existing equity positions on the way down

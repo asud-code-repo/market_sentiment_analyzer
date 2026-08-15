@@ -179,12 +179,18 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
   ];
 }
 
-// One-time historical backfill (see backfill.ts) — 5 years is enough to
-// cover the 2022 rate-hike cycle for the "All" time-range toggle on the
-// dashboard's trend charts, without pulling full multi-decade histories
-// (some of these series go back to the 1940s-60s) that would bloat
-// data_points and slow client-side chart rendering for no real benefit.
-const BACKFILL_YEARS = 5;
+// One-time historical backfill (see backfill.ts). Originally capped at a
+// rolling 5-years-back window, which covered the 2022 rate-hike cycle for
+// the dashboard's trend charts but silently excluded 2008 and 2020 — the
+// two most relevant crisis episodes for any future calibration/backtesting
+// work (see reference_docs/investment-model-review.md). A fixed early
+// anchor date costs nothing extra: FRED simply returns no observations
+// before a series' actual inception, so each series naturally comes back
+// with its own full available history (VIXCLS from 1990, BAMLH0A0HYM2 from
+// 1996, CPIAUCSL/UNRATE from the late 1940s, etc). data_points reads are
+// already paginated on the dashboard side, so this doesn't reintroduce the
+// client-side bloat concern that originally motivated the 5-year cap.
+const BACKFILL_START_DATE = "1900-01-01";
 
 async function fetchFredHistory(seriesId: string, apiKey: string, observationStart: string): Promise<FredObservation[]> {
   const url = new URL("https://api.stlouisfed.org/fred/series/observations");
@@ -210,9 +216,7 @@ export async function fetchFredBackfill(): Promise<DataPoint[]> {
     throw new Error("FRED_API_KEY is not set");
   }
 
-  const observationStart = new Date();
-  observationStart.setFullYear(observationStart.getFullYear() - BACKFILL_YEARS);
-  const startStr = observationStart.toISOString().slice(0, 10);
+  const startStr = BACKFILL_START_DATE;
 
   const points: DataPoint[] = [];
   for (const series of FRED_SERIES) {
