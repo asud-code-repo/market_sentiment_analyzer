@@ -24,6 +24,7 @@ interface CrashCheckRow {
   confirmed_red_count: number | null;
   red_count: number;
   wave_active: string | null;
+  wave_authorized: boolean | null;
   warsh_classification: string | null;
 }
 
@@ -124,7 +125,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       supabaseGet<FullReportRow[]>(env, "full_report_snapshots?select=*&order=run_at.desc&limit=1"),
       supabaseGet<CrashCheckRow[]>(
         env,
-        "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_active,warsh_classification&order=run_at.desc&limit=1",
+        "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_active,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
       ),
       supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=*&order=run_at.desc&limit=2"),
     ]);
@@ -329,7 +330,11 @@ function renderPage(
     ? `<div class="context-strip">
         <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div></div>
         <div class="stat"><div class="stat-label">Confirmed RED</div><div class="stat-value">${crashCheck.confirmed_red_count ?? 0} / 6</div></div>
-        <div class="stat"><div class="stat-label">Wave Active</div><div class="stat-value">${escapeHtml(crashCheck.wave_active ?? "NONE")}</div></div>
+        <div class="stat"><div class="stat-label">Wave Status</div><div class="stat-value">${escapeHtml(
+          crashCheck.wave_active && crashCheck.wave_active !== "NONE"
+            ? `${crashCheck.wave_active} — ${crashCheck.wave_authorized ? "authorized" : "observed, not authorized"}`
+            : "NONE",
+        )}</div></div>
         <div class="stat"><div class="stat-label">Fed Regime</div><div class="stat-value">${escapeHtml(crashCheck.warsh_classification ?? "PENDING")}</div></div>
       </div>`
     : "";

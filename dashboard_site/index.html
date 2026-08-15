@@ -615,10 +615,19 @@ function renderReport(row, priorFullReport, priorAnyRow) {
   const pendingRedCount = Math.max(0, (row.red_count ?? 0) - confirmedRedCount);
   const redPillText = `${confirmedRedCount} of 6 RED confirmed${pendingRedCount > 0 ? `, ${pendingRedCount} pending` : ""}`;
 
+  const waveActive = row.wave_active && row.wave_active !== "NONE" ? row.wave_active : null;
+  // A price/drawdown+VIX breach (wave_active) and the confirmed-RED-count gate
+  // (wave_authorized) are independent conditions — get_deployment_plan requires
+  // both. Showing wave_active alone as a single critical pill would read as
+  // "deployment is happening" even when it's only an observed, unauthorized
+  // breach, so the pill text/color reflects both states explicitly.
+  const wavePillClass = !waveActive ? "muted" : row.wave_authorized ? "critical" : "warning";
+  const wavePillText = !waveActive ? "NONE" : `${waveActive} — ${row.wave_authorized ? "authorized" : "observed, not authorized"}`;
+
   el.innerHTML = `
     ${banner}
     <div class="card">
-      <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${row.wave_active && row.wave_active !== 'NONE' ? 'critical' : 'muted'}">${row.wave_active || 'NONE'}</span></p>
+      <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${wavePillClass}">${wavePillText}</span></p>
       ${probSection}
       <div class="grid-3" style="margin-top:16px;">
         ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
@@ -812,7 +821,7 @@ if (isStandalonePwa) {
 async function main() {
   try {
     ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,warsh_classification,warsh_hard_rules_active,trigger_status,notes,divergence_flags&order=run_at.asc&limit=1000",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,divergence_flags&order=run_at.asc&limit=1000",
     );
 
     if (ALL_ROWS.length === 0) {
