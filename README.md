@@ -4,7 +4,7 @@ A market-crash-monitoring system that replaced a giant static prompt
 (hand-updated numbers pasted into an LLM chat every time) with a small
 pipeline: live data ingestion, a deterministic rule engine, a local MCP
 server, and three reporting surfaces — a chat-rendered deep-dive report, a
-public historical dashboard, and a private "Full Report" page.
+public historical dashboard, and a "Private Portfolio Report" page.
 
 The core idea: **numeric classification is never an LLM's job.** Every
 threshold, band, and RED/AMBER/GREEN color is computed by plain code from
@@ -63,7 +63,7 @@ FRED / EIA / Massive (market data)
 | **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase. The one-time backfill script pulls each FRED series' full available history (since 2026-08-15 — previously a rolling 5yr window), not just enough for the "All" chart toggle | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
 | **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (ATH-relative drawdown % triggers, not fixed S&P levels), cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
 | **MCP server** | Local stdio server exposing 14 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 5 persistence tools | `mcp_server/` |
-| **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Full Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
+| **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Portfolio Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
 
 ## The 6-indicator panel
 
@@ -115,7 +115,7 @@ other two.
 This system deliberately never lets personal financial data reach a cloud
 service:
 
-- **Supabase** holds macro/market data and — as of the Full Report page —
+- **Supabase** holds macro/market data and — as of the Private Portfolio Report page —
   crash-type diagnosis narrative and Portfolio Opportunity Review content
   (drift %, ticker thesis, risk-radar scores). **No dollar figures, no
   account balances, ever** — enforced in code, not just by convention:
@@ -176,7 +176,7 @@ ingestion/            Stage 2 — pulls FRED/EIA/Massive data into Supabase, pla
 rule_engine/           Stage 3 — deterministic classification + threshold-crossing push notification
 mcp_server/            Stage 4 — local MCP tools for Claude Desktop (14 tools)
 dashboard_site/        Public Cloudflare Pages reporting site
-full_report_site/      Private Cloudflare Pages Function — Access-gated Full Report page
+full_report_site/      Private Cloudflare Pages Function — Access-gated Private Portfolio Report page
 reference_docs/rules/  Source-of-truth rules doc + the two chat-report HTML templates
 supabase/migrations/   Schema history
 local_state/           Gitignored — real portfolio/watchlist data lives here, never committed
@@ -236,7 +236,7 @@ GitHub account's email in the Access policy).
   against Wave price targets, cross-references macro/geopolitical sources,
   and re-underwrites the BrokerageLink watchlist thesis; renders
   `portfolio-review-template.html`; persists via `write_portfolio_review`
-  (merged into the Full Report page) and, if the user approves ticker
+  (merged into the Private Portfolio Report page) and, if the user approves ticker
   changes, `write_watchlist`.
 
 ## Known gaps / backlog
