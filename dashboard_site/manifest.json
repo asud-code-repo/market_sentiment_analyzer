@@ -1,6 +1,6 @@
 {
-  "name": "Macro Crash Check",
-  "short_name": "Crash Check",
+  "name": "Macro Market Stress Monitor",
+  "short_name": "Stress Monitor",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0d0d",
