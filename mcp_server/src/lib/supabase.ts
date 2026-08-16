@@ -247,6 +247,14 @@ export async function writeSnapshot(qualitative: {
     confirmation_state: latest.confirmation_state,
     wave_authorized: latest.wave_authorized,
     wave_active: latest.wave_active,
+    // Also rule-engine-owned (computed once daily by classify.ts's
+    // computeDivergences(), not recomputed by Claude) — carried forward like
+    // the other mechanical fields above. Missing this previously meant every
+    // write_snapshot row had divergence_flags: null (no DB default), so the
+    // dashboard's "Signal Relationships" card silently vanished on every
+    // full chat-triggered report despite rendering fine on bare automated
+    // refreshes (found 2026-08-16).
+    divergence_flags: latest.divergence_flags,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,
