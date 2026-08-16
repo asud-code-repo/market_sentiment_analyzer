@@ -375,7 +375,7 @@ function renderPage(
     : "";
 
   const body = `
-    <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
+    <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · Stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
     ${contextStrip}
     ${diagnosis}
     <section class="card">
@@ -397,7 +397,7 @@ function renderShell(title: string, body: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Macro Crash Check — ${escapeHtml(title)}</title>
+<title>Macro Market Stress Monitor — ${escapeHtml(title)}</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="theme-color" content="#0d0d0d">
