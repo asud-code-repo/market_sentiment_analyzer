@@ -57,28 +57,57 @@ written to that standard, and this section makes the standard explicit so
 future edits don't drift from it.
 
 **Rule engine (deterministic, layer 3) owns:** every threshold and band in
-this file, the 3-of-6 wave gate, the confirmation/persistence logic, the
-crash-type triggers, and the crash-probability score. All of it gets written
-to the "current state" table. None of it is inferred, estimated, or
-"reasonably judged" by an LLM at report time.
+this file, the 3-of-6 wave gate, and the confirmation/persistence logic. All
+of it gets written to the "current state" table. None of it is inferred,
+estimated, or "reasonably judged" by an LLM at report time.
 
-**LLM narrative layer (reporting) owns:** reading news and Fed communication
-to inform the Warsh classification (an explicitly flagged manual judgment
-call — see below), writing the qualitative crash-type narrative once the
-rule engine has already picked the type, and rendering the dashboard from
-values the rule engine already computed. It **renders, it does not
-recompute** — if the rule engine says confirmed RED, the report says
-confirmed RED; it doesn't get softened, hedged, or independently
-re-estimated in prose.
+**LLM narrative/qualitative layer (reporting) owns:** the crash-probability
+score, the crash-type diagnosis, and scenario distribution — despite the
+Stage 1 criteria below being written with hard numeric triggers, `crash_type`
+is never computed by the rule engine; it's only ever set by a caller-supplied
+input to `write_snapshot`. Same for crash probability (see the "Crash-
+Probability Scoring Methodology" section — deferred, never implemented; the
+number is 100% LLM judgment today). This is a **deliberate, pre-existing
+design decision**, not an oversight this doc failed to catch — but it means
+this section previously overstated what's actually deterministic, and this
+paragraph exists to correct that rather than let the contradiction stand.
+The LLM layer also reads news and Fed communication to inform the Warsh
+classification (an explicitly flagged manual judgment call — see below), and
+renders the dashboard from values the rule engine already computed for
+everything it *does* own. It **renders, it does not recompute** — if the
+rule engine says confirmed RED, the report says confirmed RED; it doesn't
+get softened, hedged, or independently re-estimated in prose.
 
 **The test for every rule in this file:** could a developer implement it as
 an `if`/`else` without asking what you meant? If yes, it belongs in a
 section below, stated as a hard number. If no — as with Warsh MODERATE/
-DOVISH criteria — it stays an explicitly flagged manual/LLM judgment call,
-never a silently softened threshold. Vague language in this file isn't just
-an "AI might interpret loosely" risk — it's a spec that literally cannot be
-coded as written, which is a harder failure mode for a system whose entire
-premise is that classification is deterministic.
+DOVISH criteria, crash-type diagnosis, and crash probability — it stays an
+explicitly flagged manual/LLM judgment call, never a silently softened
+threshold. Vague language in this file isn't just an "AI might interpret
+loosely" risk — it's a spec that literally cannot be coded as written, which
+is a harder failure mode for a system whose entire premise is that
+*mechanical* classification (bands, confirmation, wave gates) is
+deterministic — the qualitative layer (probability, crash-type, narrative)
+was never meant to be, and should not be presented as if it were.
+
+---
+
+## What this system actually is
+
+**This is a stress-monitoring and discretionary deployment dashboard, not a
+calibrated crash-probability model.** The 6-indicator panel, band colors,
+confirmation windows, and wave-trigger thresholds are genuinely deterministic
+— reproducible, inspectable, and owned entirely by code. The crash
+probability, crash-type diagnosis, scenario distribution, and Fed/Warsh
+classification are not: they are a single person's (via an LLM) qualitative
+judgment, informed by the deterministic panel and web research, with no
+defined forecast horizon, no historical labels, no out-of-sample validation,
+and no reliability testing behind the displayed percentage. A crash
+probability of 15% is not evidence that a crash-defining event will occur
+roughly 15% of the time — treat it as a considered opinion, not a statistic.
+This system should never be presented or relied upon as if the three-wave
+deployment thresholds were empirically optimal, or as if the probability
+score were calibrated — because neither is true today.
 
 ---
 
@@ -125,6 +154,25 @@ persistence at all — without this fix, a single volatile trading day could
 still authorize a real-money deployment the moment that day's data lands,
 and a high same-day check frequency would create the illusion of a "streak"
 that isn't really independent confirmation.
+
+> **2026-08-15 historical check (finding, not a rule change):** an external
+> quant review argued this 2-day rule creates false negatives in fast,
+> event-driven crashes (citing Feb–Mar 2020 as the canonical example). Queried
+> real `data_points` history for that window rather than assuming either way:
+> VIX crossed into confirmed RED (>35, 2 distinct dates) by **2020-02-28** —
+> three-plus weeks before the actual market bottom. The S&P drawdown *band*
+> (>20%, one of the six RED-count indicators) reached confirmed RED by
+> **2020-03-17**, six days before the bottom (2020-03-23), while VIX had
+> already been RED for weeks. On the two indicators checkable against real
+> data, confirmation cleared with real runway to spare — it wasn't obviously
+> the dominant source of lag in this one episode. This is **not conclusive**:
+> `BAMLH0A0HYM2` (HY spread) has no rows before ~2023 in this database, so the
+> full 3-of-6 `wave_authorized` timeline for 2020 can't be reconstructed, and
+> Fed pivot's manually-judged, confirmation-exempt status is a wildcard this
+> check can't account for either. No rule was changed on the strength of one
+> partially-verifiable episode — a magnitude-based fast-confirmation path
+> would be a new, unvalidated policy choice, not a fix, and stays out of scope
+> until real backtesting (the deferred hazard-model work) can support it.
 
 **Escalation without gating.** Sustained Tier 2 deterioration — 3 or more Tier
 2 indicators moving in the adverse direction across 4+ consecutive weekly
@@ -238,6 +286,18 @@ placed — never inferred or set automatically.
 - Never stop 401k paycheck contributions during a crash
 - Never touch the passive long-duration account (RRSP-equivalent) during a crash
 - Never apply wave deployment logic to accounts with no deployment mechanism (e.g. spouse 401k) — monitor only
+
+> **2026-08-15 review note:** an external quant review flagged "never sell on
+> the way down" as a blanket behavioral guardrail that should arguably be
+> conditioned on liquidity, concentration, valuation, or tax status rather
+> than applied uniformly. Checked against the actual account structure
+> (`local_state/portfolio.yaml`): the two accounts that concern would most
+> plausibly apply to — the passive long-duration account (RRSP-equivalent)
+> and the monitored spouse 401k — are already permanently excluded from wave
+> deployment by their own account-level flags (`crash_protocol: none`,
+> `deployment_mechanism: none`), independent of this rule. No carve-out
+> identified for the tactical 401k itself as of this review; rule stands
+> as-is.
 
 ## Post-Crash Allocation Protocol
 
@@ -425,6 +485,12 @@ confidence qualifier per Signal Tiering.
 | Credit card delinquency rate | FRED `DRCCLACBS` | Rising = consumer financial stress increasing | See Complacency Watch Bands above |
 | WTI crude oil | FRED `DCOILWTICO` | Above $100/barrel = stagflation accelerant | See Recovery/Complacency band above |
 | Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength — FRED has no public real-time card-swipe series | See Complacency Watch Bands above |
+| Secured Overnight Financing Rate (repo stress) | FRED `SOFR` | Spikes above the Fed's target range signal repo/dollar-funding stress (e.g. Sept 2019) | Read alongside overnight reverse repo — no single-direction band |
+| Broad U.S. Dollar Index | FRED `DTWEXBGS` | Rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities | Read as a global-transmission signal, not directional on its own |
+| Chicago Fed NFCI Risk Subindex | FRED `NFCIRISK` | Positive = elevated financial-sector volatility/funding risk; a narrower cut of the composite NFCI already tracked | Same interpretation convention as composite NFCI |
+| Chicago Fed NFCI Credit Subindex | FRED `NFCICREDIT` | Positive = tighter credit conditions specifically (vs. the composite NFCI, which blends credit/leverage/risk) | Same interpretation convention as composite NFCI |
+| 10yr TIPS real yield | FRED `DFII10` | Rising real yields pressure equity valuations independent of nominal-rate moves | Covers only the real-yield leg of "equity valuation" — no free earnings-yield/CAPE series exists on FRED; do not treat this as a full valuation read |
+| OECD Composite Leading Indicator (OECD-Total) | FRED `OECDLOLITOAASTSAM` | Below 100 and falling = below-trend global growth momentum | Monthly, lagged, and revised — a weak stand-in for a true global PMI (not on FRED for free); do not treat as timely |
 
 ---
 
@@ -564,9 +630,12 @@ bare "delta vs prior check" with an unstated window — if checks run
 irregularly, compute both deltas off calendar days, not check-to-check gaps.
 
 **Confidence and recency (applies everywhere a point estimate is shown):**
-- Every probability/point estimate carries a confidence interval or, where a
-  true statistical CI isn't available, an explicit Low/Medium/High persistence
-  tag per the Signal Tiering escalation rule — never a bare point figure.
+- Every probability/point estimate carries a low-high range and an explicit
+  Low/Medium/High persistence tag per the Signal Tiering escalation rule —
+  never a bare point figure. This is judgment-based bracketing, not a
+  statistical confidence interval — no version of this system has ever
+  computed a true CI (see "What this system actually is," above), and this
+  section should not be read as implying otherwise.
 - Every externally-sourced figure (FRED series, CME FedWatch, etc.) carries an
   "as of" date reflecting the source's actual publication lag, not the
   dashboard's render time.

@@ -62,6 +62,7 @@
   .wrap { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
+  .caveat { font-size: 11px; font-style: italic; color: var(--text-muted); margin: 8px 0 0; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
 
@@ -216,6 +217,7 @@
 
   <div class="card">
     <p class="eyebrow">Crash Probability — History</p>
+    <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
     <div id="chart-crash-probability"></div>
   </div>
 
@@ -385,6 +387,36 @@ const CONTEXT_INFO = {
     format: (v) => `${v.toFixed(2)}%`,
     signal: (v) => (v > 5.0 ? "Above 5.0% — bond vigilante signal" : "Below the 5.0% bond-vigilante threshold"),
   },
+  sofr: {
+    label: "SOFR (Repo Rate)",
+    format: (v) => `${v.toFixed(2)}%`,
+    signal: () => "Read alongside overnight reverse repo — no single-direction band",
+  },
+  dtwexbgs: {
+    label: "Broad Dollar Index",
+    format: (v) => v.toFixed(2),
+    signal: () => "Rising = dollar strength, tightens global dollar-funding conditions",
+  },
+  nfcirisk: {
+    label: "NFCI Risk Subindex",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v > 0 ? "Elevated financial-sector volatility/funding risk" : "Below-average"),
+  },
+  nfcicredit: {
+    label: "NFCI Credit Subindex",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v > 0 ? "Tighter credit conditions specifically" : "Looser than average"),
+  },
+  dfii10: {
+    label: "10yr TIPS Real Yield",
+    format: (v) => `${v.toFixed(2)}%`,
+    signal: () => "Real-yield leg of equity valuation only — no free earnings-yield/CAPE series on FRED",
+  },
+  oecdcli: {
+    label: "OECD Leading Indicator",
+    format: (v) => v.toFixed(1),
+    signal: () => "Monthly, lagged, revised — weak stand-in for a true global PMI",
+  },
 };
 
 function renderContextIndicators(latest) {
@@ -407,6 +439,12 @@ function renderContextIndicators(latest) {
     bamlc0a0cm: latest.BAMLC0A0CM,
     cgbd2024: latest.CGBD2024,
     dgs30: latest.DGS30,
+    sofr: latest.SOFR,
+    dtwexbgs: latest.DTWEXBGS,
+    nfcirisk: latest.NFCIRISK,
+    nfcicredit: latest.NFCICREDIT,
+    dfii10: latest.DFII10,
+    oecdcli: latest.OECDLOLITOAASTSAM,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -564,6 +602,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
       </div>
       <div class="meter-track"><div class="meter-fill" style="width:${row.crash_probability_pct}%; background:${meterColor};"></div></div>
       <div class="meter-labels"><span>0%</span><span>Range: ${row.crash_probability_low_pct ?? "—"}–${row.crash_probability_high_pct ?? "—"}%</span><span>100%</span></div>
+      <p class="caveat">Discretionary LLM estimate — not a calibrated statistical forecast.</p>
     `;
   }
 
@@ -835,7 +874,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "OECDLOLITOAASTSAM"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

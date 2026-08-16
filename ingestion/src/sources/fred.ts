@@ -61,6 +61,31 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // hardcoded value. Units: Canadian dollars per 1 US dollar (e.g. 1.42) —
   // the CAD->USD rate used for value_usd is 1/DEXCAUS, computed at read time.
   { id: "DEXCAUS", unit: "cad_per_usd" },
+
+  // 2026-08-15 additions — Section 5 of reference_docs/investment-model-review.md
+  // flagged missing liquidity/credit-structure/global-transmission/valuation
+  // indicators. These 6 are the ones that actually have real free FRED
+  // history (verified against FRED's own series metadata, not guessed);
+  // market breadth, realized vol as a sourced series, CDS indices,
+  // cross-currency basis, and dealer balance sheets were checked and
+  // confirmed to have no free FRED option, so they're left out rather than
+  // force-fit to a weak proxy. All Tier 2/contextual — see
+  // reference_docs/rules/crash-check-rules.md "Contextual Indicators".
+  { id: "SOFR", unit: "percent" },       // Secured Overnight Financing Rate — repo-market
+                                          // reference rate, spikes on repo/dollar-funding stress.
+  { id: "DTWEXBGS", unit: "index" },     // Nominal Broad U.S. Dollar Index (Fed H.10, 26-currency
+                                          // basket) — the "global transmission: dollar" leg.
+  { id: "NFCIRISK", unit: "index" },     // Chicago Fed NFCI Risk Subindex — financial-sector
+                                          // volatility/funding risk, a narrower cut of the
+                                          // composite NFCI already tracked above.
+  { id: "NFCICREDIT", unit: "index" },   // Chicago Fed NFCI Credit Subindex — broad
+                                          // credit-tightness conditions specifically.
+  { id: "DFII10", unit: "percent" },     // 10yr TIPS real yield — covers only the real-yield leg
+                                          // of "equity valuation"; no free earnings-yield/CAPE
+                                          // series exists on FRED, so this is a partial signal.
+  { id: "OECDLOLITOAASTSAM", unit: "index" }, // OECD Composite Leading Indicator (OECD-Total) —
+                                          // monthly, lagged, revised; a weak stand-in for a true
+                                          // global PMI (which isn't free on FRED), not equivalent.
 ];
 
 interface FredObservation {

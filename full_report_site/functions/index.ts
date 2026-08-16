@@ -328,7 +328,7 @@ function renderPage(
 ): string {
   const contextStrip = crashCheck
     ? `<div class="context-strip">
-        <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div></div>
+        <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div><div class="stat-note">Discretionary LLM estimate, not calibrated</div></div>
         <div class="stat"><div class="stat-label">Confirmed RED</div><div class="stat-value">${crashCheck.confirmed_red_count ?? 0} / 6</div></div>
         <div class="stat"><div class="stat-label">Wave Status</div><div class="stat-value">${escapeHtml(
           crashCheck.wave_active && crashCheck.wave_active !== "NONE"
@@ -458,6 +458,7 @@ const PAGE_CSS = `
   .stat { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
   .stat-value { font-size: 22px; font-weight: 600; }
+  .stat-note { font-size: 10px; font-style: italic; color: var(--text-muted); margin-top: 4px; }
   .diagnosis-type { font-size: 18px; margin: 0 0 12px; }
   .criteria-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
   .watchlist-table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -310,10 +310,18 @@ server.registerTool(
       "since this system's start but was never surfaced until now — crash-check-rules.md's own " +
       "'Additional bond-market bands' already define its threshold (above 5.0% = bond vigilante " +
       "signal), used here directly rather than inventing a new one. Use these to enrich narrative " +
-      "synthesis, never to override or supplement the RED count / wave_authorized decision.",
+      "synthesis, never to override or supplement the RED count / wave_authorized decision. " +
+      "2026-08-15 additions (investment-model-review.md Section 5): sofr_pct (repo/dollar-funding " +
+      "stress), broad_dollar_index (global transmission), nfci_risk_subindex/nfci_credit_subindex " +
+      "(narrower cuts of the composite NFCI above — financial-sector volatility/funding risk and " +
+      "credit-tightness specifically), and tips_real_yield_10y_pct (equity-valuation pressure via " +
+      "real yields). tips_real_yield_10y_pct covers only the real-yield leg of 'equity valuation' — " +
+      "there is no free earnings-yield/CAPE series on FRED, so never treat it as a full valuation " +
+      "read on its own. oecd_leading_indicator is a monthly, lagged, revised stand-in for a true " +
+      "global PMI (which isn't free on FRED) — explicitly weaker signal, say so if citing it.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, oecdCli, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -330,6 +338,12 @@ server.registerTool(
         getLatestDataPoint("RSAFS"),
         getLatestDataPoint("BAMLC0A0CM"),
         getLatestDataPoint("CGBD2024"),
+        getLatestDataPoint("SOFR"),
+        getLatestDataPoint("DTWEXBGS"),
+        getLatestDataPoint("NFCIRISK"),
+        getLatestDataPoint("NFCICREDIT"),
+        getLatestDataPoint("DFII10"),
+        getLatestDataPoint("OECDLOLITOAASTSAM"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -368,6 +382,12 @@ server.registerTool(
         ...dgs30,
         signal: dgs30.value > 5.0 ? "ABOVE 5.0% — bond vigilante signal per crash-check-rules.md" : "below the 5.0% bond-vigilante threshold",
       },
+      sofr_pct: sofr && { ...sofr, signal: "repo/dollar-funding stress reference rate — read alongside reverse_repo_usd_billions, no single-direction band" },
+      broad_dollar_index: dtwexbgs && { ...dtwexbgs, signal: "rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities" },
+      nfci_risk_subindex: nfciRisk && { ...nfciRisk, signal: nfciRisk.value > 0 ? "elevated financial-sector volatility/funding risk" : "below-average" },
+      nfci_credit_subindex: nfciCredit && { ...nfciCredit, signal: nfciCredit.value > 0 ? "tighter credit conditions specifically" : "looser than average" },
+      tips_real_yield_10y_pct: dfii10 && { ...dfii10, signal: "real-yield leg of equity valuation only — no free earnings-yield/CAPE series exists on FRED, do not treat as a full valuation read" },
+      oecd_leading_indicator: oecdCli && { ...oecdCli, signal: "monthly, lagged, revised — weak stand-in for a true global PMI, not equivalent" },
       divergence_flags: divergenceFlags,
     });
   },
