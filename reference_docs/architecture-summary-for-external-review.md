@@ -1,11 +1,16 @@
 # Macro Crash Check — Architecture & Rules Summary (for external AI review)
 
 This is a self-contained briefing for a fresh model/chat with no other context on this
-project. It covers system architecture, data flow, security model, and the full current
-rules (thresholds/bands/formulas) that govern the crash-detection and wave-deployment
-logic. Paste this whole document as context when asking another model to analyze or
-propose changes to the rules — nothing here is sensitive (no dollar figures, no
-credentials, no personal account data).
+project. It covers system architecture, data flow, security model, prior external-review
+findings and their current status, and the full current rules (thresholds/bands/formulas)
+that govern the crash-detection and wave-deployment logic. Paste this whole document as
+context when asking another model to analyze or propose changes to the system — nothing
+here is sensitive (no dollar figures, no credentials, no personal account data).
+
+**This document supersedes the separate `architecture-review.md`** (a prior external
+review, dated 2026-08-14) — its findings are folded into the "Prior architecture review:
+findings and current status" section below rather than kept as a standalone file, so
+there's one place to read instead of two overlapping ones.
 
 ## What this system is
 
@@ -15,42 +20,83 @@ market conditions → a local MCP server exposing tools to Claude Desktop → tw
 reporting surfaces (a rich on-demand chat report, and two public/private web
 dashboards).
 
-**Core design philosophy: numeric classification is never an LLM's job.** Every
-threshold, band, and RED/AMBER/GREEN color is computed by plain deterministic code
-from real market data — never inferred, estimated, or "reasonably judged" by an LLM
-at report time. The LLM's job is strictly qualitative: reading news, judging Fed
-communication, writing narrative synthesis — and it always *renders* what the rule
-engine already decided, never re-derives or restates it with different precision.
+**Core design philosophy: numeric classification is never an LLM's job** — for the parts
+that are actually mechanical. Every threshold, band, RED/AMBER/GREEN color, confirmation
+window, and wave trigger is computed by plain deterministic code from real market data —
+never inferred, estimated, or "reasonably judged" by an LLM at report time.
+
+**This is not true of everything the system produces, and the system now says so
+explicitly** (added 2026-08-15, after an external investment-model review flagged the gap
+between this framing and reality — see below). Crash probability, crash-type diagnosis,
+scenario distribution, and the Warsh Fed classification are LLM/human qualitative
+judgment, not rule-engine output — informed by the deterministic panel and web research,
+but with no defined forecast horizon, no historical labels, no out-of-sample validation,
+and no reliability testing behind them. **This system is best described as a
+stress-monitoring and discretionary deployment dashboard, not a calibrated
+crash-probability model** — treat the displayed probability as a considered opinion, not
+a statistic, and do not treat the three-wave deployment thresholds as empirically
+optimal.
 
 ## Architecture
 
-```
-FRED / EIA / Massive.com (market & macro data)
-        │
-        ▼  (GitHub Action, daily 10am ET, weekdays)
-┌────────────────┐     ┌──────────────────────┐     ┌────────────────┐
-│  ingestion/     │────▶│  Supabase (Postgres) │◀────│  rule_engine/  │
-│  fetch + upsert │     │  data_points,         │     │  classify.ts   │
-└────────────────┘     │  crash_checks,        │     │  (deterministic)│
-                        │  watchlist_tickers,   │     └────────────────┘
-                        │  full_report_snapshots,│
-                        │  portfolio_review_     │
-                        │  snapshots            │
-                        └──────────┬────────────┘
-                                   │
-                ┌──────────────────┼───────────────────┬─────────────────────┐
-                ▼                  ▼                   ▼                     ▼
-      ┌─────────────────┐ ┌──────────────┐  ┌───────────────────┐ ┌──────────────────┐
-      │  mcp_server/     │ │ dashboard_   │  │ full_report_site/  │ │ Claude Desktop    │
-      │  (local, stdio,  │ │ site/        │  │ (Cloudflare Pages  │ │ chat — renders    │
-      │  Claude Desktop  │ │ (Cloudflare  │  │ Function,          │ │ dashboard-        │
-      │  tool calls)     │ │ Pages,       │  │ service_role key,  │ │ template.html /   │
-      └────────┬─────────┘ │ public,      │  │ Cloudflare Access  │ │ portfolio-review- │
-               │           │ read-only)   │  │ gated)             │ │ template.html     │
-               │           └──────────────┘  └────────────────────┘ └───────────────────┘
-               │
-   scheduled: Claude Desktop task,
-   "run crash check" daily at 2pm ET
+```mermaid
+flowchart TB
+  subgraph Sources[External sources]
+    FRED[FRED]
+    EIA[EIA]
+    MASSIVE[Massive market data]
+    CBOE[CBOE CSV - optional/stale guarded]
+    POLY[Polymarket - optional]
+    NEWS[Web/news and Fed communications]
+    NTFY[ntfy.sh]
+  end
+
+  subgraph Automation[Scheduled automation]
+    GHA[GitHub Actions: weekday ingest then classify]
+    ING[ingestion]
+    RULES[rule_engine]
+  end
+
+  subgraph Data[Supabase/Postgres]
+    DP[(data_points)]
+    CC[(crash_checks)]
+    WT[(watchlist_tickers)]
+    FRS[(full_report_snapshots)]
+    PRS[(portfolio_review_snapshots)]
+  end
+
+  subgraph Local[Local trust boundary]
+    MCP[mcp_server: stdio MCP]
+    PORT[portfolio.yaml]
+    WATCH[brokeragelink_watchlist.yaml]
+    WAVESTATE[wave_deployment_state.yaml]
+    CLAUDE[Claude Desktop / LLM workflow]
+  end
+
+  subgraph Reporting[Reporting surfaces]
+    PUB[Public dashboard: Cloudflare Pages]
+    PRIV[Private Full Report: Pages Function + Cloudflare Access]
+    CHAT[Rendered HTML artifacts]
+  end
+
+  FRED & EIA & MASSIVE & CBOE & POLY --> ING
+  GHA --> ING --> DP
+  WT --> ING
+  GHA --> RULES
+  DP --> RULES --> CC
+  RULES -. threshold crossing .-> NTFY
+
+  DP & CC & WT & FRS & PRS <--> MCP
+  PORT & WATCH & WAVESTATE --> MCP
+  CLAUDE <--> MCP
+  NEWS --> CLAUDE
+  CLAUDE --> CHAT
+  CLAUDE -->|qualitative snapshots| MCP
+  MCP -->|symbols only| WT
+  MCP -->|wave execution state, local-only| WAVESTATE
+
+  DP & CC -->|anon SELECT, RLS limited| PUB
+  FRS & PRS & CC -->|service-role server-side| PRIV
 ```
 
 ### Layers
@@ -58,9 +104,9 @@ FRED / EIA / Massive.com (market & macro data)
 | Layer | What it does | Where |
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` (full text reproduced below) |
-| **Ingestion** | Pulls FRED/EIA macro series + Massive.com watchlist ticker prices daily | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
-| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, cross-indicator divergence detection, threshold-crossing push notifications — pure functions, no LLM | `rule_engine/` |
-| **MCP server** | Local stdio server exposing tools to Claude Desktop (indicator panel, portfolio drift, watchlist status, deployment plan, 4 write/persistence tools, data-freshness check) | `mcp_server/` |
+| **Ingestion** | Pulls FRED/EIA macro series (full available history since 2026-08-15, not a rolling 5yr window) + Massive.com watchlist ticker prices daily | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
+| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (relative-drawdown triggers since 2026-08-15), cross-indicator divergence detection, threshold-crossing push notifications — pure functions, no LLM | `rule_engine/` |
+| **MCP server** | Local stdio server exposing tools to Claude Desktop (indicator panel, portfolio drift, watchlist status, deployment plan, 5 write/persistence tools, data-freshness check) | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private "Full Report" page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
 
 ## The 6-indicator panel (the deterministic gate)
@@ -71,6 +117,41 @@ authorizes only when 3+ are simultaneously RED, **and** each RED reading has hel
 across 2+ distinct daily ingestion dates (not just repeated same-day checks) — see
 Signal Tiering below. Full thresholds and wave math are in the rules doc reproduced
 in full below.
+
+## Wave deployment & authorization (fixed 2026-08-15)
+
+An architecture review (2026-08-14) and an investment-model review (independently)
+both identified the same material gap: `get_deployment_plan` checked only `wave_active`
+(the S&P-drawdown/VIX price trigger) and never `wave_authorized` (the confirmed
+3-of-6-RED gate) — a single unconfirmed volatile day could surface a real dollar
+deployment plan. Three fixes shipped together:
+
+1. **Both gates now required.** `get_deployment_plan` denies with an explicit
+   "observed, not yet authorized" message if `wave_active` is set but `wave_authorized`
+   is false — closing the bypass. This makes authorization *stricter* than before, not
+   looser (see "still open" below re: whether that direction is even correct).
+2. **Relative drawdown thresholds, not fixed S&P levels.** `activeWave()` (`rule_engine/
+   src/rules.ts`) now triggers on ATH-relative drawdown % (16/24/35 for Waves 1/2/3)
+   instead of fixed nominal S&P levels (previously 6,200/5,600/4,800) — a fixed level
+   decays in meaning as the index's all-time high rises over time; a drawdown
+   percentage doesn't.
+3. **Cumulative, execution-aware deployment.** Previously, a market move deep and fast
+   enough to satisfy Wave 3's condition without Wave 1/2 ever separately confirming
+   would return *only* Wave 3's fund allocation, silently skipping the diversification
+   Wave 1/2 were meant to add. `get_deployment_plan` now returns the combined breakdown
+   for every not-yet-executed wave up to and including the current one. A new local file
+   (`local_state/wave_deployment_state.yaml`, same trust boundary as `portfolio.yaml`)
+   and MCP tool (`record_wave_deployment`) track which waves have actually been
+   executed, so a wave already acted on isn't re-proposed.
+
+**Still open**: whether the joint drawdown-AND-VIX construction and the "3-of-6 RED"
+authorization rule are themselves well-calibrated remains unresolved — a real backtest
+against 2020 data found the current thresholds already miss real episodes in both
+directions (Wave 3 never fired in 2020 despite VIX hitting 82; Wave 2 never fired in the
+2022 grinding bear market). Requiring `wave_authorized` in addition to the price/VIX
+trigger makes the system stricter, which cuts against that finding rather than resolving
+it. Recalibrating the actual threshold values needs real backtested evidence — deferred
+to future hazard-model work (see below), not guessed at.
 
 ## Cross-indicator divergence detection (not in the rules doc — code-only)
 
@@ -95,24 +176,28 @@ value and 7-day delta, not just a boolean) — `mcp_server`'s
 `get_context_indicators` and `dashboard_site`'s "Signal Relationships" card
 both read that one persisted value rather than each computing their own copy,
 consistent with the Rule Engine Output Contract below. Thresholds are a first
-cut, not backtested/calibrated. Not part of the 3-of-6 wave-authorization
-gate — informational only, same tier as the other contextual indicators.
+cut, not backtested/calibrated, and the more concerning "HY widening while VIX
+stays calm" configuration (credit leading equity) is not one of the three
+pairs — still deferred. Not part of the 3-of-6 wave-authorization gate —
+informational only, same tier as the other contextual indicators.
 
 ## Security model — split storage (why this matters for any rule changes)
 
 - **Supabase** holds macro/market data only — VIX, CPI, wave status, indicator
-  colors, crash probability, watchlist ticker prices/targets, and now (as of
-  2026-07-16) crash-type diagnosis narrative and Portfolio Opportunity Review
-  content (drift %, ticker thesis, risk-radar scores). **No dollar figures, no
-  account balances, ever** — enforced in code (`findLeakedDollarFigures()`), not
-  just by prompt instruction: every write path that persists free text
-  cross-references the real portfolio file's dollar figures and throws if any
-  appear, rather than trusting the model to have followed a "don't include $" rule
-  correctly every time.
+  colors, crash probability, watchlist ticker prices/targets, and crash-type
+  diagnosis narrative and Portfolio Opportunity Review content (drift %, ticker
+  thesis, risk-radar scores). **No dollar figures, no account balances, ever** —
+  enforced in code (`findLeakedDollarFigures()`), not just by prompt instruction:
+  every write path that persists free text cross-references the real portfolio
+  file's dollar figures and throws if any appear, rather than trusting the model
+  to have followed a "don't include $" rule correctly every time.
 - **`local_state/`** (gitignored, never committed, never leaves the machine) holds
-  the real portfolio file — account balances, dry powder, allocation targets, and
+  the real portfolio file — account balances, dry powder, allocation targets —
   the BrokerageLink watchlist's position-sizing (`max_position_usd`, which *never*
-  reaches Supabase even though everything else about the watchlist now does).
+  reaches Supabase even though everything else about the watchlist now does), and
+  (since 2026-08-15) which wave-deployment tranches have actually been executed
+  (`wave_deployment_state.yaml`) — action state tied to real trades, same trust
+  boundary as the rest of this directory.
 - **The MCP server runs locally via stdio**, not as a hosted service — it's the
   one component that touches `local_state/`.
 - Wave-deployment amounts in the rules doc are percentages of "dry powder," never
@@ -126,7 +211,7 @@ gate — informational only, same tier as the other contextual indicators.
   client-embedded anon key with broad SELECT would bypass Access entirely if it
   existed).
 
-## The four MCP write/persistence tools
+## The five MCP write/persistence tools
 
 1. `write_snapshot` — persists the qualitative crash-check synthesis (probability,
    scenario distribution, narrative notes) to `crash_checks`.
@@ -139,9 +224,13 @@ gate — informational only, same tier as the other contextual indicators.
    summary, macro cross-reference, per-ticker thesis re-underwrite, and risk-radar
    scores to `portfolio_review_snapshots`; portfolio drift is recomputed
    server-side, not trusted from the caller.
+5. `record_wave_deployment` *(added 2026-08-15)* — marks a wave as actually executed
+   (local-only, `wave_deployment_state.yaml`) after real trades are placed, so
+   `get_deployment_plan` stops re-proposing it. Deliberately separate from the
+   read-only `get_deployment_plan` call — computing a plan never has side effects.
 
-All four run the dollar-figure guardrail against every free-text field before
-writing.
+All five run the dollar-figure guardrail against every free-text field before
+writing (tools 1–4; `record_wave_deployment`'s inputs carry no free text).
 
 ## Anti-anchoring design (crash-check workflow ordering)
 
@@ -166,6 +255,17 @@ deployment. The rule engine tracks this via a per-indicator streak counter
 (`confirmation_state` jsonb column, `confirmed_red_count` derived from it) —
 `wave_authorized` gates on the *confirmed* count, not the raw same-day count.
 
+**2026-08-15 historical check**: an investment-model review argued this 2-day rule
+creates false negatives in fast, event-driven crashes (citing Feb–Mar 2020). Queried
+real `data_points` history rather than assuming: VIX confirmed RED by 2020-02-28,
+three-plus weeks before the actual bottom; the S&P drawdown band confirmed RED by
+2020-03-17, six days before the bottom (2020-03-23). On the two indicators verifiable
+against current data, confirmation cleared with real runway to spare — not obviously
+the dominant source of lag in this one episode. Not conclusive (HY spread data doesn't
+go back that far in this database, and Fed pivot's manual judgment is a wildcard), and
+no rule was changed on the strength of one partially-verifiable episode — see the full
+finding in the rules doc below.
+
 ## Data-freshness guardrail
 
 Before trusting the indicator panel as "today's data," the system compares the
@@ -183,6 +283,117 @@ A free ntfy.sh push notification fires the moment `confirmed_red_count` crosses
 *up* into 2+ (not on every day it remains there) — runs inside the same daily
 ingestion job, comparing today's row against the prior row to detect the
 transition rather than just checking the current level.
+
+---
+
+# Prior architecture review: findings and current status
+
+A full external architecture review (2026-08-14, `architecture-review.md`, since
+folded into this document) scored the system 7.4/10 — "a thoughtfully layered,
+single-user market-monitoring system" held back by "high-impact correctness risks
+rather than implementation maturity." Its findings, and what's happened since:
+
+## Strengths identified (still true, unchanged)
+
+1. Security boundary matches data sensitivity — local financial state stays local;
+   public/private data genuinely separated; private browsing never gets a service-role key.
+2. Mechanical signals are reproducible — raw observations, derived states, and
+   divergence results are persisted, not recomputed independently per view.
+3. Safety controls are layered — required-source failure, plausibility quarantine,
+   freshness checks, confirmation windows, idempotent writes, transition-only notification.
+4. The LLM has a narrow, useful role — qualitative value added without letting it
+   invent core numeric classifications.
+5. The architecture is proportionate — serverless scheduling, Postgres, static public
+   reporting, and a local stdio bridge, appropriate for a single-owner system.
+
+## Fixed since the review
+
+- **The deployment-authorization gap** ("the most consequential architectural finding" —
+  `get_deployment_plan` deployed on `wave_active` alone, never checking `wave_authorized`)
+  — fixed 2026-08-15, see "Wave deployment & authorization" above.
+- **Fixed S&P wave-level decay** — wave triggers switched to ATH-relative drawdown %.
+- **"Wave 3 fires first" / no execution-state problem** — fixed via cumulative
+  deployment + `wave_deployment_state.yaml` + `record_wave_deployment`.
+- **Specification/runtime honesty gap re: crash probability and crash type** — the
+  rules doc previously claimed the rule engine owned the crash-probability score and
+  crash-type triggers while a separate section admitted both are 100% LLM judgment; the
+  contradiction is now resolved, and the doc states plainly what's deterministic vs.
+  qualitative (see "What this system is" above, and "What this system actually is" in
+  the rules doc below). The same caveat now appears next to every surfaced probability
+  figure on the public dashboard and the private Full Report — not just in the rules doc.
+- **Missing-indicator gaps (partial)** — 5 new verified free FRED series added
+  (`SOFR` for repo/liquidity stress, `DTWEXBGS` for the dollar-transmission leg,
+  `NFCIRISK`/`NFCICREDIT` for bank-funding/credit-conditions stress, `DFII10` for the
+  real-yield leg of equity valuation). A 6th candidate (`OECDLOLITOAASTSAM`, a global-PMI
+  stand-in) was tried and dropped after verification showed it frozen since 2022-11 —
+  removed rather than shipped with a misleading caveat.
+- **"Never sell on the way down" liquidity/concentration/tax-status concern** — reviewed
+  against the actual account schema; the two accounts it would plausibly apply to are
+  already excluded from wave deployment by their own flags. No code change needed;
+  documented in the rules doc so it doesn't get re-flagged as an open gap later.
+
+## Still open
+
+- **Rules are duplicated across prose (rules doc) and code (`rule_engine`, `mcp_server`,
+  `dashboard_site` all independently re-encode the same thresholds/splits).** No shared
+  executable rules package exists yet. Every change so far has been made by hand-editing
+  each location in sync — works, but has no compile-time guarantee they stay in sync.
+- **Qualitative state (crash probability, crash type, Warsh classification, trigger
+  status) still lacks provenance/versioning.** Fields are copied forward from the prior
+  `crash_checks` row rather than referencing an explicit source/effective/expiry model.
+  A related inconsistency also remains unfixed: `write_snapshot` can change the Fed-pivot
+  judgment from NONE/PAUSE to CUT but still copies the old `red_count`/
+  `confirmed_red_count`/`wave_authorized` forward unchanged, rather than recomputing
+  them — the next scheduled classification run corrects it, but a snapshot in between can
+  briefly hold an internally inconsistent state.
+- **No rule-state/workflow contract test suite exists.** Verification for every change
+  in this project so far has been `tsc --noEmit` plus manual/throwaway scripts — real,
+  but not a durable regression suite for threshold boundaries, confirmation timing, or
+  deployment-denial-before-authorization.
+- **No ingestion run/per-series health record.** A dataset-freshness decision exists at
+  the whole-run level (see "Data-freshness guardrail" above) but not per-series — a
+  successful run can still contain stale weekly/monthly observations for some series.
+- **Public dashboard's `crash_checks` history read is a flat `limit=1000`, unpaginated**
+  — will silently truncate once history grows past that. `data_points` reads are already
+  paginated; `crash_checks` is not.
+- **The private Full Report's service-role key is broad and long-lived** in the
+  Cloudflare Pages environment — not yet narrowed to a dedicated read-only role/function.
+- **6-month recovery-transition tracking (Stage 4) is pure prose, zero code** — no
+  function detects a confirmed trough, tracks "15% recovered from trough," or tracks
+  "VIX under 25 for 3+ weeks." Explicitly deferred (2026-08-15) as new development, not
+  a policy tweak — needs its own session.
+- **The full hazard-probability model / regime detection / expected-utility deployment
+  policy** the investment-model review called for (see below) — not started. This is the
+  single largest remaining item, deliberately deferred to a Python research pipeline
+  (statistical tooling this repo doesn't have) with real backtest data, rather than
+  attempted piecemeal.
+- **BrokerageLink watchlist ticker selection** still has no documented "why this ticker"
+  rationale beyond a one-line theme tag.
+- **Divergence-detection remaining scope**: rolling-correlation infrastructure, a
+  regime-dependent 10yr-vs-equities pair, and the "HY widening without VIX confirming"
+  direction are deliberately deferred, not started.
+
+---
+
+# Prior investment-model review: findings and current status
+
+A separate CIO/quant-perspective review (`investment-model-review.md`, since folded into
+this document) disagreed with the system as a capital-allocation model — "a useful
+dashboard of stress indicators, but not a calibrated crash-probability model or a robust
+deployment policy." Status of its 8 sections, condensed (see the earlier fixes above for
+detail on what shipped):
+
+| Section | Status |
+|---|---|
+| 1. Crash probability isn't a real probability model (no event/horizon, unbacktested) | Honestly labeled everywhere it's shown (2026-08-15); still not calibrated — that's the deferred model work |
+| 2. Regime detection is reactive and internally inconsistent (correlated indicators, subjective Fed-pivot, useful indicators excluded from the gate) | Untouched |
+| 3. Wave deployment — fixed levels, bypassed authorization, "3-of-6" unsound, no cumulative state | Fixed levels, bypassed authorization, and no-cumulative-state all fixed 2026-08-15; "3-of-6" statistical soundness untouched |
+| 4. Determinism ≠ validity (2-day confirmation false negatives, blanket "never sell," fixed 6-month recovery) | 2-day confirmation investigated and documented (not changed); "never sell" reviewed and confirmed already-handled; 6-month recovery explicitly deferred |
+| 5. Missing indicators (valuation, breadth, credit structure, liquidity, growth, inflation, global transmission, event risk) | Liquidity, credit-structure, and dollar-transmission gaps partially filled; valuation partially filled (real-yield leg only); breadth, CDS, cross-currency basis, dealer balance sheets, and true global PMI confirmed to have no free data source — documented as real gaps |
+| 6. Six named error modes | All still live — none directly targeted yet |
+| 7. Two-layer hazard model + expected-utility deployment policy | Not started — the deferred follow-up |
+| 8. Calibration standard (OOS testing, reliability curves, Brier score, block bootstrap) | Doesn't exist — the 2020 confirmation-window check was a one-off spot-check, not this infrastructure |
+| Bottom line: relabel honestly as a stress-monitoring dashboard | **Done** (2026-08-15) |
 
 ---
 
@@ -222,31 +433,65 @@ written to that standard, and this section makes the standard explicit so
 future edits don't drift from it.
 
 **Rule engine (deterministic, layer 3) owns:** every threshold and band in
-this file, the 3-of-6 wave gate, the confirmation/persistence logic, the
-crash-type triggers, and the crash-probability score. All of it gets written
-to the "current state" table. None of it is inferred, estimated, or
-"reasonably judged" by an LLM at report time.
+this file, the 3-of-6 wave gate, and the confirmation/persistence logic. All
+of it gets written to the "current state" table. None of it is inferred,
+estimated, or "reasonably judged" by an LLM at report time.
 
-**LLM narrative layer (reporting) owns:** reading news and Fed communication
-to inform the Warsh classification (an explicitly flagged manual judgment
-call — see below), writing the qualitative crash-type narrative once the
-rule engine has already picked the type, and rendering the dashboard from
-values the rule engine already computed. It **renders, it does not
-recompute** — if the rule engine says confirmed RED, the report says
-confirmed RED; it doesn't get softened, hedged, or independently
-re-estimated in prose.
+**LLM narrative/qualitative layer (reporting) owns:** the crash-probability
+score, the crash-type diagnosis, and scenario distribution — despite the
+Stage 1 criteria below being written with hard numeric triggers, `crash_type`
+is never computed by the rule engine; it's only ever set by a caller-supplied
+input to `write_snapshot`. Same for crash probability (see the "Crash-
+Probability Scoring Methodology" section — deferred, never implemented; the
+number is 100% LLM judgment today). This is a **deliberate, pre-existing
+design decision**, not an oversight this doc failed to catch — but it means
+this section previously overstated what's actually deterministic, and this
+paragraph exists to correct that rather than let the contradiction stand.
+The LLM layer also reads news and Fed communication to inform the Warsh
+classification (an explicitly flagged manual judgment call — see below), and
+renders the dashboard from values the rule engine already computed for
+everything it *does* own. It **renders, it does not recompute** — if the
+rule engine says confirmed RED, the report says confirmed RED; it doesn't
+get softened, hedged, or independently re-estimated in prose.
 
 **The test for every rule in this file:** could a developer implement it as
 an `if`/`else` without asking what you meant? If yes, it belongs in a
 section below, stated as a hard number. If no — as with Warsh MODERATE/
-DOVISH criteria — it stays an explicitly flagged manual/LLM judgment call,
-never a silently softened threshold.
+DOVISH criteria, crash-type diagnosis, and crash probability — it stays an
+explicitly flagged manual/LLM judgment call, never a silently softened
+threshold. Vague language in this file isn't just an "AI might interpret
+loosely" risk — it's a spec that literally cannot be coded as written, which
+is a harder failure mode for a system whose entire premise is that
+*mechanical* classification (bands, confirmation, wave gates) is
+deterministic — the qualitative layer (probability, crash-type, narrative)
+was never meant to be, and should not be presented as if it were.
+
+---
+
+## What this system actually is
+
+**This is a stress-monitoring and discretionary deployment dashboard, not a
+calibrated crash-probability model.** The 6-indicator panel, band colors,
+confirmation windows, and wave-trigger thresholds are genuinely deterministic
+— reproducible, inspectable, and owned entirely by code. The crash
+probability, crash-type diagnosis, scenario distribution, and Fed/Warsh
+classification are not: they are a single person's (via an LLM) qualitative
+judgment, informed by the deterministic panel and web research, with no
+defined forecast horizon, no historical labels, no out-of-sample validation,
+and no reliability testing behind the displayed percentage. A crash
+probability of 15% is not evidence that a crash-defining event will occur
+roughly 15% of the time — treat it as a considered opinion, not a statistic.
+This system should never be presented or relied upon as if the three-wave
+deployment thresholds were empirically optimal, or as if the probability
+score were calibrated — because neither is true today.
 
 ---
 
 ## Signal Tiering & Confirmation Windows
 
-Every indicator used anywhere in this file is one of two tiers.
+Every indicator used anywhere in this file is one of two tiers. This section
+is the single source of truth for how "signal" is separated from "noise" —
+every other section below refers back to it instead of re-deriving the logic.
 
 **Tier 1 — structural, gates capital.** Slow-moving, low false-positive rate,
 the only indicators allowed to authorize wave deployment or flip a crash-type
@@ -264,37 +509,72 @@ weekly print — the 4-week moving average is what's allowed to matter), overnig
 reverse repo, single-day volume/breadth chatter, any retail-sentiment or social
 read.
 
-**Confirmation rule.** Because ingestion is daily but the dashboard checks
-~6–7x/day, most checks re-evaluate the *same* day's already-ingested value —
-so a raw check-count is not independent confirmation, it's the same data
-point counted repeatedly. The rule engine instead tracks **distinct
-ingestion dates**: any Tier 1 threshold that would authorize a wave or flip
-a crash type must hold across **2 or more separate daily ingestion runs**
-(i.e., the breach must still be true the next time fresh data lands, not
-just the next time the dashboard re-renders). Until a second distinct day
-confirms it, the dashboard shows the indicator as "RED — pending
-confirmation (1 of 2 days)," not as authorizing.
+**Confirmation rule.** The live system already computes and displays a
+per-indicator streak counter (e.g., "GREEN for 13 checks, since Jul 9") — this
+rule governs *that* field rather than inventing a parallel mechanism, and
+should be computed in the deterministic rule engine (layer 3), written to the
+"current state" table alongside RED/AMBER/GREEN — not left to the LLM
+reporting layer to track. Because ingestion is daily but the dashboard checks
+~6–7x/day (observed: 13 checks over 2 calendar days), most checks re-evaluate
+the *same* day's already-ingested value — so a raw check-count is not
+independent confirmation, it's the same data point counted repeatedly. The
+rule engine should instead track **distinct ingestion dates**: any Tier 1
+threshold that would authorize a wave or flip a crash type must hold across
+**2 or more separate daily ingestion runs** (i.e., the breach must still be
+true the next time fresh data lands, not just the next time the dashboard
+re-renders). Until a second distinct day confirms it, the dashboard shows the
+indicator as "RED — pending confirmation (1 of 2 days)," not as authorizing.
+This closes the asymmetry in v3, where Stage 4 recovery required VIX
+sustained below 25 for 3 consecutive *weeks* but wave entry required zero
+persistence at all — without this fix, a single volatile trading day could
+still authorize a real-money deployment the moment that day's data lands,
+and a high same-day check frequency would create the illusion of a "streak"
+that isn't really independent confirmation.
+
+> **2026-08-15 historical check (finding, not a rule change):** an external
+> quant review argued this 2-day rule creates false negatives in fast,
+> event-driven crashes (citing Feb–Mar 2020 as the canonical example). Queried
+> real `data_points` history for that window rather than assuming either way:
+> VIX crossed into confirmed RED (>35, 2 distinct dates) by **2020-02-28** —
+> three-plus weeks before the actual market bottom. The S&P drawdown *band*
+> (>20%, one of the six RED-count indicators) reached confirmed RED by
+> **2020-03-17**, six days before the bottom (2020-03-23), while VIX had
+> already been RED for weeks. On the two indicators checkable against real
+> data, confirmation cleared with real runway to spare — it wasn't obviously
+> the dominant source of lag in this one episode. This is **not conclusive**:
+> `BAMLH0A0HYM2` (HY spread) has no rows before ~2023 in this database, so the
+> full 3-of-6 `wave_authorized` timeline for 2020 can't be reconstructed, and
+> Fed pivot's manually-judged, confirmation-exempt status is a wildcard this
+> check can't account for either. No rule was changed on the strength of one
+> partially-verifiable episode — a magnitude-based fast-confirmation path
+> would be a new, unvalidated policy choice, not a fix, and stays out of scope
+> until real backtesting (the deferred hazard-model work) can support it.
 
 **Escalation without gating.** Sustained Tier 2 deterioration — 3 or more Tier
 2 indicators moving in the adverse direction across 4+ consecutive weekly
 readings — never flips a hard gate, but must raise the confidence qualifier on
-the crash-probability estimate (Low → Medium → High persistence).
+the crash-probability estimate (Low → Medium → High persistence; see
+Formatting Requirements). This is how systemic drift gets surfaced without
+letting daily retail-sentiment noise touch the deployment logic.
 
 ---
 
 ## Crash Mode Protocol
 
 If the S&P 500 has fallen **≥10% from its most recent all-time high**
-(confirmed per the Signal Tiering rule above) since the last check, lead with
-a RED ALERT banner: drawdown % from ATH + exact S&P level, which wave
-threshold is triggered (1/2/3/none), how many of the 6 indicators are RED,
-each RED indicator's confirmation status, and deployment action. Skip
-macro narrative preamble in this mode.
+(confirmed per the Signal Tiering rule above — true across 2+ distinct
+ingestion dates, not just repeated same-day checks) since the last check,
+lead with a RED ALERT banner: drawdown % from ATH + exact S&P level, which
+wave threshold is triggered (1/2/3/none), how many of the 6 indicators are
+RED, each RED indicator's confirmation status (confirmed vs. pending — with
+days-confirmed count shown), and deployment action. Skip macro narrative
+preamble in this mode.
 
 ## 6-Indicator Panel (RED/AMBER/GREEN bands)
 
 All Tier 1, computed deterministically by the rule engine at each ingestion;
-persistence enforced via the confirmation rule above.
+persistence enforced via the confirmation rule above (2+ distinct ingestion
+dates), not a single day's snapshot.
 
 | # | Indicator | GREEN | AMBER | RED |
 |---|---|---|---|---|
@@ -307,8 +587,10 @@ persistence enforced via the confirmation rule above.
 
 **Wave deployment is authorized when 3 or more of the 6 indicators are
 simultaneously RED, each independently confirmed** per the Signal Tiering
-rule. A RED reading that hasn't cleared confirmation counts toward the
-"pending" tally shown in the dashboard, not the authorizing tally.
+rule (true across 2+ distinct ingestion dates). A RED reading that hasn't
+cleared confirmation counts toward the "pending" tally shown in the
+dashboard, not the authorizing tally — e.g. "1 of 6 RED confirmed, 1 pending
+(confirmed on 1 of 2 required days)."
 
 Additional bond-market bands (Tier 1, elevated priority, informational):
 - 10yr Treasury: amber above 4.5%, RED above 5.0%
@@ -319,26 +601,41 @@ Additional bond-market bands (Tier 1, elevated priority, informational):
 ## Wave Deployment Thresholds (tactical account only)
 
 Deploy in 3 waves only — **never all at once, never two waves in the same
-week.** Amounts are % of the account's dry-powder pool. All S&P/VIX
-conditions below require confirmation per the Signal Tiering rule.
+week.** Amounts are % of the account's dry-powder pool (see
+`local_state/portfolio.yaml` for the live dollar figure). All S&P
+drawdown/VIX conditions below require confirmation per the Signal Tiering
+rule — true across 2+ distinct daily ingestion runs, not just repeated
+intraday checks against the same day's data — a single volatile trading day
+does not authorize deployment, even once that day's data has landed.
 
-**WAVE 1 fires when:** S&P ≤ 6,200 AND VIX > 28, both confirmed *(≈ -16 to
--20% drawdown from ATH baseline)*
+Triggers are expressed as **drawdown from the running all-time-high**, not
+fixed nominal S&P index levels — a fixed level like "S&P ≤ 6,200" decays as
+the index's nominal level rises over time (what was a ~16% drawdown when
+that number was chosen becomes a smaller, less meaningful move once the ATH
+has risen further), while a drawdown percentage stays meaningful regardless
+of when it's evaluated.
+
+A wave's drawdown/VIX condition being met is **not, by itself, authorization
+to deploy** — `get_deployment_plan` also requires `wave_authorized` (3 or
+more of the 6 indicators confirmed RED, per the wave-deployment-authorization
+rule above). A wave whose drawdown/VIX threshold has fired but where
+`wave_authorized` is still false is shown as observed-but-not-yet-authorized,
+not as a deployable plan.
+
+**WAVE 1 fires when:** S&P drawdown from ATH ≥ 16% AND VIX > 28, both confirmed
 → Move **~17.4% of dry powder**, split:
 - 50% → Healthcare-sector defensive equity fund
 - 25% → Real-estate/real-asset fund
 - 25% → International equity (add to existing position)
 
-**WAVE 2 fires when:** S&P ≤ 5,600 AND VIX > 35, both confirmed *(≈ -24 to
--30% drawdown)*
+**WAVE 2 fires when:** S&P drawdown from ATH ≥ 24% AND VIX > 35, both confirmed
 → Move **~21.7% of dry powder**, split:
 - 40% → Target-date/glide-path fund (add)
 - 32% → International equity (add again)
 - 16% → Energy sector ETF (via brokerage window)
 - 12% → Inflation-protected securities (TIPS, via brokerage window)
 
-**WAVE 3 fires when:** S&P ≤ 4,800 AND VIX > 45, both confirmed *(≈ -35 to
--40% drawdown)*
+**WAVE 3 fires when:** S&P drawdown from ATH ≥ 35% AND VIX > 45, both confirmed
 → Move **~17.4% of dry powder**, split:
 - 40% → US large-cap value/income fund (restore to prior weight)
 - 35% → Target-date/glide-path fund (final add)
@@ -346,6 +643,15 @@ conditions below require confirmation per the Signal Tiering rule.
 
 Total across all 3 waves: ~56.5% of dry powder. Remainder stays in stable value —
 deployment is intentionally partial, not full liquidation of the reserve.
+
+Deployment is **cumulative**: if a deep, fast drawdown reaches Wave 3's
+threshold without Wave 1/2 ever separately confirming first, `get_deployment_plan`
+returns the combined breakdown for every wave up to and including the
+current one that hasn't already been executed — not just Wave 3's slice —
+so the intended diversification across waves isn't skipped. Which waves have
+actually been executed is tracked in `local_state/wave_deployment_state.yaml`,
+set only via the `record_wave_deployment` tool after trades are actually
+placed — never inferred or set automatically.
 
 **Hard rules — never violate under any circumstances:**
 - Never sell existing equity positions on the way down
@@ -356,6 +662,18 @@ deployment is intentionally partial, not full liquidation of the reserve.
 - Never stop 401k paycheck contributions during a crash
 - Never touch the passive long-duration account (RRSP-equivalent) during a crash
 - Never apply wave deployment logic to accounts with no deployment mechanism (e.g. spouse 401k) — monitor only
+
+> **2026-08-15 review note:** an external quant review flagged "never sell on
+> the way down" as a blanket behavioral guardrail that should arguably be
+> conditioned on liquidity, concentration, valuation, or tax status rather
+> than applied uniformly. Checked against the actual account structure
+> (`local_state/portfolio.yaml`): the two accounts that concern would most
+> plausibly apply to — the passive long-duration account (RRSP-equivalent)
+> and the monitored spouse 401k — are already permanently excluded from wave
+> deployment by their own account-level flags (`crash_protocol: none`,
+> `deployment_mechanism: none`), independent of this rule. No carve-out
+> identified for the tactical 401k itself as of this review; rule stands
+> as-is.
 
 ## Post-Crash Allocation Protocol
 
@@ -385,13 +703,14 @@ explicitly before making any allocation recommendation.
 - Fed activating emergency lending facilities or QE
 - Bank stress: KBW Bank Index (BKX) down ≥20% from its trailing 3-month high,
   OR FDIC Quarterly Banking Profile showing unrealized securities losses rising
-  for 2+ consecutive quarters
+  for 2+ consecutive quarters (v3 said only "bank stress indicators rising,"
+  no proxy or magnitude)
 
 **TYPE D — AI / TECH BUBBLE** — confirm with ALL THREE:
 - Mag 7 down more than 40% from peak
 - Two or more of {Microsoft, Alphabet, Amazon, Meta} guiding next-quarter capex
   down ≥10% QoQ, or explicitly cutting full-year capex guidance, in the same
-  earnings season
+  earnings season (v3 said only "cutting AI capex guidance," undefined magnitude)
 - Macro otherwise stable (unemployment below 5%, CPI below 3%)
 
 **TYPE E — HYBRID / STAGFLATION-RECESSION** — confirm with BOTH:
@@ -469,16 +788,25 @@ Hybrid crashes last longer — stretch wave deployment over 6–9 months.
 | 2–3 | Recovery confirmed. Begin reducing stable value toward long-term target floor. Rotate into glide-path + international. |
 | 4 | Continue stable-value reduction. Complete brokerage-window position building to target weights. |
 | 5 | Add/complete defensive-equity and real-asset positions to long-term target weights. |
-| 6 | Arrive at long-term target allocation. |
+| 6 | Arrive at long-term target allocation (see `local_state/portfolio.yaml` for the account's specific target %). |
+
+**Note: this stage is pure prose, not implemented in code** — no function
+detects a confirmed trough, tracks "15% recovered from trough," or tracks
+"VIX under 25 for 3+ weeks." Flagged 2026-08-15 as new development (mirrors
+the existing ATH/drawdown tracking pattern, but inverted and new), not a
+policy tweak — deferred to its own session.
 
 ## Warsh Fed Classification — HAWKISH / MODERATE / DOVISH
 
 > **Gap flagged, not invented:** the source doc documents the criteria that
-> triggered a HAWKISH classification on one specific cycle but does **not**
-> state symmetric, fully general criteria for MODERATE or DOVISH outcomes.
-> This classification stays a **manual/LLM judgment call** — not a
-> deterministic Stage 3 rule engine output — until the missing criteria are
-> supplied.
+> triggered a HAWKISH classification on one specific cycle (dot plot median
+> rising + own dot projection withheld + easing bias language removed) but does
+> **not** state symmetric, fully general criteria for MODERATE or DOVISH
+> outcomes. Per the build spec's instruction not to invent or simplify numbers,
+> this classification should stay a **manual/LLM judgment call** — not a
+> deterministic Stage 3 rule engine output — until you supply the missing
+> criteria. Treat this as an open item before wiring Warsh classification into
+> the automated rule engine.
 
 **Criteria observed for HAWKISH (from the one documented instance):**
 - Dot plot median rises, implying an additional hike this cycle
@@ -504,24 +832,28 @@ earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
 - VIX below 18 in an elevated-macro-risk regime = flag complacency (Tier 1 series, informational use)
 - Market breadth below 55% of stocks above 200dma = flag
 - ISM Manufacturing Prices above 65 = flag (stagflation transmission)
-- Brent/WTI above $100 = flag as stagflation accelerant
+- Brent/WTI above $100 = flag as stagflation accelerant (automated via `get_context_indicators`, FRED `DCOILWTICO`)
 - Initial jobless claims: 4-week moving average up ≥10% from its trailing
-  3-month low, sustained for 3+ consecutive weekly prints = flag
+  3-month low, sustained for 3+ consecutive weekly prints = flag (replaces
+  v3's undefined "sustained rising trend")
 - Credit card delinquency (FRED `DRCCLACBS`): up ≥25bps quarter-over-quarter for
-  2 consecutive quarters = flag
+  2 consecutive quarters = flag (replaces v3's undefined "rising")
 - Retail sales (FRED `RSAFS`): MoM decline for 2+ consecutive months, or
-  3-month annualized growth below 0% = flag consumer pullback
+  3-month annualized growth below 0% = flag consumer pullback (replaces v3's
+  undefined "deceleration or MoM declines")
 - 10yr breakeven inflation (FRED `T10YIE`): above 2.5%, sustained 4+ weeks =
-  flag unanchored expectations
+  flag unanchored expectations (replaces v3's undefined "meaningfully above")
 
 ## Contextual Indicators (informational only — Tier 2, never gate wave authorization)
 
-These broaden situational awareness beyond the original 6-indicator panel, using
-series already free on FRED. **They are explicitly not part of the 3-of-6 RED
-wave-authorization gate** — that formula stays exactly VIX / HY spread / S&P
-drawdown / 10yr yield / Sahm Rule / Fed pivot signal, fixed by deliberate design
-choice. Use these only to enrich narrative synthesis and to set the confidence
-qualifier per Signal Tiering.
+Exposed via the `get_context_indicators` MCP tool. These broaden situational
+awareness beyond the original 6-indicator panel, using series already free on
+FRED. **They are explicitly not part of the 3-of-6 RED wave-authorization
+gate** — that formula stays exactly VIX / HY spread / S&P drawdown / 10yr
+yield / Sahm Rule / Fed pivot signal, fixed per the build spec's own non-goal
+("wave thresholds are set by me... the rule engine does not propose or
+auto-update them"). Use these only to enrich narrative synthesis and to set the
+confidence qualifier per Signal Tiering.
 
 | Indicator | Source | Signal framing | Suggested magnitude band |
 |---|---|---|---|
@@ -529,37 +861,72 @@ qualifier per Signal Tiering.
 | Chicago Fed National Financial Conditions Index | FRED `NFCI` | Positive = tighter than average conditions; negative = looser | >0.3 sustained 4+ weeks = flag tightening |
 | 10yr breakeven inflation | FRED `T10YIE` | Context vs Fed's ~2% PCE target | See Complacency Watch Bands above |
 | Senior Loan Officer Survey (C&I tightening, large/medium firms) | FRED `DRTSCILM` | Positive = net tightening lending standards (credit contracting) | >20% net tightening = flag |
-| Overnight reverse repo | FRED `RRPONTSYD` | Liquidity parked at the Fed; declining can reflect either liquidity draining into risk assets or T-bill supply dynamics | Genuinely bidirectional — read only alongside NFCI/STLFSI4 direction |
+| Overnight reverse repo | FRED `RRPONTSYD` | Liquidity parked at the Fed; declining can reflect either liquidity draining into risk assets or T-bill supply dynamics | Genuinely bidirectional — do not assign a single-direction band; read only alongside NFCI/STLFSI4 direction, per Signal Tiering Tier 2 rule (context only, never scored alone) |
 | 2s10s yield curve spread | Derived: FRED `DGS10` − `DGS2` | Below 0 = inverted, historically precedes recessions by several quarters | Tier 1 (already in bond-market bands above) |
 | Initial jobless claims | FRED `ICSA` | Sustained rising trend = labor market weakening | See Complacency Watch Bands above (4-week MA rule) |
 | Credit card delinquency rate | FRED `DRCCLACBS` | Rising = consumer financial stress increasing | See Complacency Watch Bands above |
 | WTI crude oil | FRED `DCOILWTICO` | Above $100/barrel = stagflation accelerant | See Recovery/Complacency band above |
-| Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength | See Complacency Watch Bands above |
+| Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength — FRED has no public real-time card-swipe series | See Complacency Watch Bands above |
+| Secured Overnight Financing Rate (repo stress) | FRED `SOFR` | Spikes above the Fed's target range signal repo/dollar-funding stress (e.g. Sept 2019) | Read alongside overnight reverse repo — no single-direction band |
+| Broad U.S. Dollar Index | FRED `DTWEXBGS` | Rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities | Read as a global-transmission signal, not directional on its own |
+| Chicago Fed NFCI Risk Subindex | FRED `NFCIRISK` | Positive = elevated financial-sector volatility/funding risk; a narrower cut of the composite NFCI already tracked | Same interpretation convention as composite NFCI |
+| Chicago Fed NFCI Credit Subindex | FRED `NFCICREDIT` | Positive = tighter credit conditions specifically (vs. the composite NFCI, which blends credit/leverage/risk) | Same interpretation convention as composite NFCI |
+| 10yr TIPS real yield | FRED `DFII10` | Rising real yields pressure equity valuations independent of nominal-rate moves | Covers only the real-yield leg of "equity valuation" — no free earnings-yield/CAPE series exists on FRED; do not treat this as a full valuation read |
+
+> **2026-08-16 note:** `OECDLOLITOAASTSAM` (OECD Composite Leading Indicator, a candidate
+> global-PMI stand-in) was tried and dropped after verification showed its
+> latest observation frozen at 2022-11-01 — not merely "monthly and lagged"
+> as assumed, but years stale, suggesting FRED has stopped updating or
+> discontinued this series code. Presenting a 4-year-old number as a live
+> reading would be actively misleading, so it was removed entirely rather
+> than kept with a caveat. Global PMI remains an unfilled gap.
 
 ---
 
 ## Crash-Probability Scoring Methodology (DEFERRED — draft, not implemented)
 
-> The actual probability shown in reports is 100% LLM-judgment today, by
-> deliberate original design (not an oversight) — `rule_engine/src/classify.ts`
-> never computes or writes `crash_probability_pct`; the MCP server's
-> `write_snapshot` takes it as a caller-supplied number. What *was* a real bug
-> — the LLM anchoring to its own prior probability/notes instead of judging
-> independently each run — is fixed separately at the instruction + tool
-> level (committing to an estimate before ever seeing the prior value). This
-> formula below is kept as a draft for if/when a deterministic version is
-> wanted; every weight is a starting-point default, not validated or
-> back-tested.
+> **Status as of 2026-07-11:** this section was originally written on the
+> suspicion that the live crash-probability % might be coming from the LLM
+> reporting layer instead of the deterministic rule engine — a live
+> violation of this doc's own "no LLM does numeric classification" rule, if
+> true. That was checked directly against the code: `rule_engine/src/classify.ts`
+> never computes or writes `crash_probability_pct` at all; `mcp_server`'s
+> `writeSnapshot()` takes it as a caller-supplied number and inserts it
+> verbatim. So yes, the probability is 100% LLM-judgment today — but this
+> turned out to be a **deliberate, pre-existing design decision** from early
+> in this project (the original build spec wanted the rule engine to own
+> `crash_checks`; the master-prompt task list explicitly scoped "crash
+> probability + scenario distribution" as Claude's qualitative synthesis job
+> — resolved by relaxing NOT NULL constraints so the rule engine writes
+> partial rows and a later `write_snapshot` call fills in the rest), not an
+> oversight this doc caught.
+>
+> What *was* a real bug: the LLM was shown its own prior probability/notes
+> before forming a new estimate, creating anchoring rather than independent
+> daily judgment. That's fixed at the instruction level (commit-before-peek
+> ordering in the project instructions) and the tool level (`get_latest_snapshot`
+> now diffs against the last row with a real probability, not just the
+> chronologically-previous row) — see commit `5d791f1`. Probability itself
+> **stays LLM-synthesized for now**, anchoring-fixed rather than replaced.
+>
+> The formula below is kept as a draft for if/when a deterministic version is
+> wanted later — every weight in it is `[new default — calibrate]`, a
+> reasonable starting structure, not a validated model, and it has not been
+> back-tested against any historical data.
 
 **Base score — Tier 1 panel position (0–70 points):** for each of the 6 core
 indicators, score its position within its own band, not just its color:
 GREEN = 0–3pts (scaled by proximity to the AMBER line), AMBER = 4–8pts (scaled
 by proximity to the RED line), RED = 9–12pts (scaled by distance past the RED
 line, capped). Sum across all 6, then normalize to a 0–70 point subtotal.
+This keeps a VIX of 34 (just under RED) scoring meaningfully higher than a VIX
+of 21 (just over GREEN), instead of collapsing everything to 3 flat buckets.
 
-**Confirmation multiplier:** any indicator still "pending confirmation" (not
-yet true across 2 distinct ingestion dates) contributes at only 50% of its
-computed points until confirmed.
+**Confirmation multiplier:** any indicator still "pending confirmation" (per
+Signal Tiering — not yet true across 2 distinct ingestion dates) contributes
+at only 50% of its computed points until confirmed. This is what keeps a
+single day's data landing on a noisy print from swinging the headline
+probability before it's had a chance to persist.
 
 **Context adjustment — Tier 2 overlay (±15 points):** apply only the
 escalation rule already defined in Signal Tiering — sustained (4+ week)
@@ -571,86 +938,125 @@ points for how many of a candidate crash type's 3 confirming criteria (Stage
 1) are already met (5 points per criterion met, any single type).
 
 **Total = Base + Context adjustment + Crash-type proximity, clamped to
-0–100.** Recompute at every check; the confidence tag (Low/Medium/High
-persistence) is Low if fewer than 2 of the 6 core indicators are past their
+0–100, then divided by 1 (i.e. reported directly as the %).** Recompute at
+every check; the confidence tag (Low/Medium/High persistence, per Formatting
+Requirements) is Low if fewer than 2 of the 6 core indicators are past their
 confirmation bar, Medium if 2–3 are, High if 4+ are.
+
+This formula should be treated as a working draft — back-test it against
+whatever historical readings you have before letting the computed % replace
+whatever ad hoc method has been producing it, and adjust the point splits
+once you've seen how it tracks against known past drawdowns.
 
 ---
 
 ## Formatting Requirements
 
-**Rule Engine Output Contract.** Every number, color, streak, confirmation
-status, and probability figure rendered anywhere in the dashboard must be
-read directly from what the rule engine already wrote. The LLM/reporting
-layer never restates a value in its own words with different precision,
-rounds it differently, hedges it verbally, or fills in a number the rule
-engine didn't provide.
+**Rule Engine Output Contract (read alongside Layer Boundary above).** Every
+number, color, streak, confirmation status, and probability figure rendered
+anywhere in the dashboard must be read directly from what the rule engine
+already wrote to the "current state" table. The LLM/reporting layer's job in
+formatting is to lay that data out clearly — never to restate a value in its
+own words with different precision, round it differently, hedge it verbally
+("looks close to RED"), or fill in a number the rule engine didn't provide.
+If a value is genuinely missing (e.g. no probability score exists yet for
+this run), the dashboard shows "not available," never a narrative estimate
+standing in for it.
 
-**Two run types, explicitly labeled.** Most runs (~6-7x/day) are lightweight
-automated indicator refreshes, not full narrative reports:
+**Render every full crash check as an HTML artifact using `dashboard-template.html`
+(in this same folder) as the base — not as plain chat text.** Reuse its structure,
+CSS custom properties, and component classes (`.cc-card`, `.cc-indicator`,
+`.cc-pill`, `.cc-stackbar`, `.cc-trigger`, `.cc-table`, etc.); replace the example
+content with this run's live values. Keep the status-color semantics fixed:
+green = `--good`, amber = `--warning`, red = `--critical` — never repurpose them
+for anything that isn't a GREEN/AMBER/RED-style status. If a section's data isn't
+available this run (e.g. no delta because it's the first check), omit or note it
+rather than inventing a value.
+
+**Two run types, explicitly labeled.** At ~6–7 checks/day, most runs are
+lightweight automated indicator refreshes, not full narrative reports — the
+observed export already distinguishes these ("No narrative for this entry —
+this was an automated daily indicator refresh, not a full chat-triggered
+report"). Make the distinction a rule, not an implicit side effect:
 - **Automated indicator refresh** (the default, most runs): render the RED
   banner (if any), the 6-indicator grid with streak/confirmation status, the
   crash-probability meter, trigger status, and contextual indicators. No
-  narrative synthesis, no crash-type diagnosis, no radar chart.
-- **Full chat-triggered report** (on demand, or when a confirmed threshold
-  newly fires): adds narrative synthesis, Stage 1 crash-type diagnosis (if
-  drawdown ≥15%), and brokerage-window watchlist.
+  narrative synthesis, no crash-type diagnosis, no radar chart — label the
+  run itself "Indicator Update" as already shown.
+- **Full chat-triggered report** (on demand, or automatically when a
+  confirmed threshold newly fires): adds narrative synthesis, Stage 1 crash-
+  type diagnosis (if drawdown ≥15%), and brokerage-window watchlist. Label
+  it distinctly (e.g. "Full Report") so the history view never makes the
+  user guess which kind of entry they're looking at. (The radar chart is
+  specific to the Portfolio Opportunity Review — see below — not part of
+  this report.)
 
 **Scan order, top to bottom (fixed):**
 1. RED ALERT banner, if any indicator/wave condition is confirmed or pending confirmation
-2. Crash-probability meter: point %, confidence tag, 3-day Δ, 7-day Δ, visual
-   meter. Color code: green 0–20%, amber 20–35%, red 35%+
-3. 6-indicator grid — current value, RED/AMBER/GREEN pill, 3-day Δ, 7-day Δ,
-   confirmation status, RED count displayed prominently
+2. Crash-probability meter: point %, confidence tag (Low/Medium/High
+   persistence, per the Crash-Probability Scoring Methodology's confirmation
+   count), 3-day Δ, 7-day Δ, visual meter. Color code: green 0–20%, amber
+   20–35%, red 35%+
+3. 6-indicator grid — each row shows current value, RED/AMBER/GREEN pill,
+   3-day Δ, 7-day Δ, and confirmation status (`Confirmed` / `Pending
+   confirmation (day 1 of 2)`), with RED count displayed prominently (e.g.
+   "1 of 6 RED confirmed, 1 pending — wave deployment not yet authorized")
 4. Crash-type diagnosis (only rendered when drawdown ≥15%)
 5. Wave status + brokerage-window watchlist: ticker | current price | Wave 1
    target | % distance | 3-day Δ | 7-day Δ | status pill (WAIT >20% above
    target / WATCH 5–20% above / BUY ZONE at or below)
 6. Contextual (Tier 2) indicators — clearly labeled "informational, does not
-   gate," each with an "as of" timestamp
-7. Narrative prose last, outside all widgets
+   gate," each with an "as of" timestamp reflecting real source lag (FRED
+   series are not same-day)
+7. Narrative prose last, outside all widgets — no explanatory text inside
+   dashboard components themselves
 
-**Delta standard:** always report both a **3-day Δ** (short-horizon,
-noise-sensitive) and a **7-day Δ** (velocity, the number that matters for
-trend confirmation), explicitly labeled.
+**Delta standard (applies everywhere a trend is shown):** always report both a
+**3-day Δ** (short-horizon, noise-sensitive — flags a possible spike, not
+yet actionable on its own) and a **7-day Δ** (velocity — the number that
+matters for trend confirmation), explicitly labeled as such. Do not report a
+bare "delta vs prior check" with an unstated window — if checks run
+irregularly, compute both deltas off calendar days, not check-to-check gaps.
 
-**Confidence and recency:**
-- Every probability/point estimate carries a confidence interval or an
-  explicit Low/Medium/High persistence tag — never a bare point figure.
-- Every externally-sourced figure carries an "as of" date reflecting the
-  source's actual publication lag.
+**Confidence and recency (applies everywhere a point estimate is shown):**
+- Every probability/point estimate carries a low-high range and an explicit
+  Low/Medium/High persistence tag per the Signal Tiering escalation rule —
+  never a bare point figure. This is judgment-based bracketing, not a
+  statistical confidence interval — no version of this system has ever
+  computed a true CI (see "What this system actually is," above), and this
+  section should not be read as implying otherwise.
+- Every externally-sourced figure (FRED series, CME FedWatch, etc.) carries an
+  "as of" date reflecting the source's actual publication lag, not the
+  dashboard's render time.
+
+- KPI cards always show a color-coded benchmark pill: `"Favourable: X–Y / Now: Z"`
+- Scenario distribution always shown as 4 buckets (Bull/Base/Bear/Crash) summing to 100%
+- Brokerage-window watchlist and 6-indicator grid both carry a sparkline or
+  delta-arrow per row so trajectory is visible, not just current state
+
+**Render every Portfolio Opportunity Review as an HTML artifact using
+`portfolio-review-template.html` (in this same folder) as the base** — same rule
+as the crash check, not plain chat text. Reuse its component classes (`.cc-verdict-headline`,
+`.cc-alloc-row`/`.cc-alloc-target`, `.cc-flag-card`, `.cc-ticker-card`/`.cc-prox-track`,
+`.cc-source-card`, etc.); replace the example content with this run's live values.
+The tactical 401k's allocation bars are informational context (it's wave-gated, not
+drift-scored) — never color them as a drift alarm. The ticker proximity meter's
+BUY/WATCH/WAIT zone widths and marker position should reflect each ticker's actual
+price relative to its Wave 1/2/3 targets, not be evenly spaced by default.
+- Radar chart comparing current vs prior check across: Geopolitical, Policy/Fed,
+  Inflation, Valuation, Labor Market, Earnings
+- No excessive prose inside dashboard widgets — explanatory text goes outside them
 
 <!-- END crash-check-rules.md -->
 
 ---
 
-## Known open items relevant to rule-tweaking
-
-- **Wave 2/3 threshold backtest finding**: backtested against real 2016–2026
-  history — Wave 3 (drawdown≥35% & VIX>45) never fired in 2020 despite VIX peaking
-  at 82 (drawdown missed the 35% bar by ~1pt). Wave 2 (drawdown≥24% & VIX>35) never
-  fired in 2022 despite a real 24%+ drawdown, because VIX never sustained above 35
-  in that "grinding" bear market. Worth reconsidering whether the joint
-  drawdown-AND-VIX construction is calibrated right.
-- **Crash-probability scoring formula** (in the rules doc above) is a documented
-  draft, not implemented — the actual probability is 100% LLM-judgment today, by
-  original design, with the formula kept only as a starting point for a future
-  deterministic version. Not back-tested against historical data.
-- **BrokerageLink watchlist ticker selection** has no documented rationale beyond
-  a one-line theme tag per ticker — the Portfolio Opportunity Review process is
-  meant to close this gap but has so far only re-examined price targets, not
-  whether the underlying ticker choices themselves still hold up.
-- **Divergence detection remaining scope**: the 3 pairs above are built and
-  live; rolling-correlation infrastructure, a regime-dependent 10yr-vs-equities
-  pair, and the reverse HY-vs-VIX direction (HY widening without VIX
-  confirming — arguably the more concerning direction, since credit often
-  leads equity) are deliberately deferred, not started.
-
 ## What NOT to change without a strong reason
 
 - The Layer Boundary principle itself (deterministic rule engine owns all
-  thresholds/classification; LLM only narrates) — this is the foundational design
-  choice the whole system is built around.
+  *mechanical* thresholds/classification; LLM owns qualitative judgment,
+  explicitly labeled as such) — this is the foundational design choice the
+  whole system is built around.
 - The split-storage security model (dollar figures never reach Supabase) — this is
   enforced in code, not just policy, and several architectural decisions (separate
   tables, guardrail functions, local-only MCP server) exist specifically to
@@ -659,3 +1065,6 @@ trend confirmation), explicitly labeled.
   drawdown / 10yr / Sahm / Fed pivot) — contextual indicators exist to enrich
   narrative but are explicitly excluded from ever gating wave authorization, by
   deliberate design choice, not oversight.
+- The honest "stress-monitoring dashboard, not a calibrated model" framing (2026-08-15)
+  — don't let future edits drift back toward language that implies the probability
+  or wave thresholds are validated/optimal without real backtested evidence behind them.
