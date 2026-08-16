@@ -412,11 +412,6 @@ const CONTEXT_INFO = {
     format: (v) => `${v.toFixed(2)}%`,
     signal: () => "Real-yield leg of equity valuation only — no free earnings-yield/CAPE series on FRED",
   },
-  oecdcli: {
-    label: "OECD Leading Indicator",
-    format: (v) => v.toFixed(1),
-    signal: () => "Monthly, lagged, revised — weak stand-in for a true global PMI",
-  },
 };
 
 function renderContextIndicators(latest) {
@@ -444,7 +439,6 @@ function renderContextIndicators(latest) {
     nfcirisk: latest.NFCIRISK,
     nfcicredit: latest.NFCICREDIT,
     dfii10: latest.DFII10,
-    oecdcli: latest.OECDLOLITOAASTSAM,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -874,7 +868,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "OECDLOLITOAASTSAM"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

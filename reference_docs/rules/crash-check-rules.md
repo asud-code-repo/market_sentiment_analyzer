@@ -490,7 +490,14 @@ confidence qualifier per Signal Tiering.
 | Chicago Fed NFCI Risk Subindex | FRED `NFCIRISK` | Positive = elevated financial-sector volatility/funding risk; a narrower cut of the composite NFCI already tracked | Same interpretation convention as composite NFCI |
 | Chicago Fed NFCI Credit Subindex | FRED `NFCICREDIT` | Positive = tighter credit conditions specifically (vs. the composite NFCI, which blends credit/leverage/risk) | Same interpretation convention as composite NFCI |
 | 10yr TIPS real yield | FRED `DFII10` | Rising real yields pressure equity valuations independent of nominal-rate moves | Covers only the real-yield leg of "equity valuation" — no free earnings-yield/CAPE series exists on FRED; do not treat this as a full valuation read |
-| OECD Composite Leading Indicator (OECD-Total) | FRED `OECDLOLITOAASTSAM` | Below 100 and falling = below-trend global growth momentum | Monthly, lagged, and revised — a weak stand-in for a true global PMI (not on FRED for free); do not treat as timely |
+
+> **2026-08-16 note:** `OECDLOLITOAASTSAM` (OECD Composite Leading Indicator, a candidate
+> global-PMI stand-in) was tried and dropped after verification showed its
+> latest observation frozen at 2022-11-01 — not merely "monthly and lagged"
+> as assumed, but years stale, suggesting FRED has stopped updating or
+> discontinued this series code. Presenting a 4-year-old number as a live
+> reading would be actively misleading, so it was removed entirely rather
+> than kept with a caveat. Global PMI remains an unfilled gap.
 
 ---
 

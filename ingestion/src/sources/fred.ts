@@ -83,9 +83,13 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "DFII10", unit: "percent" },     // 10yr TIPS real yield — covers only the real-yield leg
                                           // of "equity valuation"; no free earnings-yield/CAPE
                                           // series exists on FRED, so this is a partial signal.
-  { id: "OECDLOLITOAASTSAM", unit: "index" }, // OECD Composite Leading Indicator (OECD-Total) —
-                                          // monthly, lagged, revised; a weak stand-in for a true
-                                          // global PMI (which isn't free on FRED), not equivalent.
+  // OECDLOLITOAASTSAM (OECD Composite Leading Indicator) was tried and
+  // dropped 2026-08-16: its latest observation was frozen at 2022-11-01 —
+  // not "monthly and lagged" as originally assumed, but years stale,
+  // suggesting FRED has stopped updating/discontinued this series code.
+  // Presenting a 4-year-old number as a live reading would be actively
+  // misleading rather than merely weak signal, so it's left out entirely
+  // rather than kept with a caveat.
 ];
 
 interface FredObservation {

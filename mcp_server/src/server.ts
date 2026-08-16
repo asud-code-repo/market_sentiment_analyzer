@@ -317,11 +317,11 @@ server.registerTool(
       "credit-tightness specifically), and tips_real_yield_10y_pct (equity-valuation pressure via " +
       "real yields). tips_real_yield_10y_pct covers only the real-yield leg of 'equity valuation' — " +
       "there is no free earnings-yield/CAPE series on FRED, so never treat it as a full valuation " +
-      "read on its own. oecd_leading_indicator is a monthly, lagged, revised stand-in for a true " +
-      "global PMI (which isn't free on FRED) — explicitly weaker signal, say so if citing it.",
+      "read on its own. (OECDLOLITOAASTSAM, a candidate global-PMI stand-in, was tried and dropped " +
+      "2026-08-16 — its latest observation was frozen at 2022-11-01, years stale, not just lagged.)",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, oecdCli, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -343,7 +343,6 @@ server.registerTool(
         getLatestDataPoint("NFCIRISK"),
         getLatestDataPoint("NFCICREDIT"),
         getLatestDataPoint("DFII10"),
-        getLatestDataPoint("OECDLOLITOAASTSAM"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -387,7 +386,6 @@ server.registerTool(
       nfci_risk_subindex: nfciRisk && { ...nfciRisk, signal: nfciRisk.value > 0 ? "elevated financial-sector volatility/funding risk" : "below-average" },
       nfci_credit_subindex: nfciCredit && { ...nfciCredit, signal: nfciCredit.value > 0 ? "tighter credit conditions specifically" : "looser than average" },
       tips_real_yield_10y_pct: dfii10 && { ...dfii10, signal: "real-yield leg of equity valuation only — no free earnings-yield/CAPE series exists on FRED, do not treat as a full valuation read" },
-      oecd_leading_indicator: oecdCli && { ...oecdCli, signal: "monthly, lagged, revised — weak stand-in for a true global PMI, not equivalent" },
       divergence_flags: divergenceFlags,
     });
   },
