@@ -1,4 +1,4 @@
-# Macro Crash Check — Architecture & Rules Summary (for external AI review)
+# Macro Market Stress Monitor — Architecture & Rules Summary (for external AI review)
 
 This is a self-contained briefing for a fresh model/chat with no other context on this
 project. It covers system architecture, data flow, security model, prior external-review

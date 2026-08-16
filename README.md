@@ -1,4 +1,4 @@
-# Macro Crash Check
+# Macro Market Stress Monitor
 
 A market-crash-monitoring system that replaced a giant static prompt
 (hand-updated numbers pasted into an LLM chat every time) with a small
