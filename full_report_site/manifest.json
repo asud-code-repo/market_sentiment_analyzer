@@ -1,6 +1,6 @@
 {
-  "name": "Macro Market Stress Monitor — Full Report",
-  "short_name": "Full Report",
+  "name": "Private Portfolio Report",
+  "short_name": "Portfolio Report",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0d0d",

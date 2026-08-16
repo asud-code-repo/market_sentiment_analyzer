@@ -130,7 +130,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=*&order=run_at.desc&limit=2"),
     ]);
   } catch (err) {
-    return new Response(renderShell("Full Report unavailable", `<p>${escapeHtml(String(err))}</p>`), {
+    return new Response(renderShell("Private Portfolio Report unavailable", `<p>${escapeHtml(String(err))}</p>`), {
       status: 502,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
@@ -139,7 +139,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   if (!fullReport) {
     return new Response(
       renderShell(
-        "No Full Report snapshot yet",
+        "No Private Portfolio Report snapshot yet",
         "<p>write_full_report hasn't been called yet — run a crash check in Claude first.</p>",
       ),
       { headers: { "content-type": "text/html; charset=utf-8" } },
@@ -388,7 +388,7 @@ function renderPage(
     ${portfolioContext}
     ${portfolioReviewSection}
   `;
-  return renderShell("Full Report", body);
+  return renderShell("Private Portfolio Report", body);
 }
 
 function renderShell(title: string, body: string): string {
@@ -403,7 +403,7 @@ function renderShell(title: string, body: string): string {
 <meta name="theme-color" content="#0d0d0d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Full Report">
+<meta name="apple-mobile-web-app-title" content="Portfolio Report">
 <style>${PAGE_CSS}</style>
 </head>
 <body>
