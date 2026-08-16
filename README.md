@@ -12,6 +12,18 @@ real market data. The LLM's job is qualitative — reading news, judging Fed
 communication, synthesizing a narrative — and it always renders what the
 rule engine already decided, never re-derives it.
 
+**This is a stress-monitoring and discretionary deployment dashboard, not a
+calibrated crash-probability model.** The 6-indicator panel, band colors,
+confirmation windows, and wave-trigger thresholds are genuinely deterministic.
+Crash probability, crash-type diagnosis, and the Fed/Warsh classification are
+not — they're LLM/human qualitative judgment with no defined forecast
+horizon, no historical labels, and no back-testing behind the displayed
+percentage. Both public-facing report pages say this explicitly now (added
+2026-08-15, after an external review flagged the gap between the system's
+framing and what it actually does) — see
+`reference_docs/architecture-summary-for-external-review.md` for the full
+findings-and-status writeup.
+
 ## Architecture
 
 ```
@@ -33,10 +45,10 @@ FRED / EIA / Massive (market data)
    ┌──────────────────┐ ┌──────────────┐    ┌────────────────────┐ ┌──────────────────┐
    │  mcp_server/      │ │ dashboard_   │    │ full_report_site/   │ │ Claude Desktop    │
    │  (local, stdio,   │ │ site/        │    │ (Cloudflare Pages    │ │ chat — renders    │
-   │  13 tools, incl.  │ │ (Cloudflare  │    │ Function, service_   │ │ dashboard-        │
-   │  4 write/persist  │ │ Pages,       │    │ role key, Cloudflare │ │ template.html /   │
+   │  14 tools, incl.  │ │ (Cloudflare  │    │ Function, service_   │ │ dashboard-        │
+   │  5 write/persist  │ │ Pages,       │    │ role key, Cloudflare │ │ template.html /   │
    │  tools + a data-  │ │ public,      │    │ Access-gated: OTP    │ │ portfolio-review-  │
-   │  freshness check) │ │ read-only)   │    │ login)               │ │ template.html     │
+   │  freshness check) │ │ read-only)   │    │ or GitHub login)     │ │ template.html     │
    └────────┬──────────┘ └──────────────┘    └──────────────────────┘ └───────────────────┘
             │
    scheduled: Claude Desktop task,
@@ -48,9 +60,9 @@ FRED / EIA / Massive (market data)
 | Layer | What it does | Where |
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` |
-| **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
-| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization, cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
-| **MCP server** | Local stdio server exposing 13 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 4 persistence tools | `mcp_server/` |
+| **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase. The one-time backfill script pulls each FRED series' full available history (since 2026-08-15 — previously a rolling 5yr window), not just enough for the "All" chart toggle | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
+| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (ATH-relative drawdown % triggers, not fixed S&P levels), cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
+| **MCP server** | Local stdio server exposing 14 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 5 persistence tools | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Full Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
 
 ## The 6-indicator panel
@@ -63,12 +75,28 @@ only once a RED reading holds across 2+ distinct ingestion dates, not just
 a single noisy print. Full thresholds and the wave-deployment math live in
 `reference_docs/rules/crash-check-rules.md`.
 
-Supplementary Tier 2 context (financial stress indices, breakeven
+**Wave deployment** triggers on ATH-relative S&P drawdown % (16/24/35 for
+Waves 1/2/3), not fixed nominal index levels — a fixed level decays in
+meaning as the market's all-time high rises over time; a drawdown
+percentage doesn't. `get_deployment_plan` requires *both* the price/VIX
+trigger and `wave_authorized` (the confirmed 3-of-6-RED gate) before
+returning a dollar plan — previously it only checked the former. Deployment
+is cumulative and execution-aware: a fast, deep drawdown that satisfies
+Wave 3's condition without Wave 1/2 ever separately confirming still
+returns the combined breakdown for every not-yet-executed wave, and
+`record_wave_deployment` tracks which waves have actually been executed
+(`local_state/wave_deployment_state.yaml`) so an executed wave isn't
+re-proposed.
+
+Supplementary Tier 2 context — financial stress indices, breakeven
 inflation, continuing jobless claims, investment-grade credit spreads,
-2s10s curve, WTI, retail sales, etc.) is available via `get_context_indicators`
-and on `dashboard_site` — informational only, never part of the gate.
-`get_series_deltas` provides real 3-day/7-day historical lookback for any
-series, fulfilling the rules doc's delta-reporting requirement.
+2s10s curve, WTI, retail sales, repo/liquidity stress (SOFR), the broad
+dollar index, bank-funding/credit-conditions stress (NFCI risk/credit
+subindexes), the 10yr TIPS real yield, etc. — is available via
+`get_context_indicators` and on `dashboard_site`, informational only,
+never part of the gate. `get_series_deltas` provides real 3-day/7-day
+historical lookback for any series, fulfilling the rules doc's
+delta-reporting requirement.
 
 **Cross-indicator divergence detection**: three pairs of normally-correlated
 series (IG-vs-HY credit spreads, initial-vs-continuing jobless claims,
@@ -96,10 +124,13 @@ service:
   local portfolio file's actual dollar figures and throws before writing
   if any appear.
 - **`local_state/`** (gitignored, never committed) holds the real
-  portfolio file — account balances, dry powder, allocation targets, and
-  the BrokerageLink watchlist's position sizing (`max_position_usd`, which
+  portfolio file — account balances, dry powder, allocation targets, the
+  BrokerageLink watchlist's position sizing (`max_position_usd`, which
   never reaches Supabase even though everything else about the watchlist
-  now does). Read only by the local MCP server.
+  now does), and which wave-deployment tranches have actually been
+  executed (`wave_deployment_state.yaml`) — action state tied to real
+  trades, same trust boundary as the rest of this directory. Read only by
+  the local MCP server.
 - **The MCP server runs locally via stdio**, not as a hosted service —
   because it's the one component that touches `local_state/`.
 - **Two access tiers in Supabase**: `crash_checks`/`data_points`/
@@ -118,12 +149,14 @@ never persisted.
 
 ## Two reporting sites
 
-- **`dashboard_site`** (public, `market-sentiment-analyzer.pages.dev`) —
-  historical trend charts and the current indicator panel, reading only
-  anon-safe macro data. Intentionally left unauthenticated so it can be
-  shared with others.
+- **`dashboard_site`** (public, `market-sentiment-analyzer.pages.dev`, page
+  title "Macro Market Stress Monitor" as of 2026-08-16 — renamed from
+  "Macro Crash Check" since that name implied prediction/detection rather
+  than monitoring) — historical trend charts and the current indicator
+  panel, reading only anon-safe macro data. Intentionally left
+  unauthenticated so it can be shared with others.
 - **`full_report_site`** (private, `market-sentiment-full-report.pages.dev`,
-  Cloudflare Access-gated via email one-time-PIN) — the BrokerageLink
+  Cloudflare Access-gated via email one-time-PIN or GitHub login) — the BrokerageLink
   watchlist with live status, crash-type diagnosis, qualitative portfolio
   context, and the full Portfolio Opportunity Review (drift bars, ticker
   thesis re-underwrite, macro cross-reference, a server-side-rendered risk
@@ -141,7 +174,7 @@ tab doesn't show it, since it doesn't need it.
 ```
 ingestion/            Stage 2 — pulls FRED/EIA/Massive data into Supabase, plausibility-guarded
 rule_engine/           Stage 3 — deterministic classification + threshold-crossing push notification
-mcp_server/            Stage 4 — local MCP tools for Claude Desktop (13 tools)
+mcp_server/            Stage 4 — local MCP tools for Claude Desktop (14 tools)
 dashboard_site/        Public Cloudflare Pages reporting site
 full_report_site/      Private Cloudflare Pages Function — Access-gated Full Report page
 reference_docs/rules/  Source-of-truth rules doc + the two chat-report HTML templates
@@ -161,6 +194,11 @@ Each of `ingestion/`, `rule_engine/`, and `mcp_server/` has a `.env.example`
 - `NTFY_TOPIC` (optional) — a random, unguessable ntfy.sh topic name for
   push notifications on a confirmed-RED threshold crossing
 
+`mcp_server/.env.example` additionally has `PORTFOLIO_PATH`,
+`WATCHLIST_PATH`, and `WAVE_DEPLOYMENT_STATE_PATH` — absolute paths to the
+three local, gitignored YAML files under `local_state/` (copy each
+`*.example.yaml` there first).
+
 Apply `supabase/migrations/` in order via the Supabase SQL editor or CLI.
 GitHub Actions secrets mirror the same values for the scheduled ingestion
 job (`.github/workflows/ingest.yml`).
@@ -176,7 +214,12 @@ For `full_report_site`: a separate Cloudflare Pages project (root
 directory `full_report_site`), `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
 as encrypted environment variables, and a Cloudflare Access Application
 with a One-Time-PIN identity provider scoped to your email — see
-`full_report_site/README.md` for the exact steps and gotchas.
+`full_report_site/README.md` for the exact steps and gotchas. A GitHub
+OAuth identity provider can be added alongside OTP for lower-friction
+login (register a GitHub OAuth App with callback
+`https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback`,
+add it under Zero Trust → Settings → Authentication, then allow your
+GitHub account's email in the Access policy).
 
 ## Two chat-triggered workflows
 
