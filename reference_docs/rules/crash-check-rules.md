@@ -401,10 +401,41 @@ Hybrid crashes last longer — stretch wave deployment over 6–9 months.
 
 ### Stage 4 — Recovery Signal and 6-Month Transition
 
-**Recovery confirmed when ALL THREE are true simultaneously:**
-1. S&P has recovered 15%+ from its confirmed trough price (per Signal Tiering streak confirmation)
-2. Fed has either cut rates OR explicitly signalled cuts within 2 meetings
-3. VIX has sustained below 25 for 3+ consecutive weeks
+**Recovery confirmed when ALL THREE are true simultaneously** (implemented
+2026-08-16 in `rule_engine/src/classify.ts` — previously pure prose here
+with no corresponding code):
+
+1. **S&P has recovered 15%+ from its confirmed trough price.** The trough is
+   a running minimum of the S&P level, tracked only while a drawdown episode
+   is active — defined as drawdown ≥10% from ATH, the same threshold the
+   Crash Mode Protocol RED ALERT banner already uses above, not a separately
+   invented number. The trough only moves on a new low (frozen once the
+   market starts recovering) and resets once drawdown falls back under 10%
+   (episode over, whether via recovery or a fresh ATH).
+2. **Fed has either cut rates OR explicitly signalled cuts within 2
+   meetings.** Reuses the existing Fed pivot signal (`fed_pivot_signal ===
+   "CUT"`) directly rather than a new field — the "within 2 meetings"
+   recency qualifier is **not independently tracked**, same honesty-first
+   treatment as every other manual/LLM-judged field in this document (see
+   Warsh classification below).
+3. **VIX has sustained below 25 for 3+ consecutive weeks.** Implemented via
+   the same confirmation-streak mechanism as the 6-indicator panel
+   (`computeConfirmation`), reusing distinct-observation-date persistence
+   but with a 15-count bar instead of the panel's standard 2 (~3 weeks of
+   trading days) — tracked as its own `vix_recovery` confirmation entry,
+   separate from the panel's own VIX confirmation (different threshold: 25,
+   not the panel's 20/35 bands).
+
+`recovery_confirmed` is a fact about the *most recent* drawdown episode, not
+a value that flickers day to day — once true it stays true until a new
+episode begins (a fresh drawdown crossing back over the 10% boundary), at
+which point it resets for that new episode.
+
+**Not yet built**: the month-by-month execution tracking below is still
+manual — there is no equivalent of `wave_deployment_state.yaml`/
+`record_wave_deployment` for recovery yet. `recovery_confirmed` tells you
+*whether* to start this table; nothing tracks *which month/step* you're
+actually on.
 
 | Month | Action |
 |---|---|
@@ -498,6 +529,46 @@ confidence qualifier per Signal Tiering.
 > discontinued this series code. Presenting a 4-year-old number as a live
 > reading would be actively misleading, so it was removed entirely rather
 > than kept with a caveat. Global PMI remains an unfilled gap.
+
+---
+
+## Cross-Indicator Divergence Detection (informational only — never gates)
+
+Computed once daily by the rule engine (`rule_engine/src/divergence.ts`, not
+this doc's own source until now — this section was added 2026-08-16 to close
+a real spec gap, since divergence detection existed only in code for weeks
+before this). Persisted to `crash_checks.divergence_flags` — `get_context_indicators`
+and `dashboard_site`'s "Signal Relationships" card both read that one
+persisted value, never recompute independently. Thresholds are a first cut,
+not backtested/calibrated — same caveat as everything else in this document
+marked as a starting point rather than a validated model. Each pair uses a
+7-day delta (most recent value vs. the most recent observation on or before
+7 calendar days prior, not a strict trading-day offset).
+
+| Pair | Diverging condition | `diverging: true` means |
+|---|---|---|
+| IG vs. HY credit spread | IG widened ≥3bps/7d while HY moved ≤1bps/7d | Concerning — quality-flight signal ahead of the gating HY spread |
+| Initial vs. continuing jobless claims | Continuing claims rose ≥15,000/7d while initial claims moved ≤5,000/7d | Concerning — laid-off workers taking longer to find new jobs |
+| VIX vs. HY credit spread | VIX rose ≥3pts/7d while HY moved ≤5bps/7d | **Reassuring** — equity-specific noise, not confirmed credit stress |
+| HY widening vs. VIX calm | HY widened ≥5bps/7d while VIX moved ≤3pts/7d | Concerning — credit stress surfacing before equity vol does (credit often leads equity) |
+
+The last pair is the reverse direction of the third — added 2026-08-16,
+previously the more concerning "credit moves first" direction was missing
+entirely. Its thresholds deliberately reuse the VIX-vs-HY pair's own two
+constants (5bps, 3pts), flipped, rather than a fresh unbacktested number.
+
+**Known data limitation**: `BAMLH0A0HYM2`/`BAMLC0A0CM` (the two credit-spread
+series feeding 3 of these 4 pairs) only have real history back to
+2023-07-11/2023-07-17 in this system, not the 1996 inception commonly cited
+for these FRED series — confirmed via live query and backfill logs, not an
+ingestion bug. This meaningfully limits how far back any future calibration
+of these thresholds can be checked.
+
+Deliberately deferred, not started: rolling-correlation infrastructure, and
+a regime-dependent 10yr-Treasury-vs-equities pair (its intended meaning
+genuinely differs by macro regime, so it needs the regime concept from the
+future hazard-model work to mean anything, not a naive non-regime-aware
+version now).
 
 ---
 

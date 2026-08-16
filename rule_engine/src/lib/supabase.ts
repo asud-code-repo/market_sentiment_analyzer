@@ -45,6 +45,14 @@ export interface LatestSnapshotRow {
   trigger_status: unknown;
   confirmation_state: Record<string, ConfirmationEntry> | null;
   confirmed_red_count: number | null;
+  // Stage 4 recovery tracking (added 2026-08-16) — sp500_trough/_date are
+  // null whenever no drawdown episode (>=10% from ATH) is currently active;
+  // recovery_confirmed is a historical fact about the most recent episode,
+  // reset only when a new episode begins.
+  sp500_trough: number | null;
+  sp500_trough_date: string | null;
+  recovery_confirmed: boolean;
+  recovery_confirmed_date: string | null;
 }
 
 /** The most recent crash_checks row, for carrying forward manually-judged
@@ -55,7 +63,9 @@ export interface LatestSnapshotRow {
 export async function getLatestCrashCheck(): Promise<LatestSnapshotRow | null> {
   const { data, error } = await supabase
     .from("crash_checks")
-    .select("warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state, confirmed_red_count")
+    .select(
+      "warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state, confirmed_red_count, sp500_trough, sp500_trough_date, recovery_confirmed, recovery_confirmed_date",
+    )
     .order("run_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -93,6 +103,10 @@ export interface CrashCheckInsert {
   trigger_status: unknown;
   raw_source_data: unknown;
   divergence_flags: DivergenceFlag[];
+  sp500_trough: number | null;
+  sp500_trough_date: string | null;
+  recovery_confirmed: boolean;
+  recovery_confirmed_date: string | null;
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {

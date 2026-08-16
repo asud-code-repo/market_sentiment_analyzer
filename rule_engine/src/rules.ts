@@ -78,6 +78,22 @@ export function drawdownPct(level: number, ath: number): number {
 }
 
 /**
+ * Stage 4 recovery criterion 3's binary flag — VIX sustained below 25 (not
+ * the 6-indicator panel's own <20/20-35/>35 bandVix bands, a different
+ * threshold for a different purpose). Reuses the Color type as a two-state
+ * flag (GREEN = below 25, RED = at/above) rather than inventing a new type,
+ * so it can go straight into computeConfirmation with requiredCount: 15.
+ */
+export function bandVixRecovery(vix: number): Color {
+  return vix < 25 ? "GREEN" : "RED";
+}
+
+/** Stage 4 recovery criterion 1 — 15%+ recovered from the confirmed trough. */
+export function isRecoveredFromTrough(level: number, trough: number): boolean {
+  return level >= trough * 1.15;
+}
+
+/**
  * Signal Tiering & Confirmation Windows (crash-check-rules.md v5): a
  * Tier-1 indicator's color must hold across 2+ *distinct* ingestion dates
  * before it's "confirmed" — not just be true on whatever row a dashboard
@@ -94,15 +110,25 @@ export interface ConfirmationEntry {
   first_breach_date: string;
 }
 
+/**
+ * requiredCount defaults to 2 (the standard Signal Tiering bar for the 6
+ * core indicators). Generalized 2026-08-16 to support longer windows — e.g.
+ * Stage 4 recovery's "VIX sustained below 25 for 3+ consecutive weeks"
+ * reuses this exact mechanism with requiredCount: 15 (treating GREEN/RED as
+ * a below-25/at-or-above-25 binary flag, skipping AMBER) rather than
+ * inventing a second, differently-shaped confirmation mechanism. Passing no
+ * requiredCount leaves every existing caller's behavior unchanged.
+ */
 export function computeConfirmation(
   color: Color,
   observationDate: string,
   prior: ConfirmationEntry | undefined,
+  requiredCount = 2,
 ): ConfirmationEntry {
   if (!prior) {
     // First-ever run for this indicator — bootstrap, same pattern as
     // fed_pivot_signal/Warsh fields defaulting on a fresh crash_checks table.
-    return { color, observation_date: observationDate, days_confirmed: 1, confirmed: false, first_breach_date: observationDate };
+    return { color, observation_date: observationDate, days_confirmed: 1, confirmed: 1 >= requiredCount, first_breach_date: observationDate };
   }
   if (observationDate === prior.observation_date) {
     // Same underlying data as last run (e.g. a same-day manual re-trigger,
@@ -112,8 +138,8 @@ export function computeConfirmation(
   }
   if (color === prior.color) {
     const daysConfirmed = prior.days_confirmed + 1;
-    return { color, observation_date: observationDate, days_confirmed: daysConfirmed, confirmed: daysConfirmed >= 2, first_breach_date: prior.first_breach_date };
+    return { color, observation_date: observationDate, days_confirmed: daysConfirmed, confirmed: daysConfirmed >= requiredCount, first_breach_date: prior.first_breach_date };
   }
   // Color changed on a new observation date — the streak resets.
-  return { color, observation_date: observationDate, days_confirmed: 1, confirmed: false, first_breach_date: observationDate };
+  return { color, observation_date: observationDate, days_confirmed: 1, confirmed: 1 >= requiredCount, first_breach_date: observationDate };
 }

@@ -89,5 +89,28 @@ export async function computeDivergences(): Promise<DivergenceFlag[]> {
     });
   }
 
+  // The reverse direction of vix_vs_hy_credit_spread above, added 2026-08-16
+  // — credit stress showing up before equity vol does is the more
+  // concerning direction (credit often leads equity), previously missing.
+  // Thresholds deliberately reuse that sibling pair's own two constants
+  // (5bps, 3pts) flipped, rather than inventing new unbacktested numbers:
+  // its "calm HY" ceiling (<=5bps) becomes this pair's "big HY move" floor;
+  // its "big VIX move" floor (>=3pts) becomes this pair's "calm VIX"
+  // ceiling. diverging:true here IS the concerning case (matches
+  // ig_vs_hy_credit_spread/initial_vs_continuing_claims's convention,
+  // unlike vix_vs_hy_credit_spread above).
+  if (hy.value !== null && hy.delta_7d !== null && vix.value !== null && vix.delta_7d !== null) {
+    const diverging = hy.delta_7d >= 5 && vix.delta_7d <= 3;
+    flags.push({
+      pair: "hy_widening_vix_calm",
+      diverging,
+      detail: diverging
+        ? `HY spread widened ${hy.delta_7d}bps over 7d while VIX only moved ${vix.delta_7d}pts — credit stress may be building before equity markets notice.`
+        : `No divergence — HY spread (${hy.delta_7d}bps/7d) and VIX (${vix.delta_7d}pts/7d) aren't showing a meaningful split, or HY isn't widening enough to represent stress.`,
+      series_a: { label: "HY Credit Spread", value: hy.value, unit: "bps", delta_7d: hy.delta_7d },
+      series_b: { label: "VIX", value: vix.value, unit: "index", delta_7d: vix.delta_7d },
+    });
+  }
+
   return flags;
 }

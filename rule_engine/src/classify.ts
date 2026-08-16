@@ -8,6 +8,8 @@ import {
   bandTreasury10y,
   bandSahmRule,
   bandFedPivotSignal,
+  bandVixRecovery,
+  isRecoveredFromTrough,
   countReds,
   isWaveAuthorized,
   activeWave,
@@ -82,6 +84,59 @@ export async function classify(): Promise<void> {
 
   const divergenceFlags = await computeDivergences();
 
+  // Stage 4 recovery tracking (crash-check-rules.md "Recovery Signal and
+  // 6-Month Transition", added 2026-08-16 — previously pure prose, no code).
+  // Trough is a running minimum, only active during a drawdown episode
+  // (>=10% from ATH, the same threshold the Crash Mode Protocol RED ALERT
+  // banner already uses — not a new number). wasInEpisode is captured
+  // *before* updating the trough for this run, so the "did we just enter a
+  // new episode" check below isn't affected by this run's own update.
+  const wasInEpisode = (prior?.sp500_trough ?? null) !== null;
+  const inEpisode = drawdown >= 10;
+  let sp500Trough = prior?.sp500_trough ?? null;
+  let sp500TroughDate = prior?.sp500_trough_date ?? null;
+  if (inEpisode) {
+    if (sp500Trough === null || sp500.value < sp500Trough) {
+      sp500Trough = sp500.value;
+      sp500TroughDate = sp500.observation_date;
+    }
+  } else {
+    sp500Trough = null;
+    sp500TroughDate = null;
+  }
+
+  // Criterion 3 (VIX sustained below 25 for 3+ weeks) reuses
+  // computeConfirmation with requiredCount: 15 (~3 weeks of trading days)
+  // instead of the standard 2 — a separate confirmation_state key
+  // ("vix_recovery") from the main panel's own "vix" entry (bandVix), since
+  // it's a different threshold (25, not 20/35) for a different purpose.
+  const vixRecoveryColor = bandVixRecovery(vix.value);
+  const vixRecoveryEntry = computeConfirmation(vixRecoveryColor, vix.observation_date, priorConfirmation.vix_recovery, 15);
+  confirmationState.vix_recovery = vixRecoveryEntry;
+
+  const recoveryCriterion1 = sp500Trough !== null && isRecoveredFromTrough(sp500.value, sp500Trough);
+  // Criterion 2 reuses fed_pivot_signal as-is (no new field) — the "within 2
+  // meetings" recency nuance isn't independently tracked, same honesty-first
+  // treatment as every other manual-judgment field in this system.
+  const recoveryCriterion2 = fedPivotSignal === "CUT";
+  const recoveryCriterion3 = vixRecoveryEntry.color === "GREEN" && vixRecoveryEntry.confirmed;
+
+  // recovery_confirmed is a historical fact about the most recent drawdown
+  // episode, not a flickering daily state — once true it stays true until a
+  // *new* episode begins (transition into inEpisode), at which point it
+  // resets for that new episode. recovery_confirmed_date is set once, on
+  // the run it first becomes true, and never overwritten afterward.
+  let recoveryConfirmed = prior?.recovery_confirmed ?? false;
+  let recoveryConfirmedDate = prior?.recovery_confirmed_date ?? null;
+  if (inEpisode && !wasInEpisode) {
+    recoveryConfirmed = false;
+    recoveryConfirmedDate = null;
+  }
+  if (!recoveryConfirmed && recoveryCriterion1 && recoveryCriterion2 && recoveryCriterion3) {
+    recoveryConfirmed = true;
+    recoveryConfirmedDate = sp500.observation_date;
+  }
+
   await insertCrashCheck({
     sp500_level: sp500.value,
     sp500_ath: sp500Ath.value,
@@ -108,6 +163,10 @@ export async function classify(): Promise<void> {
     warsh_hard_rules_active: prior?.warsh_hard_rules_active ?? false,
     trigger_status: prior?.trigger_status ?? [],
     divergence_flags: divergenceFlags,
+    sp500_trough: sp500Trough,
+    sp500_trough_date: sp500TroughDate,
+    recovery_confirmed: recoveryConfirmed,
+    recovery_confirmed_date: recoveryConfirmedDate,
     raw_source_data: {
       vix, hySpread, sp500, sp500Ath, treasury10y, sahmRule,
       note: "fed_pivot_signal and warsh_* fields carried forward from prior row — not derived here",
@@ -117,7 +176,9 @@ export async function classify(): Promise<void> {
   console.log(
     `Classified: ${redCount}/6 RED (${confirmedRedCount} confirmed) (VIX=${vixColor}, HY=${hySpreadColor}, ` +
       `Drawdown=${spDrawdownColor}, 10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
-      `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}.`,
+      `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}. ` +
+      `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
+      `Recovery confirmed: ${recoveryConfirmed}.`,
   );
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);

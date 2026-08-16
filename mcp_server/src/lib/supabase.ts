@@ -81,6 +81,10 @@ export interface CrashCheckRow {
   notes: string | null;
   raw_source_data: unknown;
   divergence_flags: DivergenceFlag[] | null;
+  sp500_trough: number | null;
+  sp500_trough_date: string | null;
+  recovery_confirmed: boolean;
+  recovery_confirmed_date: string | null;
   created_at: string;
 }
 
@@ -274,6 +278,15 @@ export async function writeSnapshot(qualitative: {
     // full chat-triggered report despite rendering fine on bare automated
     // refreshes (found 2026-08-16).
     divergence_flags: latest.divergence_flags,
+    // Also rule-engine-owned (Stage 4 recovery tracking, classify.ts) —
+    // carried forward for the same reason as divergence_flags above: these
+    // are derived from market data + episode state, not something Claude
+    // judges, and dropping them here would silently reset trough tracking
+    // and recovery-confirmed status on every full chat-triggered report.
+    sp500_trough: latest.sp500_trough,
+    sp500_trough_date: latest.sp500_trough_date,
+    recovery_confirmed: latest.recovery_confirmed,
+    recovery_confirmed_date: latest.recovery_confirmed_date,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,

@@ -215,10 +215,21 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
 // work (see reference_docs/investment-model-review.md). A fixed early
 // anchor date costs nothing extra: FRED simply returns no observations
 // before a series' actual inception, so each series naturally comes back
-// with its own full available history (VIXCLS from 1990, BAMLH0A0HYM2 from
-// 1996, CPIAUCSL/UNRATE from the late 1940s, etc). data_points reads are
-// already paginated on the dashboard side, so this doesn't reintroduce the
-// client-side bloat concern that originally motivated the 5-year cap.
+// with its own full available history (VIXCLS from 1990, CPIAUCSL/UNRATE
+// from the late 1940s, etc). data_points reads are already paginated on the
+// dashboard side, so this doesn't reintroduce the client-side bloat concern
+// that originally motivated the 5-year cap.
+//
+// Verified 2026-08-16: BAMLH0A0HYM2/BAMLC0A0CM (HY/IG spreads) do NOT go
+// back to 1996 despite that being their commonly-cited FRED inception —
+// this repo's actual backfilled data only starts 2023-07-11/2023-07-17
+// respectively, confirmed identically across two independent 1900-01-01-
+// anchored backfill runs and a direct live query. Not an ingestion bug (the
+// backfill script never runs plausibility filtering) — FRED's API itself
+// only serves ~3 years for these two series IDs today, likely a licensing-
+// driven restriction on ICE's underlying data. No amount of re-backfilling
+// fixes this; it materially limits how far back credit-spread-based
+// divergence/calibration work (see divergence.ts) can be checked.
 const BACKFILL_START_DATE = "1900-01-01";
 
 async function fetchFredHistory(seriesId: string, apiKey: string, observationStart: string): Promise<FredObservation[]> {
