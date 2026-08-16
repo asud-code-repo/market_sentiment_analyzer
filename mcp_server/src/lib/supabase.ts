@@ -219,6 +219,24 @@ export async function writeSnapshot(qualitative: {
   const fedPivotSignal = qualitative.fed_pivot_signal ?? (latest.fed_pivot_signal as "NONE" | "PAUSE" | "CUT" | null) ?? "NONE";
   const fedPivotColor = fedPivotSignal === "NONE" ? "GREEN" : fedPivotSignal === "PAUSE" ? "AMBER" : "RED";
 
+  // Mirrors rule_engine/src/classify.ts's redCount/confirmedRedCount/
+  // wave_authorized formula exactly (separate TS project, duplicated rather
+  // than shared — see ConfirmationEntry above). Always recomputed from the
+  // *other* 5 colors (carried forward unchanged) + this run's fed pivot
+  // color, rather than carrying red_count/confirmed_red_count/wave_authorized
+  // forward verbatim — previously, changing fed_pivot_signal here (e.g.
+  // NONE -> CUT) updated fed_pivot_color but left those three fields stale,
+  // so a snapshot could show a RED Fed pivot alongside a count that didn't
+  // include it. Confirmation windows themselves (confirmation_state) stay
+  // rule-engine-owned and untouched — only the aggregate counts derived from
+  // it are refreshed here. A no-op (values equal what was carried forward)
+  // whenever fed_pivot_signal didn't actually change this run.
+  const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
+  const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);
+  const confirmedFromNumeric = Object.values(latest.confirmation_state ?? {}).filter((c) => c.color === "RED" && c.confirmed).length;
+  const confirmedRedCount = confirmedFromNumeric + (fedPivotColor === "RED" ? 1 : 0);
+  const waveAuthorized = confirmedRedCount >= 3;
+
   const row = {
     // Mechanical fields carried forward from the latest rule-engine row —
     // Claude reports on these, it doesn't recompute or override them
@@ -238,14 +256,15 @@ export async function writeSnapshot(qualitative: {
     sahm_rule_color: latest.sahm_rule_color,
     fed_pivot_signal: fedPivotSignal,
     fed_pivot_color: fedPivotColor,
-    red_count: latest.red_count,
-    // Carried forward, not recomputed — confirmation_state is rule-engine-
-    // owned (classify.ts's per-indicator streak tracking). If write_snapshot
-    // didn't propagate it, the next classify() run would see a null prior
-    // confirmation_state and incorrectly reset every indicator's streak.
-    confirmed_red_count: latest.confirmed_red_count,
+    red_count: redCount,
+    confirmed_red_count: confirmedRedCount,
+    // confirmation_state itself is still carried forward verbatim, not
+    // recomputed — it's rule-engine-owned (classify.ts's per-indicator
+    // streak tracking). If write_snapshot didn't propagate it, the next
+    // classify() run would see a null prior confirmation_state and
+    // incorrectly reset every indicator's streak.
     confirmation_state: latest.confirmation_state,
-    wave_authorized: latest.wave_authorized,
+    wave_authorized: waveAuthorized,
     wave_active: latest.wave_active,
     // Also rule-engine-owned (computed once daily by classify.ts's
     // computeDivergences(), not recomputed by Claude) — carried forward like
