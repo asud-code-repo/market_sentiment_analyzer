@@ -116,6 +116,16 @@
   .indicator.warning { background: var(--warning-bg); }
   .indicator.critical { background: var(--critical-bg); }
   .indicator.neutral { background: var(--page); }
+  /* Tier-2 contextual cards' "worth a second look" marker — deliberately
+     NOT the good/warning/critical RAG treatment above, which is reserved
+     for the deterministic gating panel (see Formatting Requirements in
+     crash-check-rules.md: "never repurpose [status colors] for anything
+     that isn't a GREEN/AMBER/RED-style status"). Reuses --neutral-blue,
+     already this file's convention for non-RAG accents (chart lines, the
+     active date-range button), specifically so it can't be mistaken for a
+     panel status at a glance. */
+  .indicator.notable { border-left: 3px solid var(--neutral-blue); }
+  .indicator .notable-tag { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--neutral-blue); margin-bottom: 4px; }
   .indicator .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
   .indicator .value { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .indicator .status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-primary); }
@@ -321,26 +331,31 @@ const CONTEXT_INFO = {
     label: "Financial Stress Index",
     format: (v) => v.toFixed(2),
     signal: (v) => (v > 0 ? "Above-average stress" : "Below-average stress"),
+    notable: (v) => v > 0,
   },
   nfci: {
     label: "Nat'l Financial Conditions",
     format: (v) => v.toFixed(2),
     signal: (v) => (v > 0 ? "Tighter than average" : "Looser than average"),
+    notable: (v) => v > 0,
   },
   spread2s10s: {
     label: "2s10s Yield Curve Spread",
     format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`,
     signal: (v) => (v < 0 ? "Inverted — historically precedes recessions" : "Normal (positive slope)"),
+    notable: (v) => v < 0,
   },
   t10yie: {
     label: "10yr Breakeven Inflation",
     format: (v) => `${v.toFixed(1)}%`,
     signal: (v) => (v > 2.5 ? "Above the Fed's ~2% target" : "Near the Fed's ~2% target"),
+    notable: (v) => v > 2.5,
   },
   drtscilm: {
     label: "Bank Lending Standards",
     format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}%`,
     signal: (v) => (v > 0 ? "Net tightening (credit contracting)" : "Net easing"),
+    notable: (v) => v > 0,
   },
   rrpontsyd: {
     label: "Overnight Reverse Repo",
@@ -361,6 +376,7 @@ const CONTEXT_INFO = {
     label: "WTI Crude Oil",
     format: (v) => `$${v.toFixed(2)}/bbl`,
     signal: (v) => (v > 100 ? "Above $100 — stagflation accelerant watch" : "Below $100"),
+    notable: (v) => v > 100,
   },
   rsafs: {
     label: "Retail Sales (Advance)",
@@ -386,6 +402,7 @@ const CONTEXT_INFO = {
     label: "30yr Treasury Yield",
     format: (v) => `${v.toFixed(2)}%`,
     signal: (v) => (v > 5.0 ? "Above 5.0% — bond vigilante signal" : "Below the 5.0% bond-vigilante threshold"),
+    notable: (v) => v > 5.0,
   },
   sofr: {
     label: "SOFR (Repo Rate)",
@@ -401,11 +418,13 @@ const CONTEXT_INFO = {
     label: "NFCI Risk Subindex",
     format: (v) => v.toFixed(2),
     signal: (v) => (v > 0 ? "Elevated financial-sector volatility/funding risk" : "Below-average"),
+    notable: (v) => v > 0,
   },
   nfcicredit: {
     label: "NFCI Credit Subindex",
     format: (v) => v.toFixed(2),
     signal: (v) => (v > 0 ? "Tighter credit conditions specifically" : "Looser than average"),
+    notable: (v) => v > 0,
   },
   dfii10: {
     label: "10yr TIPS Real Yield",
@@ -478,8 +497,16 @@ function renderContextIndicators(latest) {
   grid.innerHTML = Object.entries(CONTEXT_INFO)
     .map(([key, info]) => {
       const v = values[key];
+      // "Notable" is a deliberately separate, non-RAG marker — only for
+      // cards with an already-documented, unambiguous single-direction
+      // threshold (their own signal() text already states it). Cards
+      // without one (e.g. bidirectional reverse repo, trend-only claims
+      // reads) have no notable() and never get flagged, rather than
+      // inventing a threshold that isn't otherwise documented anywhere.
+      const isNotable = v != null && info.notable && info.notable(v);
       return `
-        <div class="indicator neutral">
+        <div class="indicator neutral${isNotable ? " notable" : ""}">
+          ${isNotable ? '<div class="notable-tag">● Notable</div>' : ""}
           <div class="label">${info.label}</div>
           <div class="value">${v != null ? info.format(v) : "—"}</div>
           <div class="signal">${v != null ? info.signal(v) : "No data yet"}</div>
