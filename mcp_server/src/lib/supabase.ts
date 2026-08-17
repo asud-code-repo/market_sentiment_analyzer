@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift } from "./portfolio.js";
+import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift, computeRateResetTriggerStatus } from "./portfolio.js";
 import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./watchlist.js";
 
 function requireEnv(name: string): string {
@@ -220,6 +220,17 @@ export async function writeSnapshot(qualitative: {
     );
   }
 
+  // Rate-reset trigger status is forcibly overwritten below, not trusted
+  // from the caller — after two prose-instruction attempts (comparing the
+  // wrong date field, then writing an accurate note while still leaving the
+  // status enum at the stale value) both failed in practice across multiple
+  // live runs, this stopped being a "tell the LLM more clearly" problem and
+  // became a "don't ask the LLM at all" one — same reasoning already
+  // applied to red_count/wave_authorized/watchlist status elsewhere in this
+  // file: recompute server-side, don't trust caller input for anything
+  // mechanically derivable from data already on disk.
+  const rateResetTrigger = computeRateResetTriggerStatus(readPortfolio());
+
   const fedPivotSignal = qualitative.fed_pivot_signal ?? (latest.fed_pivot_signal as "NONE" | "PAUSE" | "CUT" | null) ?? "NONE";
   const fedPivotColor = fedPivotSignal === "NONE" ? "GREEN" : fedPivotSignal === "PAUSE" ? "AMBER" : "RED";
 
@@ -235,6 +246,22 @@ export async function writeSnapshot(qualitative: {
   // rule-engine-owned and untouched — only the aggregate counts derived from
   // it are refreshed here. A no-op (values equal what was carried forward)
   // whenever fed_pivot_signal didn't actually change this run.
+  // Force the rate-reset trigger's status/note to the computed value,
+  // regardless of what the caller supplied — matched by name against the
+  // existing "Rate-reset trigger (stable-value fund)" convention. Any other
+  // trigger entry (Fed-event, inflation-print, earnings-guidance) passes
+  // through untouched — those still need real qualitative judgment.
+  const resolvedTriggerStatus = qualitative.trigger_status ?? latest.trigger_status;
+  const triggerStatus = Array.isArray(resolvedTriggerStatus)
+    ? resolvedTriggerStatus.map((entry) => {
+        const trigger = entry as Record<string, unknown>;
+        if (typeof trigger.name === "string" && trigger.name.toLowerCase().includes("rate-reset")) {
+          return { ...trigger, status: rateResetTrigger.status, note: rateResetTrigger.note };
+        }
+        return trigger;
+      })
+    : resolvedTriggerStatus;
+
   const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
   const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);
   const confirmedFromNumeric = Object.values(latest.confirmation_state ?? {}).filter((c) => c.color === "RED" && c.confirmed).length;
@@ -301,7 +328,7 @@ export async function writeSnapshot(qualitative: {
     warsh_classification: qualitative.warsh_classification ?? latest.warsh_classification,
     warsh_classification_date: qualitative.warsh_classification_date ?? latest.warsh_classification_date,
     warsh_hard_rules_active: qualitative.warsh_hard_rules_active ?? latest.warsh_hard_rules_active,
-    trigger_status: qualitative.trigger_status ?? latest.trigger_status,
+    trigger_status: triggerStatus,
     raw_source_data: { copied_from_crash_check_id: latest.id },
   };
 
