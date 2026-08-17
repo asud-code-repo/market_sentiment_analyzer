@@ -47,6 +47,61 @@ export function readDryPowderUsd(): number {
   return dryPowder;
 }
 
+export interface RateResetTriggerStatus {
+  status: "fired" | "pending";
+  rate_pct: number | null;
+  rate_through: string | null;
+  next_reset_date: string | null;
+  note: string;
+}
+
+/**
+ * Computes the rate-reset trigger's status deterministically instead of
+ * asking the LLM to compare two dates correctly every run — which it
+ * reliably failed to do (confirmed live 2026-08-17: multiple full reports
+ * in a row reported "pending" despite the local data already being current,
+ * even with explicit prose instructions telling it to check). This is
+ * exactly the kind of numeric classification this system's own design
+ * philosophy says should never be an LLM's job — a plain date comparison
+ * against local YAML data, no judgment involved. ISO YYYY-MM-DD strings
+ * compare correctly with plain string comparison (lexicographic order
+ * matches chronological order for zero-padded ISO dates), so no Date
+ * parsing is needed.
+ */
+export function computeRateResetTriggerStatus(portfolio: unknown): RateResetTriggerStatus {
+  const root = portfolio as Record<string, unknown> | null;
+  const accounts = root?.["accounts"] as Record<string, unknown> | undefined;
+  const tactical401k = accounts?.["tactical_401k"] as Record<string, unknown> | undefined;
+  const rate = tactical401k?.["nyl_anchor_rate"];
+  const rateThrough = tactical401k?.["nyl_anchor_rate_through"];
+  const nextReset = tactical401k?.["nyl_anchor_reset_date"];
+  const nextResetStr = typeof nextReset === "string" ? nextReset : null;
+
+  if (typeof rate !== "number" || typeof rateThrough !== "string") {
+    return {
+      status: "pending",
+      rate_pct: null,
+      rate_through: null,
+      next_reset_date: nextResetStr,
+      note: "No NYL Anchor rate recorded locally yet (nyl_anchor_rate/nyl_anchor_rate_through missing).",
+    };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const isCurrent = today <= rateThrough;
+  const ratePct = Math.round(rate * 10000) / 100;
+
+  return {
+    status: isCurrent ? "fired" : "pending",
+    rate_pct: ratePct,
+    rate_through: rateThrough,
+    next_reset_date: nextResetStr,
+    note: isCurrent
+      ? `Current declared rate ${ratePct}% through ${rateThrough}. Next reset ${nextResetStr ?? "unknown"}.`
+      : `Recorded rate ${ratePct}% expired ${rateThrough} — needs updating with the newly declared rate.`,
+  };
+}
+
 /**
  * Overrides the RRSP's hardcoded value_usd/fx_rate_* fields with a live
  * computation from FRED's DEXCAUS series (Canadian dollars per 1 US dollar

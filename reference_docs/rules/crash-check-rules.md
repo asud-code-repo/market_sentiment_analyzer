@@ -469,12 +469,28 @@ actually on.
 
 ## Personal Decision Trigger Types (structure, not live dates)
 
-The rule engine evaluates each trigger's status (`fired` / `approaching` /
-`pending`) against current dates and data, and writes the result into
-`crash_checks.trigger_status`. Trigger definitions themselves (dates, exact
-thresholds) belong in the live master-prompt doc / a config the user updates —
-treat the 4-trigger structure as: Fed-event trigger, inflation-print trigger,
-earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
+Four triggers: Fed-event, inflation-print, earnings-guidance, and a
+rate-reset trigger tied to a stable-value fund. Trigger definitions
+themselves (dates, exact thresholds) belong in the live master-prompt doc /
+a config the user updates.
+
+**Correcting an overstatement here as of 2026-08-17**: this section
+previously claimed "the rule engine evaluates each trigger's status... and
+writes the result into `crash_checks.trigger_status`" — checked against the
+actual code, that's not true for any of the four. `trigger_status` is never
+computed by `rule_engine`/`classify.ts`; it's either carried forward
+unchanged from the prior row or supplied by the LLM to `write_snapshot`. The
+first three genuinely need qualitative judgment (was the Fed's tone
+hawkish/dovish, did earnings guidance beat/miss) and stay LLM-judged for
+that reason. The **rate-reset trigger is the one exception**: it's a plain
+date comparison against locally-recorded portfolio data
+(`nyl_anchor_rate_through`), not a judgment call — after prose instructions
+asking the LLM to do that comparison itself repeatedly produced wrong
+results in practice (confirmed live, multiple reports in a row), it was
+made deterministic (`mcp_server/src/lib/portfolio.ts`'s
+`computeRateResetTriggerStatus()`, exposed via `get_portfolio_snapshot`'s
+`rate_reset_trigger` field) — the LLM reports what's already computed for
+this one trigger, it doesn't reason about the dates itself.
 
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 
