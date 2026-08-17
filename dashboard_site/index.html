@@ -412,12 +412,44 @@ const CONTEXT_INFO = {
     format: (v) => `${v.toFixed(2)}%`,
     signal: () => "Real-yield leg of equity valuation only — no free earnings-yield/CAPE series on FRED",
   },
+  recprousm156n: {
+    label: "Recession Prob. (Smoothed)",
+    format: (v) => `${v.toFixed(2)}%`,
+    signal: () => "Chauvet & Piger's published model, hosted on FRED by the St. Louis Fed (not built by them) — external cross-check, not validation",
+  },
+  nyFedRecessionProb: {
+    label: "Recession Prob. (NY Fed, 12mo)",
+    format: (v) => `${v.toFixed(1)}%`,
+    signal: () => "NY Fed's published Estrella-Mishkin (1998) formula, computed here from DGS10/DGS3MO (not a FRED series) — external cross-check, not validation",
+  },
 };
+
+/**
+ * Abramowitz & Stegun (1964) 7.1.26 approximation of the error function —
+ * mirrors mcp_server/src/lib/recessionProbability.ts exactly (separate
+ * runtime, duplicated rather than shared across a package boundary, same
+ * convention as everything else in this file that reads raw data_points
+ * independently of the MCP server).
+ */
+function erf(x) {
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x);
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const t = 1 / (1 + p * ax);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
+  return sign * y;
+}
+
+function estrellaMishkinRecessionProbability(spread10y3mo) {
+  const phi = 0.5 * (1 + erf((-0.5333 - 0.6629 * spread10y3mo) / Math.SQRT2));
+  return phi * 100;
+}
 
 function renderContextIndicators(latest) {
   const grid = document.getElementById("context-grid");
-  const dgs10 = latest.DGS10, dgs2 = latest.DGS2;
+  const dgs10 = latest.DGS10, dgs2 = latest.DGS2, dgs3mo = latest.DGS3MO;
   const spread = dgs10 != null && dgs2 != null ? dgs10 - dgs2 : null;
+  const nyFedProb = dgs10 != null && dgs3mo != null ? estrellaMishkinRecessionProbability(dgs10 - dgs3mo) : null;
 
   const values = {
     stlfsi4: latest.STLFSI4,
@@ -439,6 +471,8 @@ function renderContextIndicators(latest) {
     nfcirisk: latest.NFCIRISK,
     nfcicredit: latest.NFCICREDIT,
     dfii10: latest.DFII10,
+    recprousm156n: latest.RECPROUSM156N,
+    nyFedRecessionProb: nyFedProb,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -869,7 +903,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

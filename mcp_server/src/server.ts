@@ -9,6 +9,7 @@ import { readWaveDeploymentState, recordWaveDeployment } from "./lib/waveDeploym
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
+import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -318,10 +319,19 @@ server.registerTool(
       "real yields). tips_real_yield_10y_pct covers only the real-yield leg of 'equity valuation' — " +
       "there is no free earnings-yield/CAPE series on FRED, so never treat it as a full valuation " +
       "read on its own. (OECDLOLITOAASTSAM, a candidate global-PMI stand-in, was tried and dropped " +
-      "2026-08-16 — its latest observation was frozen at 2022-11-01, years stale, not just lagged.)",
+      "2026-08-16 — its latest observation was frozen at 2022-11-01, years stale, not just lagged.) " +
+      "2026-08-17 additions: recession_probability_smoothed_pct (Chauvet & Piger's published " +
+      "dynamic-factor Markov-switching model, hosted on FRED by the St. Louis Fed but not built by " +
+      "them) and recession_probability_ny_fed_12mo_pct (the NY Fed's own published Estrella-Mishkin " +
+      "(1998) yield-curve probit model, computed here from DGS10/DGS3MO using their published formula " +
+      "— the NY Fed does not publish this as its own FRED series, verified before building this, so " +
+      "it's computed from the formula rather than scraped). Both are external, peer-reviewed, " +
+      "published models — cite them as calibration cross-checks against your own crash-probability " +
+      "estimate, never as validation of it. Agreeing or disagreeing with either doesn't make your " +
+      "estimate more or less correct; note the comparison and move on.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -331,6 +341,7 @@ server.registerTool(
         getLatestDataPoint("DGS10"),
         getLatestDataPoint("DGS2"),
         getLatestDataPoint("DGS30"),
+        getLatestDataPoint("DGS3MO"),
         getLatestDataPoint("ICSA"),
         getLatestDataPoint("CCSA"),
         getLatestDataPoint("DRCCLACBS"),
@@ -343,6 +354,7 @@ server.registerTool(
         getLatestDataPoint("NFCIRISK"),
         getLatestDataPoint("NFCICREDIT"),
         getLatestDataPoint("DFII10"),
+        getLatestDataPoint("RECPROUSM156N"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -353,6 +365,18 @@ server.registerTool(
             value_pct: Math.round((dgs10.value - dgs2.value) * 100) / 100,
             as_of: dgs10.observation_date,
             signal: dgs10.value - dgs2.value < 0 ? "INVERTED — historically precedes recessions" : "normal (positive slope)",
+          }
+        : null;
+
+    // NY Fed's published Estrella-Mishkin (1998) formula, evaluated here
+    // (not scraped) — see mcp_server/src/lib/recessionProbability.ts.
+    const nyFedRecessionProb =
+      dgs10 && dgs3mo
+        ? {
+            value_pct: Math.round(estrellaMishkinRecessionProbability(dgs10.value - dgs3mo.value) * 10) / 10,
+            as_of: dgs10.observation_date,
+            spread_10y_3mo_pct: Math.round((dgs10.value - dgs3mo.value) * 100) / 100,
+            signal: "external published model (NY Fed, Estrella-Mishkin 1998) — a calibration cross-check, not validation of your own estimate",
           }
         : null;
 
@@ -386,6 +410,11 @@ server.registerTool(
       nfci_risk_subindex: nfciRisk && { ...nfciRisk, signal: nfciRisk.value > 0 ? "elevated financial-sector volatility/funding risk" : "below-average" },
       nfci_credit_subindex: nfciCredit && { ...nfciCredit, signal: nfciCredit.value > 0 ? "tighter credit conditions specifically" : "looser than average" },
       tips_real_yield_10y_pct: dfii10 && { ...dfii10, signal: "real-yield leg of equity valuation only — no free earnings-yield/CAPE series exists on FRED, do not treat as a full valuation read" },
+      recession_probability_smoothed_pct: recessionProbSmoothed && {
+        ...recessionProbSmoothed,
+        signal: "Chauvet & Piger's published dynamic-factor Markov-switching model (hosted on FRED by the St. Louis Fed, not built by them) — external cross-check, not validation of your own crash-probability estimate",
+      },
+      recession_probability_ny_fed_12mo_pct: nyFedRecessionProb,
       divergence_flags: divergenceFlags,
     });
   },

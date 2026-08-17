@@ -90,6 +90,25 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // Presenting a 4-year-old number as a live reading would be actively
   // misleading rather than merely weak signal, so it's left out entirely
   // rather than kept with a caveat.
+
+  // 2026-08-17 additions — external published recession-probability models,
+  // cited as calibration cross-checks against this system's own LLM-judged
+  // crash probability (never as validation of it — agreeing or disagreeing
+  // with either doesn't make the other more/less correct). See
+  // reference_docs/rules/crash-check-rules.md "Contextual Indicators".
+  { id: "RECPROUSM156N", unit: "percent" }, // Smoothed U.S. Recession Probabilities — Chauvet
+                                          // (UC Riverside) & Piger (U. Oregon)'s dynamic-factor
+                                          // Markov-switching model, hosted on FRED by the St.
+                                          // Louis Fed (not built by them — correct attribution
+                                          // matters here). NOT the NY Fed's yield-curve model.
+  { id: "DGS3MO", unit: "percent" },     // 3-month Treasury constant maturity yield — paired with
+                                          // the already-ingested DGS10 to compute the NY Fed's
+                                          // published Estrella-Mishkin (1998) probit recession
+                                          // model locally (see mcp_server/src/lib/
+                                          // recessionProbability.ts). The NY Fed does NOT publish
+                                          // this as its own FRED series — verified via search,
+                                          // it's distributed only via their own site — so this is
+                                          // computed from the formula, not scraped.
 ];
 
 interface FredObservation {
