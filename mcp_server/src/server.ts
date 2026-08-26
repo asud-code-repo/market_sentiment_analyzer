@@ -10,6 +10,7 @@ import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/wat
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
+import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -116,7 +117,17 @@ server.registerTool(
   {
     description:
       "Returns the status (fired/approaching/pending) of the personal decision triggers, plus the " +
-      "current Warsh Fed classification and whether its hard rules are active.",
+      "current Warsh Fed classification and whether its hard rules are active. `fed_event_trigger`/" +
+      "`inflation_print_trigger` are computed here, not something to judge yourself — " +
+      "`current_target_date`/`current_target_label` identify which past FOMC meeting / CPI release " +
+      "is the current relevant one (whose outcome may still need your qualitative read — hawkish/" +
+      "dovish, beat/miss), and `next_target_date`/`next_target_label` are what to watch next, both " +
+      "from a maintained calendar (mcp_server/src/lib/economicCalendar.ts), not your memory of a " +
+      "prior session or the old master-prompt doc. This does not replace judging the outcome — only " +
+      "*which meeting/release is current* is computed. If `calendar_needs_update` is true, tell the " +
+      "user the calendar needs new dates added rather than reporting a stale or guessed date. " +
+      "Earnings-guidance is deliberately not included here — company earnings dates aren't published " +
+      "on a fixed public schedule the way FOMC/CPI are, so it stays entirely your judgment call.",
   },
   async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -128,6 +139,8 @@ server.registerTool(
       warsh_classification: latest.warsh_classification,
       warsh_classification_date: latest.warsh_classification_date,
       warsh_hard_rules_active: latest.warsh_hard_rules_active,
+      fed_event_trigger: computeFedEventTrigger(),
+      inflation_print_trigger: computeInflationPrintTrigger(),
     });
   },
 );

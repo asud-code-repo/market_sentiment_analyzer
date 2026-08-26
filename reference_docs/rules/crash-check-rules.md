@@ -492,6 +492,40 @@ made deterministic (`mcp_server/src/lib/portfolio.ts`'s
 `rate_reset_trigger` field) — the LLM reports what's already computed for
 this one trigger, it doesn't reason about the dates itself.
 
+**Fed-event and inflation-print got a narrower, different fix as of
+2026-08-26, not the same one as rate-reset.** A real chat-generated report
+was observed still showing "Fed-event trigger — July FOMC — FIRED" with
+nothing that would have advanced it to September's meeting — the specific
+event/date each of these two triggers refers to had never been anything
+more than hand-typed prose in a gitignored local file, with no mechanism
+rolling it forward once the current occurrence passed. Unlike rate-reset,
+this is **not** a fired/pending binary — an FOMC meeting has no "waiting
+period" the way a declared rate does. Instead, because FOMC meeting dates
+and CPI release dates are published on a fixed public schedule (unlike a
+discretionary declared rate), *which specific meeting/release is currently
+relevant* is now computed deterministically
+(`mcp_server/src/lib/economicCalendar.ts`'s `computeFedEventTrigger()`/
+`computeInflationPrintTrigger()`, exposed via `get_trigger_status`'s
+`fed_event_trigger`/`inflation_print_trigger` fields): `current_target_date`/
+`current_target_label` identify the most recent past occurrence (whose
+outcome may still need qualitative assessment), and `next_target_date`/
+`next_target_label` identify what to watch next — so the target rolls
+forward automatically instead of depending on a human to keep editing prose.
+The qualitative read itself (hawkish/dovish, beat/miss) stays 100%
+LLM-judged, unchanged. If `calendar_needs_update` is true, the hardcoded
+calendar has run past its last known date and needs manual maintenance (see
+that file's own header comment for the source URLs and update cadence) —
+this is flagged explicitly rather than silently returning a stale date; the
+Fed's own 2027 FOMC dates are marked tentative for the same reason (only
+confirmed at the meeting immediately preceding each one), and 2027 CPI
+dates are omitted entirely because BLS has not published them yet, not
+because of an oversight. **Earnings-guidance is not given this
+treatment** — exact earnings report dates vary by company and aren't
+published on a fixed public schedule far in advance, so it stays entirely
+an LLM judgment call (see `project-instructions.md`'s trigger re-check
+step), the same treatment already working well for ad-hoc catalysts like a
+Fed Chair's first Jackson Hole keynote.
+
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 
 - VIX below 18 in an elevated-macro-risk regime = flag complacency (Tier 1 series, informational use)
