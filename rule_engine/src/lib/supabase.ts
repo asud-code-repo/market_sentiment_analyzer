@@ -107,6 +107,15 @@ export interface CrashCheckInsert {
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
   recovery_confirmed_date: string | null;
+  // Statistical Hazard Model (10% drawdown target, added 2026-08-26) —
+  // recomputed fresh every classify() run from live data, never carried
+  // forward from a prior row (unlike sp500_trough/recovery_confirmed
+  // above), so LatestSnapshotRow/getLatestCrashCheck's select string
+  // deliberately does NOT need these fields added.
+  hazard_10pct_raw_pct: number | null;
+  hazard_10pct_calibrated_pct: number | null;
+  hazard_10pct_band: "LOW" | "TRANSITIONING" | "HIGH" | null;
+  hazard_10pct_as_of: string | null;
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {

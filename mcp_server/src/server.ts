@@ -54,7 +54,10 @@ server.registerTool(
       "as the authorizing number, and red_count/pending indicators as context for what's building. Check " +
       "data_freshness.is_fresh before proceeding — if false, the daily GitHub Action ingestion hasn't run " +
       "yet today (or failed), and this panel is a stale prior-day snapshot; stop and tell the user instead " +
-      "of analyzing it as if it were current.",
+      "of analyzing it as if it were current. Also includes hazard_model_10pct, a separate rule-engine-" +
+      "computed statistical estimate — not part of the 3-of-6 wave-authorization gate and not the same " +
+      "thing as your own qualitative crash-probability judgment (see write_snapshot); report its band, " +
+      "not a re-derived percentage.",
   },
   async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -88,6 +91,22 @@ server.registerTool(
       sp500_level: latest.sp500_level,
       sp500_ath: latest.sp500_ath,
       sp500_ath_date: latest.sp500_ath_date,
+      hazard_model_10pct: {
+        calibrated_pct: latest.hazard_10pct_calibrated_pct,
+        band: latest.hazard_10pct_band,
+        raw_pct: latest.hazard_10pct_raw_pct,
+        as_of: latest.hazard_10pct_as_of,
+        signal:
+          "Statistical hazard model (walk-forward validated, isotonic-calibrated) estimating " +
+          "P(S&P drawdown reaches >=10% from ATH within ~21 trading days | not already past it). " +
+          "This is rule-engine-computed and calibrated — genuinely different from crash_probability_pct, " +
+          "which is 100% LLM judgment (see write_snapshot). Report the BAND, not the raw percentage — " +
+          "the calibration curve is steppy with two wide flat plateaus, so small differences in the raw " +
+          "score inside a plateau are not meaningfully different probabilities. Never blend this number " +
+          "with your own crash-probability estimate or treat agreement/disagreement between them as " +
+          "validating either one. null fields mean the model temporarily failed to compute this run " +
+          "(e.g. a transient gap in one input series) — treat as unavailable, not as a reading of zero.",
+      },
     });
   },
 );

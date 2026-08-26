@@ -590,6 +590,76 @@ version now).
 
 ---
 
+## Statistical Hazard Model (10% Drawdown)
+
+**What it estimates**: P(S&P drawdown reaches ≥10% from its all-time-high
+within ~21 trading days), conditional on not already being past that
+threshold — a "is a fresh correction about to start" read, not "how deep is
+the current one." Computed once daily by `rule_engine/src/hazardModel.ts`,
+alongside the 6-indicator panel. **This is rule-engine-owned and
+deterministic, the same way the panel above is** — contrast with the
+"Crash-Probability Scoring Methodology" section directly below, which
+documents that `crash_probability_pct` is 100% LLM judgment. The two numbers
+measure different things and are never meant to be blended, averaged, or
+treated as validating one another.
+
+**Methodology**: a logistic regression over 32 features (FRED macro/market
+levels + their 7/28-calendar-day deltas, plus a derived 2s10s curve spread
+and 20-day realized volatility) — walk-forward validated with an expanding
+window, leave-one-crisis-out across the 5 real ≥20%-drawdown episodes since
+1993 (dot-com, GFC, Dec 2018, COVID, 2022), then recalibrated with isotonic
+regression (stratified 5-fold on the pooled out-of-sample predictions) after
+the raw model was found miscalibrated. An episode-level block bootstrap
+(resampling whole crises, not individual days — daily observations inside
+one crisis aren't independent) confirmed a real, non-noise edge over a naive
+base-rate guess specifically for this 10% target.
+
+**A companion 20%-drawdown target was tested and explicitly shelved** — its
+bootstrap confidence interval spanned zero (given only 4 usable real
+episodes for that deeper threshold), meaning it couldn't be statistically
+distinguished from a naive guess. Not shipped in any form. If more real
+crises accumulate over time, it's worth revisiting, not before.
+
+**Why it's shown as a band, not a percentage**: the isotonic calibration
+curve is steppy, not smooth — two wide flat plateaus (~22-24% for any raw
+model score below ~15%, ~93% for any raw score from ~26% up to ~83%), with
+almost all real differentiation packed into the narrow 15-26% raw-score
+band between them. Displaying a precise-looking percentage would overstate
+how finely this model can actually discriminate. Bands (on the calibrated
+probability): **LOW** <35%, **TRANSITIONING** 35-90%, **HIGH** ≥90% —
+chosen to align with the plateau structure, not evenly spaced, and
+deliberately not styled with the panel's green/amber/red convention (see
+Formatting Requirements below) since this isn't a gating status.
+
+**Known production approximation**: the research validated this model using
+5-trading-day/20-trading-day deltas (SPY's own trading calendar). Production
+approximates these as **7 and 28 calendar days** instead, matching this
+system's own pre-existing delta convention (see "Delta standard" in
+Formatting Requirements) rather than building trading-day-aware lookback
+logic that exists nowhere else in this codebase. This is a deliberate,
+flagged divergence from the exact research methodology, not a silent one —
+worth remembering if this model's live behavior is ever compared directly
+against the original backtest numbers.
+
+**Credit-spread proxy**: uses `BAA10Y` (Moody's Baa − 10yr Treasury spread)
+rather than the production HY OAS series (`BAMLH0A0HYM2`), because the
+latter has no usable history before 2023-07-11 — nowhere near enough to
+validate against any of the 5 real historical crises this model was trained
+and tested on. `BAA10Y` is a different economic object (an investment-grade
+spread, not a junk-grade one) and a reasonable, not exact, substitute.
+
+**Where it's surfaced**: `get_indicator_panel` (the `hazard_model_10pct`
+field) and the dashboard's "Statistical Hazard Model" card, placed
+separately from the crash-probability meter, never adjacent to or blended
+with it. **Where it deliberately is NOT used**: it is not part of the 3-of-6
+wave-authorization gate (that gate's exact six inputs are fixed — see the
+Contextual Indicators section's own non-goal above), and it is not an input
+to Claude's `write_snapshot` synthesis. `null` fields mean the model
+temporarily failed to compute that run (e.g. a transient gap in one input
+series) — treat as unavailable, never as a reading of zero.
+
+---
+
 ## Crash-Probability Scoring Methodology (DEFERRED — draft, not implemented)
 
 > **Status as of 2026-07-11:** this section was originally written on the

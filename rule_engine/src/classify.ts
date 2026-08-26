@@ -1,6 +1,7 @@
 import { getLatestDataPoint, getLatestCrashCheck, insertCrashCheck } from "./lib/supabase.js";
 import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import { computeDivergences } from "./divergence.js";
+import { gatherHazardFeatures, computeHazardProbability, type HazardResult } from "./hazardModel.js";
 import {
   bandVix,
   bandHySpreadBps,
@@ -83,6 +84,29 @@ export async function classify(): Promise<void> {
   const waveAuthorized = isWaveAuthorized(confirmedRedCount);
 
   const divergenceFlags = await computeDivergences();
+
+  // Statistical Hazard Model (10% drawdown target) — see
+  // reference_docs/rules/crash-check-rules.md "Statistical Hazard Model".
+  // Additive, non-gating cross-check: NOT part of the 3-of-6 wave-
+  // authorization gate above, and never blended with crash_probability_pct
+  // (which is 100% LLM judgment). Wrapped in try/catch deliberately, unlike
+  // the hard-throw requireLatest() convention for the 6 core indicators —
+  // those gate real deployment decisions and must never silently go stale;
+  // a transient gap in one of the hazard model's own input series should
+  // degrade to null fields, not block the core panel refresh.
+  let hazard: HazardResult | null = null;
+  try {
+    const hazardFeatures = await gatherHazardFeatures({
+      vixValue: vix.value,
+      dgs10Value: treasury10y.value,
+      sahmValue: sahmRule.value,
+      drawdownPctLive: drawdown,
+      anchorDate: sp500.observation_date,
+    });
+    hazard = computeHazardProbability(hazardFeatures);
+  } catch (err) {
+    console.error("hazardModel: failed to compute, nulling out this run's hazard fields:", err);
+  }
 
   // Stage 4 recovery tracking (crash-check-rules.md "Recovery Signal and
   // 6-Month Transition", added 2026-08-16 — previously pure prose, no code).
@@ -167,8 +191,13 @@ export async function classify(): Promise<void> {
     sp500_trough_date: sp500TroughDate,
     recovery_confirmed: recoveryConfirmed,
     recovery_confirmed_date: recoveryConfirmedDate,
+    hazard_10pct_raw_pct: hazard ? Math.round(hazard.raw_probability * 10000) / 100 : null,
+    hazard_10pct_calibrated_pct: hazard ? Math.round(hazard.calibrated_probability * 10000) / 100 : null,
+    hazard_10pct_band: hazard?.band ?? null,
+    hazard_10pct_as_of: hazard ? sp500.observation_date : null,
     raw_source_data: {
       vix, hySpread, sp500, sp500Ath, treasury10y, sahmRule,
+      hazard_model_raw_probability: hazard?.raw_probability ?? null,
       note: "fed_pivot_signal and warsh_* fields carried forward from prior row — not derived here",
     },
   });
@@ -178,7 +207,8 @@ export async function classify(): Promise<void> {
       `Drawdown=${spDrawdownColor}, 10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
       `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}. ` +
       `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
-      `Recovery confirmed: ${recoveryConfirmed}.`,
+      `Recovery confirmed: ${recoveryConfirmed}. ` +
+      `Hazard model (10% target): ${hazard ? `${hazard.band} (${(hazard.calibrated_probability * 100).toFixed(1)}% calibrated)` : "unavailable this run"}.`,
   );
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);

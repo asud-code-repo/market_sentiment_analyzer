@@ -10,13 +10,13 @@ import { supabase, getLatestDataPoint } from "./supabase.js";
  * MCP-server-side get_series_deltas remains the one for ad-hoc 3-day/7-day
  * queries from chat.
  */
-function subtractDays(dateStr: string, days: number): string {
+export function subtractDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
 }
 
-async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<number | null> {
+export async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<number | null> {
   const { data, error } = await supabase
     .from("data_points")
     .select("value")
@@ -53,4 +53,28 @@ export async function computeSeriesDelta7d(seriesId: string): Promise<SeriesDelt
     value: round(latest.value * scale),
     delta_7d: v7 !== null ? round((latest.value - v7) * scale) : null,
   };
+}
+
+/**
+ * N-calendar-day delta anchored to a caller-supplied date/value, rather than
+ * re-fetching "latest" independently per series (computeSeriesDelta7d's own
+ * behavior, left unchanged above for divergence.ts). hazardModel.ts needs
+ * every one of its 32 features anchored to the SAME date
+ * (sp500.observation_date) — re-deriving "latest" per series here could
+ * silently drift across features that update on different calendar days.
+ * Throws (does not return null) on missing history — a hazard feature
+ * computed from a silently-missing delta would be wrong, not just
+ * incomplete; see hazardModel.ts's own fail-loud convention.
+ */
+export async function computeSeriesDeltaAsOf(
+  seriesId: string,
+  anchorDate: string,
+  anchorValue: number,
+  days: number
+): Promise<number> {
+  const past = await getValueOnOrBefore(seriesId, subtractDays(anchorDate, days));
+  if (past === null) {
+    throw new Error(`computeSeriesDeltaAsOf: no historical data_point for "${seriesId}" ${days}d before ${anchorDate}`);
+  }
+  return Math.round((anchorValue - past) * 100000) / 100000;
 }

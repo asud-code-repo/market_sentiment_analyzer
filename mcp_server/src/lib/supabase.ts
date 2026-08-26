@@ -85,6 +85,14 @@ export interface CrashCheckRow {
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
   recovery_confirmed_date: string | null;
+  // Statistical Hazard Model (10% drawdown target, added 2026-08-26) — see
+  // reference_docs/rules/crash-check-rules.md. Rule-engine-computed and
+  // calibrated, genuinely different from crash_probability_pct above
+  // (100% LLM judgment) — never blend the two.
+  hazard_10pct_raw_pct: number | null;
+  hazard_10pct_calibrated_pct: number | null;
+  hazard_10pct_band: string | null;
+  hazard_10pct_as_of: string | null;
   created_at: string;
 }
 
@@ -314,6 +322,14 @@ export async function writeSnapshot(qualitative: {
     sp500_trough_date: latest.sp500_trough_date,
     recovery_confirmed: latest.recovery_confirmed,
     recovery_confirmed_date: latest.recovery_confirmed_date,
+    // Also rule-engine-owned (hazardModel.ts, classify.ts) — carried forward
+    // for the same reason as divergence_flags/sp500_trough above: recomputed
+    // fresh every classify() run, not something Claude judges or should
+    // silently drop on a full chat-triggered write_snapshot call.
+    hazard_10pct_raw_pct: latest.hazard_10pct_raw_pct,
+    hazard_10pct_calibrated_pct: latest.hazard_10pct_calibrated_pct,
+    hazard_10pct_band: latest.hazard_10pct_band,
+    hazard_10pct_as_of: latest.hazard_10pct_as_of,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,

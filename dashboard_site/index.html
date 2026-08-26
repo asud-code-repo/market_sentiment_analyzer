@@ -26,6 +26,7 @@
     --critical:       #d03b3b;
     --critical-bg:    #fbe7e6;
     --neutral-blue:   #2a78d6;
+    --neutral-blue-bg:#e7f0fc;
     --line-color:     #2a78d6;
     --meter-track:    #e1e0d9;
     --wave-shade:     rgba(208,59,59,0.10);
@@ -46,6 +47,7 @@
       --critical:       #e66767;
       --critical-bg:    #2c1211;
       --neutral-blue:   #3987e5;
+      --neutral-blue-bg:#132537;
       --line-color:     #3987e5;
       --meter-track:    #2c2c2a;
       --wave-shade:     rgba(230,103,103,0.14);
@@ -96,6 +98,7 @@
   .pill.warning { background: var(--warning-bg); color: var(--warning); }
   .pill.critical { background: var(--critical-bg); color: var(--critical); }
   .pill.muted { background: var(--grid); color: var(--text-muted); }
+  .pill.info { background: var(--neutral-blue-bg); color: var(--neutral-blue); }
 
   .meter-track { position: relative; height: 10px; border-radius: 999px; background: var(--meter-track); margin: 14px 0 8px; overflow: hidden; }
   .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
@@ -623,6 +626,45 @@ function renderDivergenceFlags(flags) {
   `;
 }
 
+// Statistical Hazard Model (10% drawdown target) — see crash-check-rules.md.
+// Deliberately a separate card from probSection's discretionary crash-
+// probability meter above, not adjacent to or blended with it: this number
+// is rule-engine-computed and walk-forward validated; that one is 100% LLM
+// judgment. Displayed as a BAND, not a precise percentage — the underlying
+// isotonic calibration curve is steppy with two wide flat plateaus, so nearby
+// raw scores inside one plateau aren't meaningfully different probabilities.
+const HAZARD_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Transitioning", HIGH: "High" };
+// Deliberately non-RAG for all three bands (info/muted only, never
+// good/warning/critical) — this is a different signal system from the
+// 6-indicator gate, and reusing RAG colors here risks a HIGH reading being
+// mistaken for a gating RED alert, exactly what crash-check-rules.md's
+// Formatting Requirements warns against repurposing status colors for.
+const HAZARD_BAND_PILL = { LOW: "muted", TRANSITIONING: "info", HIGH: "info" };
+
+function renderHazardModel(row) {
+  if (row.hazard_10pct_band == null) {
+    return `
+      <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
+      <p class="loading">Unavailable this run (a required input series was temporarily missing) — not a reading of zero.</p>
+    `;
+  }
+  return `
+    <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
+    <div class="indicator notable">
+      <div class="notable-tag">● Rule-engine computed, calibrated — not the discretionary estimate above</div>
+      <div class="value"><span class="pill ${HAZARD_BAND_PILL[row.hazard_10pct_band] || "muted"}">${HAZARD_BAND_LABELS[row.hazard_10pct_band] || row.hazard_10pct_band}</span></div>
+      <div class="signal">Calibrated ${row.hazard_10pct_calibrated_pct}% (raw model output ${row.hazard_10pct_raw_pct}%) as of ${row.hazard_10pct_as_of}.</div>
+      <div class="indicator-info">
+        Walk-forward-validated, isotonic-calibrated logistic model estimating P(S&amp;P drawdown reaches
+        &ge;10% from ATH within ~21 trading days | not already past it). Shown as a band, not a precise
+        percentage, because the calibration curve has two wide flat plateaus — nearby raw scores inside
+        one plateau aren't meaningfully different probabilities. Not part of the 3-of-6 wave-authorization
+        gate, and not meant to agree or be averaged with the crash-probability estimate above.
+      </div>
+    </div>
+  `;
+}
+
 function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
@@ -734,6 +776,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
       </div>
       ${scenarioSection}
       ${renderDivergenceFlags(row.divergence_flags)}
+      ${renderHazardModel(row)}
       ${triggerSection}
       ${notesSection}
     </div>
@@ -916,7 +959,7 @@ if (isStandalonePwa) {
 async function main() {
   try {
     ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,divergence_flags&order=run_at.asc&limit=1000",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of&order=run_at.asc&limit=1000",
     );
 
     if (ALL_ROWS.length === 0) {

@@ -109,6 +109,19 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // this as its own FRED series — verified via search,
                                           // it's distributed only via their own site — so this is
                                           // computed from the formula, not scraped.
+
+  // 2026-08-26 addition — required feature for the Statistical Hazard Model
+  // (see reference_docs/rules/crash-check-rules.md "Statistical Hazard
+  // Model"). Previously pulled only via a one-off research script hitting
+  // FRED's public CSV endpoint during model development; never in the live
+  // pipeline until now. FRED history available back to ~1996 — a single
+  // backfill run captures it in full.
+  { id: "BAA10Y", unit: "percent" }, // Moody's Seasoned Baa Corporate Bond Yield minus 10yr
+                                      // Treasury — the credit-spread proxy used in place of the
+                                      // production ICE BofA HY OAS series (BAMLH0A0HYM2), which
+                                      // has no usable history before 2023-07-11 and so couldn't
+                                      // be used to train/validate the hazard model against real
+                                      // historical crises.
 ];
 
 interface FredObservation {
