@@ -397,6 +397,28 @@
     </div>
   </div>
 
+  <!-- STATISTICAL HAZARD MODEL — rule-engine-computed and calibrated
+       (hazard_10pct_band/calibrated_pct/raw_pct/as_of from get_indicator_panel),
+       genuinely different from the discretionary crash-probability meter
+       above. Deliberately NOT colored good/warning/critical — this is a
+       different signal system from the 6-gate panel, and RAG-coloring it
+       risks a HIGH reading being mistaken for a gating RED alert. Use the
+       neutral .cc-pill.info badge for the band instead, same convention as
+       the live dashboard's card. Show the band as the headline value, not
+       a bare percentage — the underlying calibration curve is steppy with
+       wide flat plateaus, so the percentage alone overstates precision.
+       Report null fields as "unavailable this run," never as a reading of
+       zero. -->
+  <div class="cc-card">
+    <p class="cc-eyebrow">Statistical Hazard Model — 10% Drawdown (separate from crash-probability estimate above)</p>
+    <div class="cc-indicator neutral cc-stat">
+      <div class="label">P(≥10% drawdown from ATH within ~21 trading days | not already past it)</div>
+      <div class="value"><span class="cc-pill info">LOW</span></div>
+      <div class="context">Calibrated 23.66% (raw model output 4.16%) — as of Aug 25</div>
+      <div class="signal">Walk-forward-validated, isotonic-calibrated — not part of the 3-of-6 wave-authorization gate, and not meant to agree or be averaged with the crash-probability estimate above.</div>
+    </div>
+  </div>
+
   <!-- KEY MACRO INDICATORS (stat tile grid). Warsh classification carries
        the judgment-call tag — it's a manual/LLM read on Fed communication,
        not a rule-engine output, same as the crash-type diagnosis above. -->
