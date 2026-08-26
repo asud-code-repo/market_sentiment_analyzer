@@ -65,6 +65,23 @@ full history of what was built and how lives in project memory, not here.
   remembering as a pattern: prose instructions for anything with one
   objectively correct answer are the wrong tool, even when very explicit.
 
+- ~~Fed-event / inflation-print trigger staleness~~ — **built 2026-08-26.**
+  A live report was observed still showing "Fed-event trigger — July FOMC —
+  FIRED" with nothing that would have rolled it to September's meeting. Not
+  the same fix as rate-reset (no fired/pending binary — an FOMC meeting has
+  no "waiting period"): `mcp_server/src/lib/economicCalendar.ts` deterministically
+  resolves *which* meeting/release is currently relevant from a verified
+  FOMC/CPI calendar (sourced directly from federalreserve.gov/bls.gov), exposed
+  via `get_trigger_status`'s new `fed_event_trigger`/`inflation_print_trigger`
+  fields; the qualitative read (hawkish/dovish, beat/miss) stays fully
+  LLM-judged. `calendar_needs_update` fires explicitly once the hardcoded
+  calendar runs out (2027 CPI dates aren't published yet, so this will
+  trip eventually by design, not by oversight) — needs annual manual
+  maintenance when the Fed/BLS publish new dates. Earnings-guidance
+  deliberately not given this treatment (no fixed public schedule to hang
+  a calendar on) — stays qualitative, with an instruction-level nudge to
+  roll forward each quarter.
+
 - **Market-internals / breadth proxy via relative ETF performance.**
   Raw breadth data (% of S&P above 200dma, advance/decline line) has no
   free source — confirmed. But relative price performance between publicly
@@ -128,42 +145,69 @@ full history of what was built and how lives in project memory, not here.
 
 ## The hazard-model / regime-detection work (the big one)
 
-Still the single largest deferred item — a two-layer hazard-probability
-model + regime detection + expected-utility deployment policy, replacing
-the "3 of 6 RED" gate and giving the LLM-judged crash probability an actual
-calibration standard (event/horizon definitions, expanding-window OOS
-testing, reliability curves, Brier score, block-bootstrap CIs). Deliberately
-scoped as its own dedicated planning session, not attempted piecemeal.
-Reference material gathered so far, not yet acted on:
+~~The single largest deferred item~~ — **v1 built and live 2026-08-26**: a
+logistic-regression hazard model, `P(S&P drawdown reaches >=10% from ATH
+within ~21 trading days | not already past it)`. Walk-forward validated
+(expanding window, leave-one-crisis-out across dot-com/GFC/Dec-2018/COVID/
+2022), found miscalibrated, fixed with isotonic regression (stratified
+5-fold on pooled out-of-sample predictions), and confirmed via episode-level
+block-bootstrap CI to have a real edge over a naive base-rate guess for this
+target specifically. Hand-ported to TypeScript (`rule_engine/src/hazardModel.ts`,
+no live Python dependency — the architectural fork below is now resolved),
+computed daily alongside the 6-indicator panel, surfaced via
+`get_indicator_panel`'s `hazard_model_10pct` field and a dedicated dashboard
+card — deliberately non-gating and never blended with `crash_probability_pct`.
+Backtesting this against the *existing* rule engine first (Phase 0, per the
+tooling menu's own "highest priority" framing below) turned out to be
+genuinely valuable groundwork: it surfaced real gaps (Wave 3 essentially
+never fires outside GFC-style panics; the 3-of-6 gate can lag a real crisis
+by months) that fed directly into the model's design, and confirmed the
+existing wave logic has strong precision even where its timing is weak.
 
-- **Tooling menu** (external review, 2026-08-17): `vectorbt` (backtesting
-  the current 3-of-6/confirmation/wave rules against real history — the
-  "highest priority" per that review, and it's right that this is more
-  urgent than any new model), `sktime` (walk-forward validation, model
-  comparison), `hmmlearn` (a small 4-5 state Gaussian HMM for regime
-  probabilities — lighter-weight starting point than a full Bayesian
-  dynamic factor model), Merlion and Kats (multivariate anomaly detection —
-  both real but both research-lab releases with slowed maintenance; verify
-  current activity before depending on either), Chronos (Amazon's
-  pretrained time-series models — correctly scoped as an anomaly/forecast-
-  range feature only, never a direct price-forecast-to-allocation path).
-- **A real architectural fork that needs deciding at that session, not
-  assumed**: a one-time offline Python research script whose fitted
-  coefficients get ported into TS (the original decision, no live Python
-  dependency in production) vs. an ongoing scheduled Python service
-  producing versioned advisory outputs consumed by the TS system (a
-  meaningfully bigger operational commitment — new runtime, scheduling,
-  hosting, monitoring). The tooling menu above assumes the second without
-  flagging that it's a different choice than what was originally decided.
+**Still genuinely open, now with more specific shape than before:**
+
+- **A companion 20%-drawdown target was tested and explicitly shelved** —
+  its bootstrap CI spanned zero (only 4 usable real episodes for that
+  deeper threshold), so it couldn't be distinguished from a naive guess.
+  Not shipped in any form. Revisit only if more real crises accumulate.
+- **Point-in-time data gap** — the model trains/runs on latest-revised FRED
+  values, not the real-time vintage that would actually have been knowable
+  historically (CPI/unemployment/retail sales get revised after initial
+  release). Known limitation, not fixed. Would need FRED's separate ALFRED
+  vintage API.
+- **Calendar-day vs. trading-day delta approximation** — production uses
+  7/28 calendar days for the model's velocity features instead of the
+  research's exact 5/20 trading days, to match this system's own existing
+  delta convention. Flagged, not expected to matter much in practice, never
+  independently verified against the trading-day version live.
+- **Crash-probability presentation: numeric % vs. categorical** — this
+  question (previously an abstract external-review suggestion) now has
+  real evidence behind one side of it: the hazard model's own isotonic
+  calibration curve is steppy with two wide flat plateaus, so its output is
+  *already* shown banded (LOW/TRANSITIONING/HIGH) rather than as a raw %,
+  for exactly the categorical-over-precision reasoning the earlier review
+  proposed. Whether `crash_probability_pct` (still 100% LLM judgment)
+  should eventually get the same treatment is still an open, undecided
+  question — the hazard model didn't replace it, just sits alongside it.
+- **Wave 2/3 threshold calibration** — still open, but no longer just a
+  hunch: the Phase 0 backtest gave concrete numbers (Wave 3 fired in only
+  1 of 5 real episodes, missing the single worst crash in the dataset
+  because VIX-and-drawdown-jointly doesn't fit a slow grinding bear). A
+  real, evidence-backed target for recalibration, not yet acted on.
+- **Deployment-outcome backtesting is still SPY-proxy only** — tested
+  whether wave *timing* beats DCA/all-at-once (it does, clearly), but not
+  against the actual defensive fund mix (Healthcare/REIT/Intl/TIPS/Energy/
+  Gold) — no free historical data for those funds has been pulled yet.
+- **Tooling menu items not used in v1** (`vectorbt`, `sktime`, `hmmlearn`,
+  Merlion/Kats, Chronos) — the actual build used plain `scikit-learn`
+  (`LogisticRegression` + `IsotonicRegression`), simpler than the original
+  menu assumed. Worth revisiting only if a future iteration needs proper
+  regime-detection (`hmmlearn`) or more rigorous walk-forward tooling
+  (`sktime`) than the hand-rolled expanding-window loop used here.
 - **A 3rd recession-probability model (Cleveland Fed's yield-curve model)**
-  was suggested as an additional cross-check alongside the two already
-  added (Chauvet-Piger, NY Fed Estrella-Mishkin). Tension worth resolving
-  deliberately: when the 2nd model was added, the rules doc itself noted
-  "adding more variables tends to overfit out-of-sample, worth remembering
-  before adding a 3rd/4th competing probability model here."
-- Also see "Wave 2/3 threshold calibration" and "Crash-probability
-  presentation" above — both belong with this work, not as standalone
-  fixes.
+  — still an open tension, unresolved: adding more competing probability
+  cross-checks risks exactly the overfitting the rules doc already warns
+  about when the 2nd model was added.
 
 ## Process & content
 
@@ -171,9 +215,10 @@ Reference material gathered so far, not yet acted on:
   significantly overdue.** Originally set for ~2026-07-18; a large amount
   has landed since, including the entire 2026-08-15/16/17 batch (wave
   deployment fixes, honest relabeling, divergence expansion, recovery
-  detection, the rate-reset trigger saga, two new indicators). Each piece
-  validated once at build/verification time, not yet observed over a real
-  stretch of repeated daily runs in practice.
+  detection, the rate-reset trigger saga, two new indicators) and now the
+  2026-08-26 batch (the hazard model v1, the Fed-event/inflation-print
+  trigger fix). Each piece validated once at build/verification time, not
+  yet observed over a real stretch of repeated daily runs in practice.
 
 - **BrokerageLink watchlist ticker selection has no documented rationale.**
   The 7 tickers each have a one-line theme tag but no written reasoning for

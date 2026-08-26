@@ -422,6 +422,14 @@ rather than implementation maturity." Its findings, and what's happened since:
   a stale note for 3 consecutive reports after the actual rate was updated locally).
   Fixed by making trigger re-verification an explicit required step in
   `project-instructions.md` rather than a passive "only if you happen to notice" one.
+  A related but distinct staleness bug surfaced later (2026-08-26): the Fed-event and
+  inflation-print triggers' *target date itself* (which FOMC meeting/CPI release is
+  "current") had no rollover mechanism at all — a live report kept showing "July FOMC"
+  after it should have advanced to September's meeting. That one got the deeper,
+  code-level fix (`mcp_server/src/lib/economicCalendar.ts`, see the rules doc below)
+  rather than another instructions-level nudge, since FOMC/CPI dates are publicly
+  scheduled facts, not judgment calls — the same category of problem the rate-reset
+  trigger already illustrated.
 - **No rule-state/workflow contract test suite exists.** Verification for every change
   in this project so far has been `tsc --noEmit` plus manual/throwaway scripts — real,
   but not a durable regression suite for threshold boundaries, confirmation timing, or
@@ -438,13 +446,20 @@ rather than implementation maturity." Its findings, and what's happened since:
   above); the month-by-month glide-path execution state (which step you're actually
   on) is still manual, no `wave_deployment_state.yaml`-equivalent exists for it yet.
 - **The full hazard-probability model / regime detection / expected-utility deployment
-  policy** the investment-model review called for (see below) — not started. This is the
-  single largest remaining item, deliberately deferred to a Python research pipeline
-  (statistical tooling this repo doesn't have) with real backtest data, rather than
-  attempted piecemeal. Two external, published, backtested recession-probability models
-  (Chauvet-Piger via FRED, and the NY Fed's Estrella-Mishkin formula computed locally)
-  were added 2026-08-17 as calibration cross-checks in the meantime — they inform the
-  narrative, they do not calibrate this system's own crash-probability estimate.
+  policy** the investment-model review called for (see below) — **v1 of the forecast
+  layer shipped 2026-08-26** (see "Statistical Hazard Model" in the rules doc below):
+  a walk-forward-validated, isotonic-calibrated logistic model for the 10%-drawdown
+  target, hand-ported to TypeScript, live via `get_indicator_panel` and a dedicated
+  dashboard card. Built via an offline Python research pipeline as originally planned,
+  with real backtest data (dot-com/GFC/Dec-2018/COVID/2022). Still not started: regime
+  detection, the expected-utility deployment-policy layer, and the companion
+  20%-drawdown target (tested, explicitly shelved — its bootstrap CI couldn't be
+  distinguished from a naive guess given only 4 usable real episodes). Two external,
+  published, backtested recession-probability models (Chauvet-Piger via FRED, and the
+  NY Fed's Estrella-Mishkin formula computed locally) were added 2026-08-17 as
+  calibration cross-checks separately — they inform the narrative, they do not
+  calibrate this system's own crash-probability estimate, and are a different thing
+  from the hazard model itself.
 - **BrokerageLink watchlist ticker selection** still has no documented "why this ticker"
   rationale beyond a one-line theme tag.
 - **Divergence-detection remaining scope**: rolling-correlation infrastructure and a
@@ -468,7 +483,7 @@ detail on what shipped):
 | 4. Determinism ≠ validity (2-day confirmation false negatives, blanket "never sell," fixed 6-month recovery) | 2-day confirmation investigated and documented (not changed); "never sell" reviewed and confirmed already-handled; 6-month recovery *detection* now built (2026-08-16) — execution tracking still deferred |
 | 5. Missing indicators (valuation, breadth, credit structure, liquidity, growth, inflation, global transmission, event risk) | Liquidity, credit-structure, and dollar-transmission gaps partially filled; valuation partially filled (real-yield leg only); breadth, CDS, cross-currency basis, dealer balance sheets, and true global PMI confirmed to have no free data source — documented as real gaps. Two external published recession-probability models added 2026-08-17 as citations (not a fix to this system's own calibration) |
 | 6. Six named error modes | All still live — none directly targeted yet |
-| 7. Two-layer hazard model + expected-utility deployment policy | Not started — the deferred follow-up |
+| 7. Two-layer hazard model + expected-utility deployment policy | v1 of the forecast layer built and live 2026-08-26 (walk-forward-validated, isotonic-calibrated logistic model, 10%-drawdown target only — see "Statistical Hazard Model" below); the expected-utility deployment/regime-detection layer and the shelved 20%-target companion remain not started |
 | 8. Calibration standard (OOS testing, reliability curves, Brier score, block bootstrap) | Doesn't exist — the 2020 confirmation-window check was a one-off spot-check, not this infrastructure |
 | Bottom line: relabel honestly as a stress-monitoring dashboard | **Done** (2026-08-15) |
 
@@ -954,12 +969,62 @@ actually on.
 
 ## Personal Decision Trigger Types (structure, not live dates)
 
-The rule engine evaluates each trigger's status (`fired` / `approaching` /
-`pending`) against current dates and data, and writes the result into
-`crash_checks.trigger_status`. Trigger definitions themselves (dates, exact
-thresholds) belong in the live master-prompt doc / a config the user updates —
-treat the 4-trigger structure as: Fed-event trigger, inflation-print trigger,
-earnings-guidance trigger, and a rate-reset trigger tied to a stable-value fund.
+Four triggers: Fed-event, inflation-print, earnings-guidance, and a
+rate-reset trigger tied to a stable-value fund. Trigger definitions
+themselves (dates, exact thresholds) belong in the live master-prompt doc /
+a config the user updates.
+
+**Correcting an overstatement here as of 2026-08-17**: this section
+previously claimed "the rule engine evaluates each trigger's status... and
+writes the result into `crash_checks.trigger_status`" — checked against the
+actual code, that's not true for any of the four. `trigger_status` is never
+computed by `rule_engine`/`classify.ts`; it's either carried forward
+unchanged from the prior row or supplied by the LLM to `write_snapshot`. The
+first three genuinely need qualitative judgment (was the Fed's tone
+hawkish/dovish, did earnings guidance beat/miss) and stay LLM-judged for
+that reason. The **rate-reset trigger is the one exception**: it's a plain
+date comparison against locally-recorded portfolio data
+(`nyl_anchor_rate_through`), not a judgment call — after prose instructions
+asking the LLM to do that comparison itself repeatedly produced wrong
+results in practice (confirmed live, multiple reports in a row), it was
+made deterministic (`mcp_server/src/lib/portfolio.ts`'s
+`computeRateResetTriggerStatus()`, exposed via `get_portfolio_snapshot`'s
+`rate_reset_trigger` field) — the LLM reports what's already computed for
+this one trigger, it doesn't reason about the dates itself.
+
+**Fed-event and inflation-print got a narrower, different fix as of
+2026-08-26, not the same one as rate-reset.** A real chat-generated report
+was observed still showing "Fed-event trigger — July FOMC — FIRED" with
+nothing that would have advanced it to September's meeting — the specific
+event/date each of these two triggers refers to had never been anything
+more than hand-typed prose in a gitignored local file, with no mechanism
+rolling it forward once the current occurrence passed. Unlike rate-reset,
+this is **not** a fired/pending binary — an FOMC meeting has no "waiting
+period" the way a declared rate does. Instead, because FOMC meeting dates
+and CPI release dates are published on a fixed public schedule (unlike a
+discretionary declared rate), *which specific meeting/release is currently
+relevant* is now computed deterministically
+(`mcp_server/src/lib/economicCalendar.ts`'s `computeFedEventTrigger()`/
+`computeInflationPrintTrigger()`, exposed via `get_trigger_status`'s
+`fed_event_trigger`/`inflation_print_trigger` fields): `current_target_date`/
+`current_target_label` identify the most recent past occurrence (whose
+outcome may still need qualitative assessment), and `next_target_date`/
+`next_target_label` identify what to watch next — so the target rolls
+forward automatically instead of depending on a human to keep editing prose.
+The qualitative read itself (hawkish/dovish, beat/miss) stays 100%
+LLM-judged, unchanged. If `calendar_needs_update` is true, the hardcoded
+calendar has run past its last known date and needs manual maintenance (see
+that file's own header comment for the source URLs and update cadence) —
+this is flagged explicitly rather than silently returning a stale date; the
+Fed's own 2027 FOMC dates are marked tentative for the same reason (only
+confirmed at the meeting immediately preceding each one), and 2027 CPI
+dates are omitted entirely because BLS has not published them yet, not
+because of an oversight. **Earnings-guidance is not given this
+treatment** — exact earnings report dates vary by company and aren't
+published on a fixed public schedule far in advance, so it stays entirely
+an LLM judgment call (see `project-instructions.md`'s trigger re-check
+step), the same treatment already working well for ad-hoc catalysts like a
+Fed Chair's first Jackson Hole keynote.
 
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 
@@ -1056,6 +1121,76 @@ a regime-dependent 10yr-Treasury-vs-equities pair (its intended meaning
 genuinely differs by macro regime, so it needs the regime concept from the
 future hazard-model work to mean anything, not a naive non-regime-aware
 version now).
+
+---
+
+## Statistical Hazard Model (10% Drawdown)
+
+**What it estimates**: P(S&P drawdown reaches ≥10% from its all-time-high
+within ~21 trading days), conditional on not already being past that
+threshold — a "is a fresh correction about to start" read, not "how deep is
+the current one." Computed once daily by `rule_engine/src/hazardModel.ts`,
+alongside the 6-indicator panel. **This is rule-engine-owned and
+deterministic, the same way the panel above is** — contrast with the
+"Crash-Probability Scoring Methodology" section directly below, which
+documents that `crash_probability_pct` is 100% LLM judgment. The two numbers
+measure different things and are never meant to be blended, averaged, or
+treated as validating one another.
+
+**Methodology**: a logistic regression over 32 features (FRED macro/market
+levels + their 7/28-calendar-day deltas, plus a derived 2s10s curve spread
+and 20-day realized volatility) — walk-forward validated with an expanding
+window, leave-one-crisis-out across the 5 real ≥20%-drawdown episodes since
+1993 (dot-com, GFC, Dec 2018, COVID, 2022), then recalibrated with isotonic
+regression (stratified 5-fold on the pooled out-of-sample predictions) after
+the raw model was found miscalibrated. An episode-level block bootstrap
+(resampling whole crises, not individual days — daily observations inside
+one crisis aren't independent) confirmed a real, non-noise edge over a naive
+base-rate guess specifically for this 10% target.
+
+**A companion 20%-drawdown target was tested and explicitly shelved** — its
+bootstrap confidence interval spanned zero (given only 4 usable real
+episodes for that deeper threshold), meaning it couldn't be statistically
+distinguished from a naive guess. Not shipped in any form. If more real
+crises accumulate over time, it's worth revisiting, not before.
+
+**Why it's shown as a band, not a percentage**: the isotonic calibration
+curve is steppy, not smooth — two wide flat plateaus (~22-24% for any raw
+model score below ~15%, ~93% for any raw score from ~26% up to ~83%), with
+almost all real differentiation packed into the narrow 15-26% raw-score
+band between them. Displaying a precise-looking percentage would overstate
+how finely this model can actually discriminate. Bands (on the calibrated
+probability): **LOW** <35%, **TRANSITIONING** 35-90%, **HIGH** ≥90% —
+chosen to align with the plateau structure, not evenly spaced, and
+deliberately not styled with the panel's green/amber/red convention (see
+Formatting Requirements below) since this isn't a gating status.
+
+**Known production approximation**: the research validated this model using
+5-trading-day/20-trading-day deltas (SPY's own trading calendar). Production
+approximates these as **7 and 28 calendar days** instead, matching this
+system's own pre-existing delta convention (see "Delta standard" in
+Formatting Requirements) rather than building trading-day-aware lookback
+logic that exists nowhere else in this codebase. This is a deliberate,
+flagged divergence from the exact research methodology, not a silent one —
+worth remembering if this model's live behavior is ever compared directly
+against the original backtest numbers.
+
+**Credit-spread proxy**: uses `BAA10Y` (Moody's Baa − 10yr Treasury spread)
+rather than the production HY OAS series (`BAMLH0A0HYM2`), because the
+latter has no usable history before 2023-07-11 — nowhere near enough to
+validate against any of the 5 real historical crises this model was trained
+and tested on. `BAA10Y` is a different economic object (an investment-grade
+spread, not a junk-grade one) and a reasonable, not exact, substitute.
+
+**Where it's surfaced**: `get_indicator_panel` (the `hazard_model_10pct`
+field) and the dashboard's "Statistical Hazard Model" card, placed
+separately from the crash-probability meter, never adjacent to or blended
+with it. **Where it deliberately is NOT used**: it is not part of the 3-of-6
+wave-authorization gate (that gate's exact six inputs are fixed — see the
+Contextual Indicators section's own non-goal above), and it is not an input
+to Claude's `write_snapshot` synthesis. `null` fields mean the model
+temporarily failed to compute that run (e.g. a transient gap in one input
+series) — treat as unavailable, never as a reading of zero.
 
 ---
 
