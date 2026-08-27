@@ -829,6 +829,15 @@ matters for trend confirmation), explicitly labeled as such. Do not report a
 bare "delta vs prior check" with an unstated window — if checks run
 irregularly, compute both deltas off calendar days, not check-to-check gaps.
 
+**The delta log itself is persisted structured data, not just rendered
+prose (since 2026-08-27).** `write_snapshot`'s optional `delta_log` field
+(`{sign: "pos"|"neg", text}[]`) captures the same colored bulleted list
+already shown in the chat HTML artifact — previously this was only ever
+built live at render time, so the public dashboard could only show
+whatever unstructured prose ended up in `notes`, with no way to reconstruct
+the colored +/- list from it. `dashboard_site` now renders `delta_log`
+directly, using CSS that had sat unused since before this field existed.
+
 **Confidence and recency (applies everywhere a point estimate is shown):**
 - Every probability/point estimate carries a low-high range and an explicit
   Low/Medium/High persistence tag per the Signal Tiering escalation rule —

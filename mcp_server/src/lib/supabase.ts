@@ -79,6 +79,11 @@ export interface CrashCheckRow {
   warsh_hard_rules_active: boolean;
   trigger_status: unknown;
   notes: string | null;
+  // The colored +/- bulleted list already rendered live in the chat HTML
+  // artifact (dashboard-template.html's cc-delta-log) — previously never
+  // persisted, so dashboard_site could only show unstructured `notes` prose
+  // and couldn't reconstruct the same colored list. Added 2026-08-27.
+  delta_log: { sign: "pos" | "neg"; text: string }[] | null;
   raw_source_data: unknown;
   divergence_flags: DivergenceFlag[] | null;
   sp500_trough: number | null;
@@ -202,6 +207,10 @@ export async function writeSnapshot(qualitative: {
   scenario_bear_pct: number;
   scenario_crash_pct: number;
   notes: string;
+  // Same structured list already rendered in the HTML artifact's delta log
+  // (each {sign: "pos"|"neg", text}) — optional since a run with no prior
+  // full report to diff against (step 8) has nothing to build one from.
+  delta_log?: { sign: "pos" | "neg"; text: string }[];
   crash_type?: string | null;
   warsh_classification?: string | null;
   warsh_classification_date?: string | null;
@@ -340,6 +349,7 @@ export async function writeSnapshot(qualitative: {
     scenario_bear_pct: qualitative.scenario_bear_pct,
     scenario_crash_pct: qualitative.scenario_crash_pct,
     notes: qualitative.notes,
+    delta_log: qualitative.delta_log ?? null,
     crash_type: qualitative.crash_type ?? latest.crash_type,
     warsh_classification: qualitative.warsh_classification ?? latest.warsh_classification,
     warsh_classification_date: qualitative.warsh_classification_date ?? latest.warsh_classification_date,

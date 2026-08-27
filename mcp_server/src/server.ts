@@ -285,8 +285,12 @@ server.registerTool(
   {
     description:
       "Persists this run's qualitative synthesis (crash probability, scenario distribution, " +
-      "narrative notes) back to Supabase, combined with the current indicator panel/wave status " +
-      "from the latest rule-engine row. Do not include any personal dollar figures in `notes` — " +
+      "narrative notes, delta log) back to Supabase, combined with the current indicator panel/wave " +
+      "status from the latest rule-engine row. `delta_log` should be the same structured list of " +
+      "factors you're already rendering in the HTML artifact's colored delta log (each " +
+      "{sign: 'pos'|'neg', text}) — this was previously only ever rendered live and never persisted, " +
+      "which is why the public dashboard couldn't show it; omit it entirely on a run with no prior " +
+      "full report to diff against. Do not include any personal dollar figures in `notes` — " +
       "this is written to Supabase, which holds macro/rule state only.",
     inputSchema: {
       crash_probability_pct: z.number().min(0).max(100),
@@ -297,6 +301,14 @@ server.registerTool(
       scenario_bear_pct: z.number().min(0).max(100),
       scenario_crash_pct: z.number().min(0).max(100),
       notes: z.string(),
+      delta_log: z
+        .array(
+          z.object({
+            sign: z.enum(["pos", "neg"]),
+            text: z.string(),
+          }),
+        )
+        .optional(),
       crash_type: z.enum(["A_STAGFLATION", "B_RECESSION", "C_CREDIT", "D_AI_BUBBLE", "E_HYBRID"]).nullable().optional(),
       warsh_classification: z.enum(["HAWKISH", "MODERATE", "DOVISH", "PENDING"]).optional(),
       warsh_classification_date: z.string().optional(),
