@@ -14,27 +14,12 @@ full history of what was built and how lives in project memory, not here.
 
 ## Data & infrastructure
 
-- ~~30yr Treasury yield (`DGS30`)~~ — **built.** Had been ingested since
-  this system's first setup but never surfaced. Wired into
-  `get_context_indicators` and `dashboard_site` using the rules doc's
-  existing "above 5.0% = bond vigilante signal" threshold.
-
-- ~~Recent-grad unemployment indicator (`CGBD2024`)~~ — **built and live.**
-  Wired into the NVDA "AI recovery trough bet" thesis re-underwrite step.
-
-- ~~Wave deployment authorization, relative drawdown thresholds, cumulative
-  execution-aware deployment~~ — **built 2026-08-15.** `get_deployment_plan`
-  now requires both `wave_active` and `wave_authorized` (previously only
-  checked the former); wave triggers switched from fixed S&P levels
-  (6,200/5,600/4,800 — confirmed decaying, Wave 1's level had drifted from
-  ~-17% to ~-18.1% below ATH since being set) to ATH-relative drawdown %
-  (16/24/35), which doesn't decay; deployment is cumulative across waves
-  with local execution-state tracking (`wave_deployment_state.yaml`,
-  `record_wave_deployment`).
-
-- **Wave 2/3 threshold calibration — still genuinely open.** The relative-
-  drawdown fix above only fixed the *decay* problem, not whether 16/24/35%
-  + VIX 28/35/45 are the *right* bars. Backtested against real 2016–2026
+- **Wave 2/3 threshold calibration — still genuinely open.** Wave triggers
+  are ATH-relative drawdown % (16/24/35, paired with VIX 28/35/45) rather
+  than fixed nominal S&P levels, which fixed a *decay* problem (a fixed
+  level like "S&P ≤ 6,200" quietly means less over time as the index
+  itself rises) but not whether those specific bars are the *right* ones.
+  Backtested against real 2016–2026
   history: Wave 3 never fired in 2020 despite VIX peaking at 82 (drawdown
   missed the 35% bar by ~1pt); Wave 2 never fired in 2022 despite a real
   24%+ drawdown, because VIX never sustained above 35 in that "grinding"
@@ -43,44 +28,15 @@ full history of what was built and how lives in project memory, not here.
   everything else here, not a quick sign-off. Belongs with the hazard-model
   work below, not a standalone tweak.
 
-- ~~Cross-indicator divergence detection — reverse HY-vs-VIX direction~~ —
-  **built 2026-08-16** (`hy_widening_vix_calm`, the more concerning "credit
-  moves first" direction, previously missing). **Still open**: rolling-
+- **Cross-indicator divergence detection — still open**: rolling-
   correlation infrastructure, and a regime-dependent 10yr-vs-equities pair
   (its intended meaning genuinely differs by macro regime, so it needs the
   regime concept from the hazard-model work below to mean anything).
 
-- ~~Recovery-transition detection (Stage 4)~~ — **detection built
-  2026-08-16** (trough tracking, VIX-sustained-25-for-3-weeks, the 3-
-  criteria composite gate). **Still open**: the month-by-month execution
-  tracking (which glide-path step you're actually on) — no equivalent of
-  `wave_deployment_state.yaml`/`record_wave_deployment` exists for this yet.
-
-- ~~Rate-reset trigger reliability~~ — **built 2026-08-17, took 3 attempts.**
-  Two rounds of prose instructions asking the LLM to compare dates itself
-  both failed live (wrong field compared, then an accurate note paired with
-  a stale status anyway). Made fully deterministic: `write_snapshot` now
-  forcibly overwrites this one trigger's status/note server-side, matched
-  by name — no code path left where the LLM's interpretation matters. Worth
-  remembering as a pattern: prose instructions for anything with one
-  objectively correct answer are the wrong tool, even when very explicit.
-
-- ~~Fed-event / inflation-print trigger staleness~~ — **built 2026-08-26.**
-  A live report was observed still showing "Fed-event trigger — July FOMC —
-  FIRED" with nothing that would have rolled it to September's meeting. Not
-  the same fix as rate-reset (no fired/pending binary — an FOMC meeting has
-  no "waiting period"): `mcp_server/src/lib/economicCalendar.ts` deterministically
-  resolves *which* meeting/release is currently relevant from a verified
-  FOMC/CPI calendar (sourced directly from federalreserve.gov/bls.gov), exposed
-  via `get_trigger_status`'s new `fed_event_trigger`/`inflation_print_trigger`
-  fields; the qualitative read (hawkish/dovish, beat/miss) stays fully
-  LLM-judged. `calendar_needs_update` fires explicitly once the hardcoded
-  calendar runs out (2027 CPI dates aren't published yet, so this will
-  trip eventually by design, not by oversight) — needs annual manual
-  maintenance when the Fed/BLS publish new dates. Earnings-guidance
-  deliberately not given this treatment (no fixed public schedule to hang
-  a calendar on) — stays qualitative, with an instruction-level nudge to
-  roll forward each quarter.
+- **Recovery-transition detection (Stage 4) — still open**: the
+  month-by-month execution tracking (which glide-path step you're actually
+  on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
+  exists for this yet.
 
 - **Market-internals / breadth proxy via relative ETF performance.**
   Raw breadth data (% of S&P above 200dma, advance/decline line) has no

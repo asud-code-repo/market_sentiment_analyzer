@@ -257,7 +257,10 @@ as a smaller follow-up once detection was proven live.
 ## The five MCP write/persistence tools
 
 1. `write_snapshot` — persists the qualitative crash-check synthesis (probability,
-   scenario distribution, narrative notes) to `crash_checks`. Fixed 2026-08-16:
+   scenario distribution, narrative notes, and — since 2026-08-27 — the same
+   structured `delta_log` already rendered in the chat HTML artifact's colored
+   +/- list, previously only ever rendered live and never persisted) to
+   `crash_checks`. Fixed 2026-08-16:
    previously, changing `fed_pivot_signal` here (e.g. NONE→CUT) updated
    `fed_pivot_color` but left `red_count`/`confirmed_red_count`/`wave_authorized`
    stale, carried forward verbatim — now recomputed from the other 5
@@ -403,6 +406,14 @@ rather than implementation maturity." Its findings, and what's happened since:
   be read closely, while working fine on bare automated refreshes. Fixed
   2026-08-16 by carrying the field forward like every other rule-engine-owned
   mechanical field.
+- **Another one found the same way, 2026-08-27**: the chat report's colored
+  +/- delta log was only ever rendered live, never persisted — the public
+  dashboard could only show unstructured `notes` prose, and (more tellingly)
+  `dashboard_site` already had `.delta-log`/`.sign` CSS sitting completely
+  unused since before this was noticed. Fixed by adding an optional
+  `delta_log` field to `write_snapshot` (both its TS signature and its
+  separate Zod `inputSchema`, which would have silently stripped the field
+  otherwise) and wiring up the dormant CSS with a new `renderDeltaLog()`.
 
 ## Still open
 
@@ -1328,6 +1339,15 @@ yet actionable on its own) and a **7-day Δ** (velocity — the number that
 matters for trend confirmation), explicitly labeled as such. Do not report a
 bare "delta vs prior check" with an unstated window — if checks run
 irregularly, compute both deltas off calendar days, not check-to-check gaps.
+
+**The delta log itself is persisted structured data, not just rendered
+prose (since 2026-08-27).** `write_snapshot`'s optional `delta_log` field
+(`{sign: "pos"|"neg", text}[]`) captures the same colored bulleted list
+already shown in the chat HTML artifact — previously this was only ever
+built live at render time, so the public dashboard could only show
+whatever unstructured prose ended up in `notes`, with no way to reconstruct
+the colored +/- list from it. `dashboard_site` now renders `delta_log`
+directly, using CSS that had sat unused since before this field existed.
 
 **Confidence and recency (applies everywhere a point estimate is shown):**
 - Every probability/point estimate carries a low-high range and an explicit
