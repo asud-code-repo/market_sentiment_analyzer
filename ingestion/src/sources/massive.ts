@@ -15,6 +15,13 @@ const BASE_URL = "https://api.massive.com";
 const REQUEST_SPACING_MS = 13000;
 const BACKFILL_YEARS = 2; // matches Massive's advertised free-tier historical depth
 
+// Tracked for the small-cap/large-cap breadth signal (get_context_indicators),
+// independent of the BrokerageLink watchlist -- never touched by
+// write_watchlist's full-replacement sync (syncWatchlistTickers deletes any
+// symbol not in its caller-supplied list every Portfolio Opportunity Review),
+// so these can't be silently wiped out by that path.
+const BREADTH_TICKERS = ["IWM", "SPY"];
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -60,7 +67,8 @@ async function fetchLatestGroupedDaily(apiKey: string): Promise<MassiveBar[]> {
 }
 
 export async function fetchMassive(): Promise<DataPoint[]> {
-  const tickers = await readWatchlistTickers();
+  const watchlistTickers = await readWatchlistTickers();
+  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS])];
   if (tickers.length === 0) {
     return []; // optional source — nothing configured, nothing to fetch
   }
@@ -110,7 +118,8 @@ async function fetchTickerRange(symbol: string, apiKey: string, from: string, to
 }
 
 export async function fetchMassiveBackfill(): Promise<DataPoint[]> {
-  const tickers = await readWatchlistTickers();
+  const watchlistTickers = await readWatchlistTickers();
+  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS])];
   if (tickers.length === 0) {
     return [];
   }

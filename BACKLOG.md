@@ -38,14 +38,17 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
-- **Market-internals / breadth proxy via relative ETF performance.**
-  Raw breadth data (% of S&P above 200dma, advance/decline line) has no
-  free source — confirmed. But relative price performance between publicly
-  tradeable tickers does the same job without needing raw breadth stats:
-  equal-weight vs. cap-weight S&P (RSP vs SPY), Russell 2000 vs S&P (IWM vs
-  SPY), bank-sector ETF vs S&P (KBE/KRE vs SPY) — all buildable via the
-  Massive ticker-price pulls already wired in. Genuinely new idea (surfaced
-  2026-08-17 via external review), not previously explored. Not started.
+- **Market-internals / breadth proxy via relative ETF performance — partially
+  built.** Small-cap vs. large-cap (Russell 2000 via IWM vs. S&P 500 via SPY)
+  shipped 2026-08-27 as a `get_context_indicators`/dashboard contextual
+  reading, tracked independently of the BrokerageLink watchlist so a
+  Portfolio Opportunity Review's full-replacement sync can't delete it. Two
+  more pairs from the same original idea remain unbuilt: equal-weight vs.
+  cap-weight S&P (RSP vs. SPY, breadth without small-cap-specific framing)
+  and bank-sector vs. S&P (KBE/KRE vs. SPY, credit-sector-specific stress) —
+  same mechanism (`BREADTH_TICKERS` in `ingestion/src/sources/massive.ts`,
+  same relative-return-spread pattern in `get_context_indicators`), just not
+  extended to these two yet.
 
 - **Per-series data-quality/freshness metadata.** The whole-run freshness
   check exists; nothing per-series. A "green" panel could still be built

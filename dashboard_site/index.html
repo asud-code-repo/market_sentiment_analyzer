@@ -444,6 +444,12 @@ const CONTEXT_INFO = {
     format: (v) => `${v.toFixed(1)}%`,
     signal: () => "NY Fed's published Estrella-Mishkin (1998) formula, computed here from DGS10/DGS3MO (not a FRED series) — external cross-check, not validation",
   },
+  smallCapBreadth: {
+    label: "Small-Cap Breadth (IWM vs SPY)",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}pp / 7d`,
+    signal: (v) => (v < 0 ? "Small-caps underperforming — early domestic-credit-stress signal, not backtested" : "Small-caps keeping pace or outperforming"),
+    notable: (v) => v < 0,
+  },
 };
 
 /**
@@ -495,6 +501,7 @@ function renderContextIndicators(latest) {
     dfii10: latest.DFII10,
     recprousm156n: latest.RECPROUSM156N,
     nyFedRecessionProb: nyFedProb,
+    smallCapBreadth: latest.SMALL_CAP_BREADTH_SPREAD_7D,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -1012,6 +1019,36 @@ async function main() {
       for (const rows of contextResults) {
         if (rows[0]) latestBySeriesId[rows[0].series_id] = rows[0].value;
       }
+
+      // Small-cap vs. large-cap breadth (Russell 2000 via IWM vs S&P 500 via
+      // SPY) — needs a 7-days-ago value too, unlike every other context
+      // series above (which only ever need "latest"), so this is a separate
+      // fetch rather than folding into CONTEXT_SERIES. Mirrors the exact
+      // spread computation in mcp_server's get_context_indicators
+      // (small_cap_breadth) — duplicated here, not shared, same convention
+      // as this file's own erf()/estrellaMishkinRecessionProbability() above.
+      try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+        const [iwmLatestRows, iwmPastRows, spyLatestRows, spyPastRows] = await Promise.all([
+          fetchFromSupabase(`data_points?select=value&series_id=eq.IWM&order=observation_date.desc&limit=1`),
+          fetchFromSupabase(`data_points?select=value&series_id=eq.IWM&observation_date=lte.${sevenDaysAgoStr}&order=observation_date.desc&limit=1`),
+          fetchFromSupabase(`data_points?select=value&series_id=eq.SPY&order=observation_date.desc&limit=1`),
+          fetchFromSupabase(`data_points?select=value&series_id=eq.SPY&observation_date=lte.${sevenDaysAgoStr}&order=observation_date.desc&limit=1`),
+        ]);
+        const iwmLatest = iwmLatestRows[0]?.value, iwmPast = iwmPastRows[0]?.value;
+        const spyLatest = spyLatestRows[0]?.value, spyPast = spyPastRows[0]?.value;
+        if (iwmLatest != null && iwmPast != null && spyLatest != null && spyPast != null && iwmPast !== 0 && spyPast !== 0) {
+          const iwmPct7d = ((iwmLatest - iwmPast) / iwmPast) * 100;
+          const spyPct7d = ((spyLatest - spyPast) / spyPast) * 100;
+          latestBySeriesId.SMALL_CAP_BREADTH_SPREAD_7D = Math.round((iwmPct7d - spyPct7d) * 100) / 100;
+        }
+      } catch (err) {
+        // Isolated: no IWM/SPY history yet (e.g. before the first backfill)
+        // shouldn't take down every other contextual indicator.
+      }
+
       renderContextIndicators(latestBySeriesId);
     } catch (err) {
       document.getElementById("context-grid").innerHTML = `<p class="loading">Failed to load contextual indicators: ${err.message}</p>`;

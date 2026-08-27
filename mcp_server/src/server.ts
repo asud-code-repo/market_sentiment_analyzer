@@ -378,10 +378,15 @@ server.registerTool(
       "it's computed from the formula rather than scraped). Both are external, peer-reviewed, " +
       "published models — cite them as calibration cross-checks against your own crash-probability " +
       "estimate, never as validation of it. Agreeing or disagreeing with either doesn't make your " +
-      "estimate more or less correct; note the comparison and move on.",
+      "estimate more or less correct; note the comparison and move on. " +
+      "small_cap_breadth (2026-08-27) is Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return " +
+      "— a free breadth proxy since no raw advance/decline or %-above-200dma series exists for " +
+      "free; negative spread means small-caps are underperforming, an early domestic-credit-stress " +
+      "signal. Read its own signal string for the full caveat — like everything else here, " +
+      "informational only, never part of the 3-of-6 gate.",
   },
   async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -405,9 +410,45 @@ server.registerTool(
         getLatestDataPoint("NFCICREDIT"),
         getLatestDataPoint("DFII10"),
         getLatestDataPoint("RECPROUSM156N"),
+        computeSeriesDelta("IWM"),
+        computeSeriesDelta("SPY"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
+
+    // Small-cap vs. large-cap breadth proxy (Russell 2000 via IWM vs. S&P 500
+    // via SPY) — no raw advance/decline or %-above-200dma series exists for
+    // free, so relative ETF return is the closest available signal. Same
+    // "simple derived value, computed live here" pattern as yieldCurve2s10s
+    // below, not persisted via rule_engine/divergence.ts (that pattern ANDs
+    // two independent absolute-threshold booleans, which doesn't fit a
+    // relative-return spread).
+    const pctChange = (latest: number | null, delta: number | null): number | null => {
+      if (latest === null || delta === null) return null;
+      const past = latest - delta;
+      return past === 0 ? null : ((latest - past) / past) * 100;
+    };
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const iwmPct7d = pctChange(iwmDelta.latest_value, iwmDelta.delta_7d);
+    const spyPct7d = pctChange(spyDelta.latest_value, spyDelta.delta_7d);
+    const breadthSpread7d = iwmPct7d !== null && spyPct7d !== null ? round2(iwmPct7d - spyPct7d) : null;
+    const smallCapBreadth =
+      breadthSpread7d !== null
+        ? {
+            spread_7d_pct: breadthSpread7d,
+            iwm_pct_change_7d: round2(iwmPct7d!),
+            spy_pct_change_7d: round2(spyPct7d!),
+            as_of: iwmDelta.latest_date,
+            signal:
+              "Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return, a free breadth proxy " +
+              "(no raw advance/decline or %-above-200dma series exists for free). Negative = " +
+              "small-caps underperforming — small-caps are more exposed to domestic credit " +
+              "conditions and floating-rate debt, so persistent underperformance can be an early " +
+              "stress signal before it shows up in large-cap earnings. Informational only, Tier 2 " +
+              "— never part of the 3-of-6 wave-authorization gate. Threshold/magnitude is a first " +
+              "cut, not backtested — read directionally, not as a hard flag.",
+          }
+        : null;
 
     const twoTenSpread =
       dgs10 && dgs2
@@ -465,6 +506,7 @@ server.registerTool(
         signal: "Chauvet & Piger's published dynamic-factor Markov-switching model (hosted on FRED by the St. Louis Fed, not built by them) — external cross-check, not validation of your own crash-probability estimate",
       },
       recession_probability_ny_fed_12mo_pct: nyFedRecessionProb,
+      small_cap_breadth: smallCapBreadth,
       divergence_flags: divergenceFlags,
     });
   },
