@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "usage-report": "tsx src/scripts/tokenUsageReport.ts"
   },
   "engines": {
     "node": ">=22"

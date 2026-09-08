@@ -11,6 +11,7 @@ import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
+import { logTokenUsage } from "./lib/tokenLog.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -18,18 +19,30 @@ function json(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
+// Wraps a tool handler to log its approximate request/response size — see
+// tokenLog.ts and `npm run usage-report` for why (Desktop scheduled-task
+// billing has no per-run token visibility the way API traffic would).
+// Deliberately loose (`any`) rather than generic over the handler's real
+// input/output types — it's a transparent side-channel, not part of the
+// zod-validated request/response contract each tool already has.
+function withLogging(name: string, handler: (...args: any[]) => Promise<any>) {
+  return async (...args: any[]) => {
+    const result = await handler(...args);
+    logTokenUsage(name, args[0], result);
+    return result;
+  };
+}
+
 server.registerTool(
   "get_latest_snapshot",
   {
     description:
-      "Returns the most recent crash_checks row (indicator panel, wave status, and — if a chat " +
-      "run has happened — crash probability/scenario distribution/notes) plus a delta vs the last " +
-      "row that actually had a probability (i.e. the last full report, not just the last row of any " +
-      "kind — most rows are bare automated refreshes with a null probability). Only call this after " +
-      "you've already committed to this run's probability estimate independently — it's for building " +
-      "the delta-log framing, not for forming the estimate itself.",
+      "Returns the most recent crash_checks row plus a delta vs the last row that actually had a " +
+      "probability (the last full report, not just the last row — most rows are bare automated " +
+      "refreshes). Call only after independently committing to this run's probability estimate — " +
+      "this is for the delta-log framing, not for forming the estimate itself.",
   },
-  async () => {
+  withLogging("get_latest_snapshot", async () => {
     const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
@@ -40,27 +53,21 @@ server.registerTool(
     // against a genuinely prior report, not itself.
     const priorForDelta = prior && prior.id !== latest.id ? prior : undefined;
     return json({ latest, delta: computeDelta(latest, priorForDelta) });
-  },
+  }),
 );
 
 server.registerTool(
   "get_indicator_panel",
   {
     description:
-      "Returns just the current 6-indicator RED/AMBER/GREEN panel, RED count, confirmed-RED count, and " +
-      "wave status. Each of the 5 numeric indicators (all but Fed pivot signal) carries confirmed/" +
-      "days_confirmed — per crash-check-rules.md's Signal Tiering rule, a RED reading only counts toward " +
-      "wave authorization once confirmed across 2+ distinct ingestion dates, not on its first appearance. " +
-      "wave_authorized already reflects confirmed_red_count, not raw red_count — report confirmed_red_count " +
-      "as the authorizing number, and red_count/pending indicators as context for what's building. Check " +
-      "data_freshness.is_fresh before proceeding — if false, the daily GitHub Action ingestion hasn't run " +
-      "yet today (or failed), and this panel is a stale prior-day snapshot; stop and tell the user instead " +
-      "of analyzing it as if it were current. Also includes hazard_model_10pct, a separate rule-engine-" +
-      "computed statistical estimate — not part of the 3-of-6 wave-authorization gate and not the same " +
-      "thing as your own qualitative crash-probability judgment (see write_snapshot); report its band, " +
-      "not a re-derived percentage.",
+      "Returns the 6-indicator RED/AMBER/GREEN panel, red_count/confirmed_red_count, and wave status. " +
+      "wave_authorized already reflects confirmed_red_count (see crash-check-rules.md's Signal Tiering " +
+      "rule) — report that as the authorizing number, not raw red_count. Check data_freshness.is_fresh " +
+      "before proceeding (project-instructions.md step 1). hazard_model_10pct is a separate rule-engine-" +
+      "computed estimate, not the same as your own crash_probability_pct judgment (see write_snapshot) — " +
+      "report its band, not a re-derived percentage.",
   },
-  async () => {
+  withLogging("get_indicator_panel", async () => {
     const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
@@ -98,38 +105,28 @@ server.registerTool(
         raw_pct: latest.hazard_10pct_raw_pct,
         as_of: latest.hazard_10pct_as_of,
         signal:
-          "Statistical hazard model (walk-forward validated, isotonic-calibrated) estimating " +
-          "P(S&P drawdown reaches >=10% from ATH within ~21 trading days | not already past it). " +
-          "This is rule-engine-computed and calibrated — genuinely different from crash_probability_pct, " +
-          "which is 100% LLM judgment (see write_snapshot). Report the BAND, not the raw percentage — " +
-          "the calibration curve is steppy with two wide flat plateaus, so small differences in the raw " +
-          "score inside a plateau are not meaningfully different probabilities. Never blend this number " +
-          "with your own crash-probability estimate or treat agreement/disagreement between them as " +
-          "validating either one. null fields mean the model temporarily failed to compute this run " +
-          "(e.g. a transient gap in one input series) — treat as unavailable, not as a reading of zero.",
+          "Rule-engine-computed and calibrated — distinct from crash_probability_pct (100% LLM " +
+          "judgment, see write_snapshot). Report the BAND, never a re-derived percentage or a blend " +
+          "with your own estimate (see crash-check-rules.md's Statistical Hazard Model section for " +
+          "why: steppy calibration curve, plateau structure). null fields mean this run's computation " +
+          "failed — treat as unavailable, not a reading of zero.",
       },
     });
-  },
+  }),
 );
 
 server.registerTool(
   "get_trigger_status",
   {
     description:
-      "Returns the status (fired/approaching/pending) of the personal decision triggers, plus the " +
-      "current Warsh Fed classification and whether its hard rules are active. `fed_event_trigger`/" +
-      "`inflation_print_trigger` are computed here, not something to judge yourself — " +
-      "`current_target_date`/`current_target_label` identify which past FOMC meeting / CPI release " +
-      "is the current relevant one (whose outcome may still need your qualitative read — hawkish/" +
-      "dovish, beat/miss), and `next_target_date`/`next_target_label` are what to watch next, both " +
-      "from a maintained calendar (mcp_server/src/lib/economicCalendar.ts), not your memory of a " +
-      "prior session or the old master-prompt doc. This does not replace judging the outcome — only " +
-      "*which meeting/release is current* is computed. If `calendar_needs_update` is true, tell the " +
-      "user the calendar needs new dates added rather than reporting a stale or guessed date. " +
-      "Earnings-guidance is deliberately not included here — company earnings dates aren't published " +
-      "on a fixed public schedule the way FOMC/CPI are, so it stays entirely your judgment call.",
+      "Returns personal decision trigger status (fired/approaching/pending), the Warsh Fed " +
+      "classification, and fed_event_trigger/inflation_print_trigger — computed here from a " +
+      "maintained calendar (economicCalendar.ts), not your memory. current_target_date/label identify " +
+      "which FOMC/CPI event is current; you still judge the qualitative outcome (hawkish/dovish, " +
+      "beat/miss). If calendar_needs_update is true, tell the user rather than guessing a date. " +
+      "Earnings-guidance dates are deliberately excluded (no fixed public schedule) — stays your call.",
   },
-  async () => {
+  withLogging("get_trigger_status", async () => {
     const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
@@ -142,24 +139,21 @@ server.registerTool(
       fed_event_trigger: computeFedEventTrigger(),
       inflation_print_trigger: computeInflationPrintTrigger(),
     });
-  },
+  }),
 );
 
 server.registerTool(
   "get_portfolio_snapshot",
   {
     description:
-      "Returns personal account balances/allocations from the local portfolio file. This data " +
-      "never leaves this machine — it is not read from or written to Supabase. The RRSP's CAD->USD " +
-      "conversion is computed live from FRED's DEXCAUS series (fetched from Supabase, which holds " +
-      "only the macro exchange rate — never the resulting personal dollar figure) rather than " +
-      "trusting the file's hardcoded snapshot. `rate_reset_trigger` is computed here, not something " +
-      "to judge yourself — its `status` ('fired' or 'pending') is a plain date comparison against " +
-      "nyl_anchor_rate_through, already evaluated. Use it directly for the rate-reset trigger in " +
-      "get_trigger_status/write_snapshot — do not compute your own date comparison, which has " +
-      "repeatedly produced wrong results in practice.",
+      "Returns personal account balances/allocations from the local portfolio file — never read " +
+      "from or written to Supabase. RRSP CAD->USD conversion uses a live FRED DEXCAUS rate (public " +
+      "macro data, not the resulting personal figure). rate_reset_trigger.status ('fired'/'pending') " +
+      "is a plain date comparison, already evaluated here — use it directly in get_trigger_status/" +
+      "write_snapshot rather than recomputing the date comparison yourself, which has repeatedly " +
+      "produced wrong results in practice.",
   },
-  async () => {
+  withLogging("get_portfolio_snapshot", async () => {
     const portfolio = readPortfolio();
     const rateResetTrigger = computeRateResetTriggerStatus(portfolio);
     const dexcaus = await getLatestDataPoint("DEXCAUS");
@@ -171,27 +165,22 @@ server.registerTool(
     }
     const withFx = applyLiveFxRate(portfolio, dexcaus.value, dexcaus.observation_date);
     return json({ ...(withFx as object), rate_reset_trigger: rateResetTrigger });
-  },
+  }),
 );
 
 server.registerTool(
   "get_portfolio_drift",
   {
     description:
-      "Compares actual holdings_pct against long_term_target_pct for every account that defines " +
-      "both, flagging funds whose drift exceeds the fund's own threshold (each entry's threshold_pts, " +
-      "the 5/25 rule — whichever is smaller of 5 percentage points absolute or 25% of that fund's own " +
-      "target, floored at 2pts). This self-scales instead of using one flat number for every fund: the " +
-      "same 5pt drift matters far more on a 5% target than a 30% one. Purely mechanical — no macro " +
-      "judgment, and the threshold is computed here, not something to recompute or second-guess. The " +
-      "tactical 401k's dry-powder fund shows up here too (full visibility) even though its large " +
-      "deviation is deliberate, not neglect — a standing flag alongside it explains that, rather than " +
-      "the tool hiding the fund entirely. Accounts with a known structural_issue but no formal target " +
-      "(e.g. spouse 401k) are surfaced as a standing flag instead. Part of the Portfolio Opportunity " +
-      "Review process, layered under the crash-check indicator panel: this answers 'is each account " +
-      "still close to its own stated target' independent of the macro regime.",
+      "Compares holdings_pct against long_term_target_pct per account, flagging drift beyond each " +
+      "fund's own threshold_pts (5/25 rule: whichever is smaller of 5pts absolute or 25% of that " +
+      "fund's target, floored at 2pts — self-scaling, since a 5pt drift matters far more on a 5% " +
+      "target than a 30% one). Purely mechanical; the threshold is computed here, not to be " +
+      "recomputed. The tactical 401k's dry-powder fund appears with a standing_flag explaining its " +
+      "deliberate deviation (wave-gated, not neglect); accounts with a known structural_issue but no " +
+      "formal target (e.g. spouse 401k) get a standing flag too.",
   },
-  async () => json(computePortfolioDrift(readPortfolio())),
+  withLogging("get_portfolio_drift", async () => json(computePortfolioDrift(readPortfolio()))),
 );
 
 server.registerTool(
@@ -199,20 +188,18 @@ server.registerTool(
   {
     description:
       "Returns the BrokerageLink stock watchlist with live price vs. Wave 1/2/3 targets and a " +
-      "deterministic BUY_ZONE/WATCH/WAIT status per ticker (current price at/below Wave 1 target = " +
-      "BUY_ZONE, within 20% above = WATCH, more than 20% above = WAIT — same bands as the original " +
-      "watchlist design). Prices come from Supabase (public market data, ingested daily via Alpha " +
-      "Vantage); targets/thesis/position sizing come from the local watchlist file. Purely " +
+      "deterministic BUY_ZONE/WATCH/WAIT status per ticker. Prices come from Supabase (ingested " +
+      "daily via Alpha Vantage); targets/thesis/sizing come from the local watchlist file. Purely " +
       "mechanical — use this instead of estimating prices via web search.",
   },
-  async () => {
+  withLogging("get_watchlist_status", async () => {
     const watchlist = readWatchlist();
     const prices = await Promise.all(watchlist.tickers.map((t) => getLatestDataPoint(t.symbol)));
     return json({
       updated_at: watchlist.updated_at,
       tickers: computeWatchlistStatus(watchlist.tickers, prices),
     });
-  },
+  }),
 );
 
 server.registerTool(
@@ -235,10 +222,10 @@ server.registerTool(
       series_ids: z.array(z.string()).min(1),
     },
   },
-  async (input) => {
-    const deltas = await Promise.all(input.series_ids.map((id) => computeSeriesDelta(id)));
+  withLogging("get_series_deltas", async (input) => {
+    const deltas = await Promise.all(input.series_ids.map((id: string) => computeSeriesDelta(id)));
     return json({ deltas });
-  },
+  }),
 );
 
 server.registerTool(
@@ -268,16 +255,16 @@ server.registerTool(
       change_summary: z.string(),
     },
   },
-  async (input) => {
+  withLogging("write_watchlist", async (input) => {
     const written = writeWatchlist(input.tickers, `Claude (portfolio review): ${input.change_summary}`);
-    await syncWatchlistTickers(input.tickers.map((t) => t.symbol));
+    await syncWatchlistTickers(input.tickers.map((t: { symbol: string }) => t.symbol));
     // Keeps the Full Report page's cached watchlist table from going stale
     // relative to this change — otherwise it'd only refresh on the next
     // write_full_report call (during "run crash check"), potentially days
     // later, contradicting whatever a Portfolio Review just wrote about it.
     await refreshFullReportWatchlist(input.tickers);
     return json({ written });
-  },
+  }),
 );
 
 server.registerTool(
@@ -326,7 +313,7 @@ server.registerTool(
         .optional(),
     },
   },
-  async (input) => {
+  withLogging("write_snapshot", async (input) => {
     const scenarioSum =
       input.scenario_bull_pct + input.scenario_base_pct + input.scenario_bear_pct + input.scenario_crash_pct;
     if (Math.abs(scenarioSum - 100) > 0.5) {
@@ -334,58 +321,27 @@ server.registerTool(
     }
     const row = await writeSnapshot(input);
     return json({ written: row });
-  },
+  }),
 );
 
 server.registerTool(
   "get_context_indicators",
   {
     description:
-      "Returns supplementary macro indicators — financial stress/conditions indices, breakeven " +
-      "inflation, bank lending standards, reverse repo, the 2s10s yield curve spread, jobless " +
-      "claims (initial and continuing), credit card delinquencies, WTI crude oil, retail sales, and " +
-      "investment-grade credit spreads. These are informational context only — NOT part of the " +
-      "6-indicator wave-authorization gate (that stays exactly VIX/HY spread/drawdown/10yr/Sahm/Fed " +
-      "pivot, per the user's own fixed rules). `divergence_flags` are computed deterministically once " +
-      "daily by the rule engine (not by you, and not recomputed here — this reads the persisted value " +
-      "from the latest crash_checks row, the same one dashboard_site reads) — report `diverging: true` " +
-      "pairs as-is, never independently judge whether two series have decoupled from your own reading " +
-      "of the raw numbers. Note that " +
-      "vix_vs_hy_credit_spread's `diverging: true` is a reassuring read (equity-specific noise, not " +
-      "systemic stress), unlike the other two pairs where `diverging: true` is the concerning case — " +
-      "read each pair's own `detail` text, don't assume 'diverging' always means 'worse'. " +
-      "recent_grad_unemployment_rate_pct is structural/secular (AI + remote-work displacement of " +
-      "entry-level hiring), not cyclical — never treat it as a crash-timing signal, but it IS relevant " +
-      "ambiguous evidence for the NVDA 'AI recovery trough bet' thesis specifically during a Portfolio " +
-      "Opportunity Review (see project-instructions.md). thirty_year_treasury_pct has been ingested " +
-      "since this system's start but was never surfaced until now — crash-check-rules.md's own " +
-      "'Additional bond-market bands' already define its threshold (above 5.0% = bond vigilante " +
-      "signal), used here directly rather than inventing a new one. Use these to enrich narrative " +
-      "synthesis, never to override or supplement the RED count / wave_authorized decision. " +
-      "2026-08-15 additions (investment-model-review.md Section 5): sofr_pct (repo/dollar-funding " +
-      "stress), broad_dollar_index (global transmission), nfci_risk_subindex/nfci_credit_subindex " +
-      "(narrower cuts of the composite NFCI above — financial-sector volatility/funding risk and " +
-      "credit-tightness specifically), and tips_real_yield_10y_pct (equity-valuation pressure via " +
-      "real yields). tips_real_yield_10y_pct covers only the real-yield leg of 'equity valuation' — " +
-      "there is no free earnings-yield/CAPE series on FRED, so never treat it as a full valuation " +
-      "read on its own. (OECDLOLITOAASTSAM, a candidate global-PMI stand-in, was tried and dropped " +
-      "2026-08-16 — its latest observation was frozen at 2022-11-01, years stale, not just lagged.) " +
-      "2026-08-17 additions: recession_probability_smoothed_pct (Chauvet & Piger's published " +
-      "dynamic-factor Markov-switching model, hosted on FRED by the St. Louis Fed but not built by " +
-      "them) and recession_probability_ny_fed_12mo_pct (the NY Fed's own published Estrella-Mishkin " +
-      "(1998) yield-curve probit model, computed here from DGS10/DGS3MO using their published formula " +
-      "— the NY Fed does not publish this as its own FRED series, verified before building this, so " +
-      "it's computed from the formula rather than scraped). Both are external, peer-reviewed, " +
-      "published models — cite them as calibration cross-checks against your own crash-probability " +
-      "estimate, never as validation of it. Agreeing or disagreeing with either doesn't make your " +
-      "estimate more or less correct; note the comparison and move on. " +
-      "small_cap_breadth (2026-08-27) is Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return " +
-      "— a free breadth proxy since no raw advance/decline or %-above-200dma series exists for " +
-      "free; negative spread means small-caps are underperforming, an early domestic-credit-stress " +
-      "signal. Read its own signal string for the full caveat — like everything else here, " +
-      "informational only, never part of the 3-of-6 gate.",
+      "Returns supplementary macro context — financial stress/conditions indices, breakeven " +
+      "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
+      "delinquencies, WTI, retail sales, IG credit spread, SOFR, broad dollar index, NFCI " +
+      "sub-indices, TIPS real yield, two external recession-probability models, and small-cap " +
+      "breadth. Informational only — never part of the 6-indicator wave-authorization gate. " +
+      "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
+      "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
+      "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
+      "rate_pct is structural (AI/remote-work displacement), not a crash-timing signal — see " +
+      "project-instructions.md's NVDA thesis step for how to use it. The two recession-probability " +
+      "fields are external published models (Chauvet-Piger; NY Fed Estrella-Mishkin) — calibration " +
+      "cross-checks only, never validation of your own estimate.",
   },
-  async () => {
+  withLogging("get_context_indicators", async () => {
     const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
@@ -509,7 +465,7 @@ server.registerTool(
       small_cap_breadth: smallCapBreadth,
       divergence_flags: divergenceFlags,
     });
-  },
+  }),
 );
 
 const WAVE_ORDER: Wave[] = ["WAVE_1", "WAVE_2", "WAVE_3"];
@@ -528,22 +484,15 @@ server.registerTool(
   "get_deployment_plan",
   {
     description:
-      "Computes the exact dollar breakdown for the tactical 401k's dry-powder deployment, given " +
-      "the current wave status, wave_authorized (confirmed 3-of-6 RED gate — required in addition " +
-      "to wave_active's price/VIX trigger, not either alone), crash type (if diagnosed), and which " +
-      "waves have already been executed (local wave_deployment_state — set via " +
-      "record_wave_deployment, never inferred). If a deeper wave's threshold is met before a " +
-      "shallower one was ever separately confirmed, this returns the cumulative breakdown for every " +
-      "not-yet-executed wave up to and including the current one, not just the deepest wave's slice " +
-      "— e.g. hitting Wave 3 conditions with nothing executed yet returns Wave 1 + Wave 2 + Wave 3 " +
-      "combined. This replaces doing that arithmetic yourself: read this tool's output directly " +
-      "rather than computing dollar amounts from get_indicator_panel + get_portfolio_snapshot by " +
-      "hand. Fund descriptions here are generic (matching the rules doc) — cross-reference " +
-      "get_portfolio_snapshot for the actual fund names when reporting to the user; never persist " +
-      "dollar figures via write_snapshot. Call record_wave_deployment after trades are actually " +
-      "placed, so this tool doesn't re-propose an already-executed wave next time.",
+      "Computes the exact dry-powder deployment breakdown for the tactical 401k, given the current " +
+      "wave/authorization status, diagnosed crash type, and which waves are already executed (local " +
+      "wave_deployment_state, set only via record_wave_deployment). Deployment is cumulative across " +
+      "not-yet-executed waves (see crash-check-rules.md's Wave Deployment section) — read this " +
+      "tool's output directly rather than computing dollar amounts by hand. Fund descriptions are " +
+      "generic; cross-reference get_portfolio_snapshot for actual fund names, and never persist " +
+      "dollar figures via write_snapshot. Call record_wave_deployment only after trades are placed.",
   },
-  async () => {
+  withLogging("get_deployment_plan", async () => {
     const [latest] = await getRecentCrashChecks(1);
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
@@ -605,7 +554,7 @@ server.registerTool(
       crash_type_layer: crashTypeLayer,
       hard_rules: HARD_RULES,
     });
-  },
+  }),
 );
 
 server.registerTool(
@@ -613,35 +562,30 @@ server.registerTool(
   {
     description:
       "Records that a wave's deployment plan was actually executed in the brokerage — persists to " +
-      "the local wave_deployment_state file so get_deployment_plan stops re-proposing it and " +
-      "correctly returns only the incremental breakdown for any later wave. Call this only after " +
-      "the user confirms trades were actually placed, never speculatively or as part of just " +
-      "computing/showing a plan.",
+      "the local wave_deployment_state file so get_deployment_plan stops re-proposing it. Call this " +
+      "only after the user confirms trades were actually placed, never speculatively.",
     inputSchema: {
       wave: z.enum(["WAVE_1", "WAVE_2", "WAVE_3"]),
       executed_date: z.string(),
     },
   },
-  async (input) => {
+  withLogging("record_wave_deployment", async (input) => {
     const state = recordWaveDeployment(input.wave, input.executed_date);
     return json({ deployment_state: state });
-  },
+  }),
 );
 
 server.registerTool(
   "write_full_report",
   {
     description:
-      "Persists this run's Full Report content (BrokerageLink watchlist status, crash-type diagnosis, " +
-      "and the qualitative-only parts of the personal portfolio snapshot) to full_report_snapshots — " +
-      "a table that is never anon-readable, read server-side only by the Full Report Cloudflare Pages " +
-      "Function behind Cloudflare Access. Watchlist status is recomputed here from live prices, not " +
-      "trusted from caller input. Do not include any personal dollar figures in portfolio_context or " +
-      "crash_type_diagnosis — e.g. the RRSP/spouse-401k opportunity-cost gap must stay chat-only, " +
-      "never passed to this tool; the write will be rejected if a real portfolio dollar figure is " +
-      "detected anyway. Call this alongside write_snapshot in the same run, once the qualitative " +
-      "synthesis (crash-type diagnosis, portfolio narrative) has been produced. Omit " +
-      "crash_type_diagnosis entirely if no crash type has been diagnosed this run — do not pass null.",
+      "Persists this run's Full Report content (watchlist status, crash-type diagnosis, qualitative " +
+      "portfolio snapshot) to full_report_snapshots — never anon-readable, read server-side only by " +
+      "the Full Report Cloudflare Pages Function. Watchlist status is recomputed here from live " +
+      "prices, not trusted from caller input. Do not include personal dollar figures in " +
+      "portfolio_context or crash_type_diagnosis — the write is rejected if one is detected anyway. " +
+      "Call alongside write_snapshot once the qualitative synthesis is produced. Omit " +
+      "crash_type_diagnosis entirely if no crash type is diagnosed this run — do not pass null.",
     inputSchema: {
       crash_type_diagnosis: z
         .object({
@@ -658,10 +602,10 @@ server.registerTool(
       portfolio_context: z.string(),
     },
   },
-  async (input) => {
+  withLogging("write_full_report", async (input) => {
     const row = await writeFullReport(input);
     return json({ written: row });
-  },
+  }),
 );
 
 server.registerTool(
@@ -669,14 +613,12 @@ server.registerTool(
   {
     description:
       "Persists this Portfolio Opportunity Review's qualitative synthesis (verdict, summary, macro " +
-      "cross-reference, per-ticker thesis re-underwrite, risk radar scores) to portfolio_review_snapshots " +
-      "— merged into the Full Report page alongside crash-check content. Never anon-readable, same as " +
-      "full_report_snapshots. Portfolio drift is recomputed server-side from the local portfolio file, " +
-      "not taken from this call. Do not include any personal dollar figures anywhere here (verdict, " +
-      "summary, macro_cross_reference, ticker reasoning/proposed_change) — e.g. the RRSP/spouse-401k " +
-      "opportunity-cost gap must stay chat-only; the write is rejected if a real portfolio dollar figure " +
-      "is detected anyway. Call this at the end of every Portfolio Opportunity Review run, whether or not " +
-      "the user approved any ticker changes (that's a separate gate on write_watchlist specifically).",
+      "cross-reference, per-ticker thesis re-underwrite, risk radar scores) to " +
+      "portfolio_review_snapshots — merged into the Full Report page, never anon-readable, same as " +
+      "full_report_snapshots. Portfolio drift is recomputed server-side, not taken from this call. Do " +
+      "not include personal dollar figures anywhere here — the write is rejected if one is detected " +
+      "anyway. Call at the end of every review run, whether or not the user approved ticker changes " +
+      "(that's the separate write_watchlist gate).",
     inputSchema: {
       verdict: z.string(),
       summary: z.string(),
@@ -699,10 +641,10 @@ server.registerTool(
       }),
     },
   },
-  async (input) => {
+  withLogging("write_portfolio_review", async (input) => {
     const row = await writePortfolioReview(input);
     return json({ written: row });
-  },
+  }),
 );
 
 const transport = new StdioServerTransport();
