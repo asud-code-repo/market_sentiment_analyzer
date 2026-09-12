@@ -526,6 +526,24 @@ an LLM judgment call (see `project-instructions.md`'s trigger re-check
 step), the same treatment already working well for ad-hoc catalysts like a
 Fed Chair's first Jackson Hole keynote.
 
+**A related but distinct gap surfaced 2026-09-12 via a live-data
+retrospective, not a build-time check**: `trigger_status` never retired old
+entries — it only grew. By 2026-08-28 it held 6 simultaneous entries: 4
+long-resolved ones (July FOMC, June CPI, Q2 earnings, the rate-reset
+trigger) sitting alongside the 2 actually-current ones (September FOMC,
+August CPI). This is a different problem from the one above — *which
+occurrence is current* was already solved for Fed-event/inflation-print
+(and rate-reset); nothing stopped a superseded entry from lingering once a
+newer one appeared. Fixed the same way: `write_snapshot`
+(`mcp_server/src/lib/supabase.ts`) now deduplicates the array server-side
+after persisting, keeping only the latest entry (by `date`) per canonical
+trigger type (Fed-event/inflation-print/earnings-guidance/rate-reset,
+matched by name *prefix* — the array's `name` field is free-form prose,
+never enforced to one exact format). This is array hygiene, not a new
+judgment call, and passively covers earnings-guidance too (no deterministic
+calendar backs it, but once a newer quarter's entry appears, the same logic
+retires the older one).
+
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 
 - VIX below 18 in an elevated-macro-risk regime = flag complacency (Tier 1 series, informational use)

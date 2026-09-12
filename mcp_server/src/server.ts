@@ -277,7 +277,12 @@ server.registerTool(
       "factors you're already rendering in the HTML artifact's colored delta log (each " +
       "{sign: 'pos'|'neg', text}) — this was previously only ever rendered live and never persisted, " +
       "which is why the public dashboard couldn't show it; omit it entirely on a run with no prior " +
-      "full report to diff against. Do not include any personal dollar figures in `notes` — " +
+      "full report to diff against. `trigger_status` is automatically deduplicated server-side, " +
+      "keeping only the latest entry (by `date`) per canonical trigger type (Fed-event/inflation-" +
+      "print/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
+      "remove superseded entries yourself. When a trigger's target rolls to a new occurrence, " +
+      "either replace the old entry in place or simply append a new one; the server keeps whichever " +
+      "has the later date. Do not include any personal dollar figures in `notes` — " +
       "this is written to Supabase, which holds macro/rule state only.",
     inputSchema: {
       crash_probability_pct: z.number().min(0).max(100),

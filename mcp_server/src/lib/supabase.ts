@@ -191,6 +191,53 @@ export async function getLatestCrashCheckWithProbability(): Promise<CrashCheckRo
   return data;
 }
 
+const CANONICAL_TRIGGER_PREFIXES = [
+  "fed-event trigger",
+  "inflation-print trigger",
+  "earnings-guidance trigger",
+  "rate-reset trigger",
+];
+
+/**
+ * Keeps only the latest entry (by `date`) per canonical trigger type,
+ * matched by name PREFIX (not exact format — crash-check-rules.md's own
+ * documented example uses a different delimiter than what's actually
+ * produced in practice, and nothing enforces a fixed one). Non-matching or
+ * malformed entries are kept as-is rather than silently dropped — this is
+ * a hygiene pass, not a validator. Fixes a real gap found via a live-data
+ * retrospective (2026-09-12): trigger_status only ever grew, holding up to
+ * 6 simultaneous entries (4 stale) before shrinking, apparently only
+ * because the LLM eventually cleaned it up itself, not because anything
+ * enforced it. "Latest by date" (not "last in array order") is used
+ * because it doesn't depend on assuming the caller always appends rather
+ * than sometimes updating an entry in place — ISO date strings compare
+ * correctly lexicographically, same convention as economicCalendar.ts.
+ */
+function pruneStaleTriggerEntries(entries: unknown[]): unknown[] {
+  const bestByPrefix = new Map<string, { entry: unknown; date: string }>();
+  const passthrough: unknown[] = [];
+
+  for (const raw of entries) {
+    const entry = raw as Record<string, unknown>;
+    const name = entry.name;
+    const date = entry.date;
+    const prefix =
+      typeof name === "string"
+        ? CANONICAL_TRIGGER_PREFIXES.find((p) => name.toLowerCase().startsWith(p))
+        : undefined;
+    if (!prefix || typeof date !== "string") {
+      passthrough.push(raw);
+      continue;
+    }
+    const existing = bestByPrefix.get(prefix);
+    if (!existing || date > existing.date) {
+      bestByPrefix.set(prefix, { entry: raw, date });
+    }
+  }
+
+  return [...bestByPrefix.values()].map((v) => v.entry).concat(passthrough);
+}
+
 /**
  * Inserts a new crash_checks row combining the latest row's mechanical
  * fields (indicator panel, wave status, S&P level/ATH — read fresh here,
@@ -269,7 +316,7 @@ export async function writeSnapshot(qualitative: {
   // trigger entry (Fed-event, inflation-print, earnings-guidance) passes
   // through untouched — those still need real qualitative judgment.
   const resolvedTriggerStatus = qualitative.trigger_status ?? latest.trigger_status;
-  const triggerStatus = Array.isArray(resolvedTriggerStatus)
+  const triggerStatusRaw = Array.isArray(resolvedTriggerStatus)
     ? resolvedTriggerStatus.map((entry) => {
         const trigger = entry as Record<string, unknown>;
         if (typeof trigger.name === "string" && trigger.name.toLowerCase().includes("rate-reset")) {
@@ -278,6 +325,7 @@ export async function writeSnapshot(qualitative: {
         return trigger;
       })
     : resolvedTriggerStatus;
+  const triggerStatus = Array.isArray(triggerStatusRaw) ? pruneStaleTriggerEntries(triggerStatusRaw) : triggerStatusRaw;
 
   const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
   const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);
