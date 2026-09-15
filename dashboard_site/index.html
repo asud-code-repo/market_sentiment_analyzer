@@ -238,6 +238,14 @@
   .data-table th, .data-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
   .data-table th { color: var(--text-muted); font-weight: 600; }
 
+  /* Collapsible card sections -- 6-Indicator History defaults to collapsed
+     (see BACKLOG.md's "Dashboard hierarchy reorganization" item; the page
+     grew a real amount taller once the sector-rotation card shipped) and
+     remembers its state in localStorage so it doesn't reset every visit. */
+  .collapsible-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .collapse-toggle { font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+  .collapse-toggle:hover { color: var(--text-primary); }
+
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
 </style>
@@ -283,12 +291,17 @@
   </div>
 
   <div class="card">
-    <p class="eyebrow">6-Indicator History</p>
-    <div id="chart-vix"></div>
-    <div id="chart-hy-spread"></div>
-    <div id="chart-drawdown"></div>
-    <div id="chart-10y"></div>
-    <div id="chart-sahm"></div>
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">6-Indicator History</p>
+      <button class="collapse-toggle" id="indicator-history-toggle" aria-expanded="false">Show</button>
+    </div>
+    <div id="indicator-history-body" hidden>
+      <div id="chart-vix"></div>
+      <div id="chart-hy-spread"></div>
+      <div id="chart-drawdown"></div>
+      <div id="chart-10y"></div>
+      <div id="chart-sahm"></div>
+    </div>
   </div>
 </div>
 
@@ -1304,6 +1317,44 @@ if (isStandalonePwa) {
   refreshBtn.style.display = "inline-block";
   refreshBtn.addEventListener("click", () => location.reload());
 }
+
+// Collapsible 6-Indicator History card -- defaults collapsed, remembers
+// state per-viewer in localStorage. Safe to run before main()'s data
+// fetch: renderLineChart's SVGs use a fixed viewBox (900x140), not a
+// DOM-measured width, so charts render correctly into a hidden container
+// -- no need to defer chart rendering until the section is expanded.
+// Wrapped in try/catch since localStorage can throw in some contexts
+// (private browsing, blocked site data) -- falls back to always-collapsed
+// rather than breaking the page.
+(function setupCollapsibleIndicatorHistory() {
+  const STORAGE_KEY = "indicatorHistoryExpanded";
+  const toggle = document.getElementById("indicator-history-toggle");
+  const body = document.getElementById("indicator-history-body");
+
+  function setExpanded(expanded) {
+    body.hidden = !expanded;
+    toggle.textContent = expanded ? "Hide" : "Show";
+    toggle.setAttribute("aria-expanded", String(expanded));
+  }
+
+  let initiallyExpanded = false;
+  try {
+    initiallyExpanded = localStorage.getItem(STORAGE_KEY) === "true";
+  } catch (err) {
+    // Ignore -- defaults to collapsed.
+  }
+  setExpanded(initiallyExpanded);
+
+  toggle.addEventListener("click", () => {
+    const nowExpanded = body.hidden;
+    setExpanded(nowExpanded);
+    try {
+      localStorage.setItem(STORAGE_KEY, String(nowExpanded));
+    } catch (err) {
+      // Ignore -- this visit's toggle still works, just won't persist.
+    }
+  });
+})();
 
 async function main() {
   try {
