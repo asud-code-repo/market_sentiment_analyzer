@@ -68,6 +68,43 @@ interface RawRow {
   value: number;
 }
 
+interface NavSharesPoint {
+  date: string;
+  nav: number;
+  shares: number;
+}
+
+// SSGA's NAV-history files are NOT split-adjusted -- confirmed live
+// 2026-09-15: XLK's shares outstanding jumped from 325.8M to 650.6M on
+// 2025-12-05 (a clean 2:1 split, matched by NAV simultaneously halving,
+// 291.04 -> 146.62), which silently corrupted any return/flow calculation
+// spanning that date (365d NAV return showed a fake -32% "decline"). Real
+// daily creation/redemption is small relative to shares outstanding
+// (observed: XLF's biggest recent move was ~1.4% across 4 days) -- a split
+// moves shares by a large, roughly-integer-or-reciprocal multiple in a
+// single day, so a generous band (ratio > 1.5 or < 0.6667) distinguishes
+// the two without false-positiving on genuine flow. Detected splits are
+// adjusted retroactively (shares x ratio, NAV / ratio for every point
+// strictly before the split), same convention as any "split-adjusted"
+// price series. Processing chronologically forward means multiple splits
+// compound correctly -- each detected split only touches points already
+// known to be strictly before it.
+function adjustForSplits(points: NavSharesPoint[]): NavSharesPoint[] {
+  const adjusted = points.map((p) => ({ ...p }));
+  for (let i = 1; i < adjusted.length; i++) {
+    const prevShares = adjusted[i - 1].shares;
+    if (prevShares === 0) continue;
+    const ratio = adjusted[i].shares / prevShares;
+    if (ratio > 1.5 || ratio < 0.6667) {
+      for (let j = 0; j < i; j++) {
+        adjusted[j].shares *= ratio;
+        adjusted[j].nav /= ratio;
+      }
+    }
+  }
+  return adjusted;
+}
+
 // PostgREST silently caps every response at a project-level max-rows
 // setting (confirmed live 2026-09-15: 1000, regardless of how the query is
 // built) -- the ~6,600+ rows this query needs (26 series x ~254 trading
@@ -126,8 +163,21 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
   const round = (n: number) => Math.round(n * 100) / 100;
 
   return SECTOR_TICKERS.map(({ ticker, label }) => {
-    const navSeries = bySeriesId.get(`${ticker}_NAV`) ?? [];
-    const sharesSeries = bySeriesId.get(`${ticker}_SHARES_OUT`) ?? [];
+    const rawNavSeries = bySeriesId.get(`${ticker}_NAV`) ?? [];
+    const rawSharesSeries = bySeriesId.get(`${ticker}_SHARES_OUT`) ?? [];
+
+    // NAV and shares come from the same source rows (ssga.ts writes both
+    // per date in lockstep), so they're 1:1 by index here -- safe to pair
+    // by position rather than needing a date-keyed join.
+    const paired: NavSharesPoint[] = rawNavSeries.map((nav, i) => ({
+      date: nav.date,
+      nav: nav.value,
+      shares: rawSharesSeries[i]?.value ?? NaN,
+    }));
+    const splitAdjusted = adjustForSplits(paired);
+    const navSeries: SeriesPoint[] = splitAdjusted.map((p) => ({ date: p.date, value: p.nav }));
+    const sharesSeries: SeriesPoint[] = splitAdjusted.map((p) => ({ date: p.date, value: p.shares }));
+
     const latestNav = navSeries.length > 0 ? navSeries[navSeries.length - 1] : null;
     const latestShares = sharesSeries.length > 0 ? sharesSeries[sharesSeries.length - 1] : null;
 

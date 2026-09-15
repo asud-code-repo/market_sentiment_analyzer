@@ -1235,11 +1235,40 @@ async function main() {
         d.setUTCDate(d.getUTCDate() - days);
         return d.toISOString().slice(0, 10);
       };
+      // SSGA's NAV-history files are NOT split-adjusted (confirmed live:
+      // XLK's shares outstanding jumped 325.8M -> 650.6M on 2025-12-05, a
+      // clean 2:1 split, with NAV simultaneously halving) -- uncorrected,
+      // any return/flow spanning that date is corrupted. Mirrors
+      // mcp_server/src/lib/sectorRotation.ts's adjustForSplits exactly
+      // (duplicated, not shared, same convention as this file's other
+      // logic mirrored from the MCP server). Real daily creation/
+      // redemption is small (observed: <2%); a split moves shares by a
+      // large, roughly-integer-or-reciprocal multiple, so this band is
+      // generous on purpose to avoid false-positiving on genuine flow.
+      const adjustForSplits = (points) => {
+        const adjusted = points.map((p) => ({ ...p }));
+        for (let i = 1; i < adjusted.length; i++) {
+          const prevShares = adjusted[i - 1].shares;
+          if (prevShares === 0) continue;
+          const ratio = adjusted[i].shares / prevShares;
+          if (ratio > 1.5 || ratio < 0.6667) {
+            for (let j = 0; j < i; j++) {
+              adjusted[j].shares *= ratio;
+              adjusted[j].nav /= ratio;
+            }
+          }
+        }
+        return adjusted;
+      };
 
       const bySymbol = new Map();
       for (const { symbol } of SECTOR_ROTATION_TICKERS) {
-        const navSeries = bySeriesId.get(`${symbol}_NAV`) ?? [];
-        const sharesSeries = bySeriesId.get(`${symbol}_SHARES_OUT`) ?? [];
+        const rawNavSeries = bySeriesId.get(`${symbol}_NAV`) ?? [];
+        const rawSharesSeries = bySeriesId.get(`${symbol}_SHARES_OUT`) ?? [];
+        const paired = rawNavSeries.map((n, i) => ({ date: n.date, nav: n.value, shares: rawSharesSeries[i]?.value }));
+        const splitAdjusted = adjustForSplits(paired);
+        const navSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.nav }));
+        const sharesSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.shares }));
         const latestNav = navSeries[navSeries.length - 1];
         const latestShares = sharesSeries[sharesSeries.length - 1];
         const navReturn = {};
