@@ -1,0 +1,11 @@
+-- Daily public Risk Radar: a 6-axis (geopolitical, policy_fed, inflation,
+-- valuation, labor_market, earnings; each 0-100) discretionary macro-risk
+-- read, computed every write_snapshot call per the new banded rubric in
+-- crash-check-rules.md -- same cadence and rigor bar as
+-- crash_probability_pct, which is also 100% LLM-judgment by deliberate,
+-- documented design. Separate from (not a migration of) the existing
+-- portfolio_review_snapshots.risk_radar, which is Portfolio-Review-
+-- triggered, not daily, and stays on the private full_report_site
+-- unchanged. Nullable, no default: null on automated-only rows, same
+-- pattern as crash_probability_pct and delta_log.
+alter table crash_checks add column risk_radar jsonb;

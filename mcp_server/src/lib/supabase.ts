@@ -98,6 +98,14 @@ export interface CrashCheckRow {
   hazard_10pct_calibrated_pct: number | null;
   hazard_10pct_band: string | null;
   hazard_10pct_as_of: string | null;
+  // Daily public Risk Radar (added 2026-09-15) -- discretionary LLM
+  // judgment like crash_probability_pct, required on every write_snapshot
+  // call. See crash-check-rules.md's "Risk Radar Scoring Methodology" --
+  // 4 of 6 axes anchor to real series already tracked here, geopolitical/
+  // earnings stay narrative-only. Separate from (not the same field as)
+  // portfolio_review_snapshots.risk_radar, which is Portfolio-Review-
+  // triggered and stays on the private full_report_site unchanged.
+  risk_radar: RiskRadarScores | null;
   created_at: string;
 }
 
@@ -253,6 +261,10 @@ export async function writeSnapshot(qualitative: {
   scenario_base_pct: number;
   scenario_bear_pct: number;
   scenario_crash_pct: number;
+  // Daily public Risk Radar -- required every run, same cadence/rigor bar
+  // as crash_probability_pct above. See crash-check-rules.md's "Risk
+  // Radar Scoring Methodology" for the per-axis banded rubric.
+  risk_radar: RiskRadarScores;
   notes: string;
   // Same structured list already rendered in the HTML artifact's delta log
   // (each {sign: "pos"|"neg", text}) — optional since a run with no prior
@@ -396,6 +408,7 @@ export async function writeSnapshot(qualitative: {
     scenario_base_pct: qualitative.scenario_base_pct,
     scenario_bear_pct: qualitative.scenario_bear_pct,
     scenario_crash_pct: qualitative.scenario_crash_pct,
+    risk_radar: qualitative.risk_radar,
     notes: qualitative.notes,
     delta_log: qualitative.delta_log ?? null,
     crash_type: qualitative.crash_type ?? latest.crash_type,

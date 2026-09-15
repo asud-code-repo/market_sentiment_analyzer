@@ -41,7 +41,10 @@ server.registerTool(
       "Returns the most recent crash_checks row plus a delta vs the last row that actually had a " +
       "probability (the last full report, not just the last row — most rows are bare automated " +
       "refreshes). Call only after independently committing to this run's probability estimate — " +
-      "this is for the delta-log framing, not for forming the estimate itself.",
+      "this is for the delta-log framing, not for forming the estimate itself. `risk_radar` (when " +
+      "present) is the prior run's discretionary macro-risk read (see crash-check-rules.md's 'Risk " +
+      "Radar Scoring Methodology') -- same tier as crash_probability_pct, never gates, useful here " +
+      "only as a reference point for this run's own risk_radar judgment.",
   },
   withLogging("get_latest_snapshot", async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -283,7 +286,12 @@ server.registerTool(
       "print/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
       "remove superseded entries yourself. When a trigger's target rolls to a new occurrence, " +
       "either replace the old entry in place or simply append a new one; the server keeps whichever " +
-      "has the later date. Do not include any personal dollar figures in `notes` — " +
+      "has the later date. `risk_radar` (geopolitical/policy_fed/inflation/valuation/labor_market/" +
+      "earnings, each 0-100) is required every run — see crash-check-rules.md's 'Risk Radar Scoring " +
+      "Methodology' for the per-axis banded rubric (4 of the 6 axes anchor to real series already " +
+      "tracked in this system; geopolitical/earnings stay narrative-only, no free anchoring data " +
+      "exists for either). Discretionary like crash_probability_pct -- never gates, never validated. " +
+      "Do not include any personal dollar figures in `notes` — " +
       "this is written to Supabase, which holds macro/rule state only.",
     inputSchema: {
       crash_probability_pct: z.number().min(0).max(100),
@@ -293,6 +301,14 @@ server.registerTool(
       scenario_base_pct: z.number().min(0).max(100),
       scenario_bear_pct: z.number().min(0).max(100),
       scenario_crash_pct: z.number().min(0).max(100),
+      risk_radar: z.object({
+        geopolitical: z.number().min(0).max(100),
+        policy_fed: z.number().min(0).max(100),
+        inflation: z.number().min(0).max(100),
+        valuation: z.number().min(0).max(100),
+        labor_market: z.number().min(0).max(100),
+        earnings: z.number().min(0).max(100),
+      }),
       notes: z.string(),
       delta_log: z
         .array(

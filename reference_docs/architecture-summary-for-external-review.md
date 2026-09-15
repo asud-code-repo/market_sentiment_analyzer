@@ -1306,6 +1306,56 @@ once you've seen how it tracks against known past drawdowns.
 
 ---
 
+## Risk Radar Scoring Methodology (public, daily — `risk_radar`)
+
+**What it is**: a 6-axis discretionary macro-risk read (geopolitical,
+policy_fed, inflation, valuation, labor_market, earnings — each 0-100),
+required on every `write_snapshot` call, same cadence as
+`crash_probability_pct`. Surfaced on the public dashboard.
+
+**Why this exists alongside the private Portfolio Review's own risk_radar**:
+that one (`write_portfolio_review`) is Portfolio-Review-triggered, not
+daily, and has no documented scoring basis ("reflecting this run's own
+judgment" is the entire spec). This section exists specifically to close
+that gap for the *public, daily* version — the private one is unchanged.
+
+**Like `crash_probability_pct` above, this is discretionary LLM judgment,
+not a calibrated model** — the difference is 4 of the 6 axes are anchored
+to real series already tracked in this system, not free-form:
+
+- **`policy_fed`** — anchor to `fed_pivot_signal` (NONE/PAUSE/CUT) and
+  `get_trigger_status`'s `fed_event_trigger` proximity. 0-25: NONE, no
+  FOMC within 2 weeks. 26-50: PAUSE, or an FOMC meeting within 2 weeks.
+  51-75: CUT, or an active hiking cycle. 76-100: emergency/inter-meeting
+  action.
+- **`inflation`** — anchor directly to `T10YIE`. 0-20: <2.0%. 21-40:
+  2.0-2.5%. 41-65: 2.5-3.0% (the existing "sustained 4+ weeks" complacency
+  flag threshold). 66-100: >3.0%.
+- **`labor_market`** — anchor to the Sahm Rule color, ICSA/CCSA trend, and
+  `CGBD2024`. 0-25: Sahm GREEN, stable claims. 26-50: Sahm AMBER, or
+  rising claims. 51-75: Sahm RED (unconfirmed), or accelerating claims.
+  76-100: Sahm RED confirmed, broad-based deterioration.
+- **`valuation`** — anchor to `DFII10` (real yield) as the closest
+  available proxy. Same caveat as `tips_real_yield_10y_pct` above: this is
+  the real-yield leg only — no free earnings-yield/CAPE series exists on
+  FRED, so this axis alone cannot represent a full valuation read.
+- **`geopolitical`** and **`earnings`** — **no free anchoring data exists
+  for either** (real, standing gaps, same category as the missing
+  global-PMI/CAPE series already documented elsewhere in this file). These
+  two stay genuinely judgment-based, banded only by narrative severity
+  (0-25 no material tension/earnings concern ... 76-100 crisis-level
+  escalation/broad earnings collapse) — same tier as `crash_type`/
+  `warsh_classification`, already-accepted judgment fields in this system.
+
+**Non-goals**: does not feed `crash_probability_pct`, does not score into
+the 3-of-6 wave-authorization gate, is not validated or back-tested — same
+"working draft" framing as the Crash-Probability Scoring Methodology
+section above. A reader should not treat all six axes as equally grounded
+— `geopolitical`/`earnings` carry materially less anchoring than the other
+four, and the dashboard card says so explicitly.
+
+---
+
 ## Formatting Requirements
 
 **Rule Engine Output Contract (read alongside Layer Boundary above).** Every
