@@ -168,6 +168,7 @@
   #sector-rotation-wrap .scatter-axis { stroke: var(--grid); stroke-width: 1; }
   #sector-rotation-wrap .scatter-quadrant-label { font-size: 10px; fill: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
   #sector-rotation-wrap .scatter-point-label { font-size: 10px; fill: var(--text-primary); font-weight: 600; pointer-events: none; }
+  #sector-rotation-wrap .scatter-leader { stroke: var(--text-muted); stroke-width: 1; opacity: 0.5; }
   #sector-rotation-wrap .scatter-axis-label { font-size: 10px; fill: var(--text-muted); }
   #sector-rotation-wrap .scatter-point { cursor: pointer; }
   #sector-rotation-wrap .scatter-tooltip {
@@ -637,6 +638,36 @@ function classifyRotation(navReturnPct, flowUsd) {
 }
 
 // bySymbol: Map<symbol, { navReturn: {30,90,180,365}, flow: {...} }>
+// Greedy label-declutter: 30D windows especially tend to cluster many
+// sectors near the zero-flow line (small moves in a short window), which
+// makes adjacent labels overlap and their dot colors hard to tell apart.
+// Processes points left-to-right (by x/return), pushing a label further
+// above its dot only when it would otherwise overlap an already-placed
+// label's approximate bounding box -- so uncrowded points keep the default
+// close offset, and only genuinely colliding ones get nudged, each getting
+// a thin leader line back to its dot per this project's dataviz convention
+// for detached labels (never just stack them with no connector).
+function layoutScatterLabels(points, cx, cy, topBound) {
+  const CHAR_W = 6.2, PAD_W = 6, ROW_H = 11, DEFAULT_OFFSET = 12;
+  const placed = [];
+  const sorted = [...points].sort((a, b) => cx(a.ret) - cx(b.ret));
+  return sorted.map((p) => {
+    const x = cx(p.ret), y = cy(p.flow);
+    const labelWidth = p.symbol.length * CHAR_W + PAD_W;
+    let offset = DEFAULT_OFFSET;
+    let labelY = y - offset;
+    for (let tries = 0; tries < 8; tries++) {
+      const xMin = x - labelWidth / 2, xMax = x + labelWidth / 2;
+      const collides = placed.some((r) => xMin < r.xMax && xMax > r.xMin && Math.abs(labelY - r.y) < ROW_H);
+      if (!collides) break;
+      offset += ROW_H;
+      labelY = Math.max(y - offset, topBound);
+    }
+    placed.push({ xMin: x - labelWidth / 2, xMax: x + labelWidth / 2, y: labelY });
+    return { ...p, x, y, labelY, needsLeader: offset > DEFAULT_OFFSET };
+  });
+}
+
 function renderRotationScatter(bySymbol) {
   const w = rotationScatterWindow;
   const points = SECTOR_ROTATION_TICKERS
@@ -655,16 +686,21 @@ function renderRotationScatter(bySymbol) {
   const cy = (v) => H - PAD - ((v + flowMax) / (2 * flowMax)) * (H - 2 * PAD);
   const zeroX = cx(0), zeroY = cy(0);
 
-  const svgPoints = points
+  const laidOut = layoutScatterLabels(points, cx, cy, PAD + 20);
+
+  const svgPoints = laidOut
     .map((p) => {
-      const x = cx(p.ret), y = cy(p.flow);
       const read = classifyRotation(p.ret, p.flow);
       const pointColor =
         read === "confirmed_in" ? "var(--good)" : read === "confirmed_out" ? "var(--critical)" : "var(--neutral-blue)";
+      const leader = p.needsLeader
+        ? `<line x1="${p.x}" y1="${p.y - 8}" x2="${p.x}" y2="${p.labelY + 4}" class="scatter-leader" />`
+        : "";
       return `
         <g class="scatter-point" data-symbol="${p.symbol}" data-label="${p.label}" data-ret="${p.ret.toFixed(1)}" data-flow="${fmtRotationFlow(p.flow).replace(/<[^>]+>/g, "")}" data-read="${read}">
-          <circle cx="${x}" cy="${y}" r="6" fill="${pointColor}" stroke="var(--surface-1)" stroke-width="2" />
-          <text x="${x}" y="${y - 11}" text-anchor="middle" class="scatter-point-label">${p.symbol}</text>
+          ${leader}
+          <circle cx="${p.x}" cy="${p.y}" r="6" fill="${pointColor}" stroke="var(--surface-1)" stroke-width="2" />
+          <text x="${p.x}" y="${p.labelY}" text-anchor="middle" class="scatter-point-label">${p.symbol}</text>
         </g>
       `;
     })
