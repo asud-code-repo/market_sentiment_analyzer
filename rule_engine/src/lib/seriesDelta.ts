@@ -58,13 +58,10 @@ export async function computeSeriesDelta7d(seriesId: string): Promise<SeriesDelt
 /**
  * N-calendar-day delta anchored to a caller-supplied date/value, rather than
  * re-fetching "latest" independently per series (computeSeriesDelta7d's own
- * behavior, left unchanged above for divergence.ts). hazardModel.ts needs
- * every one of its 32 features anchored to the SAME date
- * (sp500.observation_date) — re-deriving "latest" per series here could
- * silently drift across features that update on different calendar days.
- * Throws (does not return null) on missing history — a hazard feature
- * computed from a silently-missing delta would be wrong, not just
- * incomplete; see hazardModel.ts's own fail-loud convention.
+ * behavior, left unchanged above for divergence.ts). Throws (does not
+ * return null) on missing history — a hazard feature computed from a
+ * silently-missing delta would be wrong, not just incomplete; see
+ * hazardModel.ts's own fail-loud convention.
  */
 export async function computeSeriesDeltaAsOf(
   seriesId: string,
@@ -72,9 +69,52 @@ export async function computeSeriesDeltaAsOf(
   anchorValue: number,
   days: number
 ): Promise<number> {
-  const past = await getValueOnOrBefore(seriesId, subtractDays(anchorDate, days));
+  return computeSeriesDeltaAsOfDate(seriesId, anchorValue, subtractDays(anchorDate, days));
+}
+
+/**
+ * Same delta computation as computeSeriesDeltaAsOf, but takes an explicit
+ * target date instead of deriving one via calendar subtraction — the
+ * building block for computeSeriesDeltaAsOf's calendar-day case (above) and
+ * for getTradingDayAnchor's trading-day-exact case (below).
+ */
+export async function computeSeriesDeltaAsOfDate(seriesId: string, anchorValue: number, targetDate: string): Promise<number> {
+  const past = await getValueOnOrBefore(seriesId, targetDate);
   if (past === null) {
-    throw new Error(`computeSeriesDeltaAsOf: no historical data_point for "${seriesId}" ${days}d before ${anchorDate}`);
+    throw new Error(`computeSeriesDeltaAsOfDate: no historical data_point for "${seriesId}" on/before ${targetDate}`);
   }
   return Math.round((anchorValue - past) * 100000) / 100000;
+}
+
+/**
+ * Resolves the actual trading-day-exact date N trading days before
+ * anchorDate, by counting back N rows in a reference market-calendar series
+ * (SP500 — already this system's authoritative index for drawdown/ATH/wave
+ * triggers, so reusing it as the trading-day calendar reference is
+ * consistent with existing conventions) rather than approximating with
+ * calendar-day subtraction. hazardModel.ts's research was validated on
+ * exact 5/20-trading-day deltas; this closes that previously-flagged
+ * calendar-day approximation (crash-check-rules.md's "Known production
+ * approximation") for good, rather than leaving it as a permanent caveat.
+ * Assumes SP500 has no gaps on real trading days — true in practice for
+ * this system's core index series, but not independently re-verified here.
+ */
+export async function getTradingDayAnchor(anchorDate: string, tradingDaysBack: number): Promise<string> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("observation_date")
+    .eq("series_id", "SP500")
+    .lte("observation_date", anchorDate)
+    .order("observation_date", { ascending: false })
+    .limit(tradingDaysBack + 1);
+
+  if (error) {
+    throw new Error(`getTradingDayAnchor: failed reading SP500 history on/before ${anchorDate}: ${error.message}`);
+  }
+  if (!data || data.length < tradingDaysBack + 1) {
+    throw new Error(
+      `getTradingDayAnchor: fewer than ${tradingDaysBack + 1} SP500 rows on/before ${anchorDate} — cannot resolve a ${tradingDaysBack}-trading-day anchor yet.`,
+    );
+  }
+  return data[tradingDaysBack].observation_date;
 }

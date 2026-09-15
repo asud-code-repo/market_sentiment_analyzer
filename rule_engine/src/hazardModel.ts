@@ -15,12 +15,15 @@
 // whole block from a fresh retrain if the model ever changes; do not tweak
 // individual numbers.
 //
-// PRODUCTION APPROXIMATION (deliberate, not a silent discrepancy): the
-// research's 5-trading-day/20-trading-day deltas are approximated here as
-// 7/28 CALENDAR days, matching this system's own existing delta convention
-// (crash-check-rules.md's "Delta standard": compute off calendar days, not
-// check-to-check gaps) rather than building trading-day-aware lookback logic
-// that doesn't exist anywhere else in this codebase.
+// TRADING-DAY-EXACT DELTAS (fixed 2026-09-15, previously a flagged 7/28
+// calendar-day approximation): the research validated 5-trading-day/
+// 20-trading-day deltas. Production now matches exactly, via
+// getTradingDayAnchor() (seriesDelta.ts) counting back rows in SP500 as the
+// market-calendar reference rather than approximating with calendar-day
+// subtraction. External review (2026-09-15) flagged the prior approximation
+// as an avoidable research-to-production mismatch, especially since a small
+// raw-score movement can cross a plateau boundary in the isotonic
+// calibration curve — worth closing properly rather than leaving flagged.
 //
 // SIGN CONVENTION: rules.ts's drawdownPct() returns a POSITIVE number for a
 // drawdown (e.g. 8.5 for an 8.5% decline). The model was trained on the
@@ -31,7 +34,7 @@
 // its deltas) is silently backwards.
 
 import { supabase, getLatestDataPoint } from "./lib/supabase.js";
-import { getValueOnOrBefore, subtractDays, computeSeriesDeltaAsOf } from "./lib/seriesDelta.js";
+import { getValueOnOrBefore, computeSeriesDeltaAsOfDate, getTradingDayAnchor } from "./lib/seriesDelta.js";
 import { drawdownPct } from "./rules.js";
 
 interface FeatureCoefficient {
@@ -281,23 +284,35 @@ export async function gatherHazardFeatures(ctx: HazardContext): Promise<Record<s
   const drawdownPctModel = -ctx.drawdownPctLive; // negate to training convention
   const curve2s10s = ctx.dgs10Value - dgs2.value;
 
-  const [realizedVol20d, vixD5, vixD20, baaD5, baaD20, nfciD5, nfciD20, stlfsiD5, stlfsiD20, dgs10D5, dgs10D20, drawdown7, drawdown28, curve7, curve28] =
+  // Trading-day-exact anchors (resolved once, reused below) — closes the
+  // previously-flagged calendar-day approximation (crash-check-rules.md's
+  // "Known production approximation": research was validated on exact
+  // 5/20-trading-day deltas, production used 7/28 calendar days instead).
+  // See getTradingDayAnchor's own doc comment for how "trading day" is
+  // determined (counting back rows in SP500, this system's market-calendar
+  // reference series).
+  const [date5, date20] = await Promise.all([
+    getTradingDayAnchor(ctx.anchorDate, 5),
+    getTradingDayAnchor(ctx.anchorDate, 20),
+  ]);
+
+  const [realizedVol20d, vixD5, vixD20, baaD5, baaD20, nfciD5, nfciD20, stlfsiD5, stlfsiD20, dgs10D5, dgs10D20, drawdown5, drawdown20, curve5, curve20] =
     await Promise.all([
       getSp500RealizedVol20d(ctx.anchorDate),
-      computeSeriesDeltaAsOf("VIXCLS", ctx.anchorDate, ctx.vixValue, 7),
-      computeSeriesDeltaAsOf("VIXCLS", ctx.anchorDate, ctx.vixValue, 28),
-      computeSeriesDeltaAsOf("BAA10Y", ctx.anchorDate, baa10y.value, 7),
-      computeSeriesDeltaAsOf("BAA10Y", ctx.anchorDate, baa10y.value, 28),
-      computeSeriesDeltaAsOf("NFCI", ctx.anchorDate, nfci.value, 7),
-      computeSeriesDeltaAsOf("NFCI", ctx.anchorDate, nfci.value, 28),
-      computeSeriesDeltaAsOf("STLFSI4", ctx.anchorDate, stlfsi4.value, 7),
-      computeSeriesDeltaAsOf("STLFSI4", ctx.anchorDate, stlfsi4.value, 28),
-      computeSeriesDeltaAsOf("DGS10", ctx.anchorDate, ctx.dgs10Value, 7),
-      computeSeriesDeltaAsOf("DGS10", ctx.anchorDate, ctx.dgs10Value, 28),
-      getDrawdownAsOf(subtractDays(ctx.anchorDate, 7)),
-      getDrawdownAsOf(subtractDays(ctx.anchorDate, 28)),
-      getCurveAsOf(subtractDays(ctx.anchorDate, 7)),
-      getCurveAsOf(subtractDays(ctx.anchorDate, 28)),
+      computeSeriesDeltaAsOfDate("VIXCLS", ctx.vixValue, date5),
+      computeSeriesDeltaAsOfDate("VIXCLS", ctx.vixValue, date20),
+      computeSeriesDeltaAsOfDate("BAA10Y", baa10y.value, date5),
+      computeSeriesDeltaAsOfDate("BAA10Y", baa10y.value, date20),
+      computeSeriesDeltaAsOfDate("NFCI", nfci.value, date5),
+      computeSeriesDeltaAsOfDate("NFCI", nfci.value, date20),
+      computeSeriesDeltaAsOfDate("STLFSI4", stlfsi4.value, date5),
+      computeSeriesDeltaAsOfDate("STLFSI4", stlfsi4.value, date20),
+      computeSeriesDeltaAsOfDate("DGS10", ctx.dgs10Value, date5),
+      computeSeriesDeltaAsOfDate("DGS10", ctx.dgs10Value, date20),
+      getDrawdownAsOf(date5),
+      getDrawdownAsOf(date20),
+      getCurveAsOf(date5),
+      getCurveAsOf(date20),
     ]);
 
   return {
@@ -321,8 +336,8 @@ export async function gatherHazardFeatures(ctx: HazardContext): Promise<Record<s
     spy_realized_vol_20d: realizedVol20d,
     VIXCLS_d5: vixD5,
     VIXCLS_d20: vixD20,
-    drawdown_pct_d5: round(drawdownPctModel - drawdown7),
-    drawdown_pct_d20: round(drawdownPctModel - drawdown28),
+    drawdown_pct_d5: round(drawdownPctModel - drawdown5),
+    drawdown_pct_d20: round(drawdownPctModel - drawdown20),
     BAA10Y_d5: baaD5,
     BAA10Y_d20: baaD20,
     NFCI_d5: nfciD5,
@@ -331,7 +346,7 @@ export async function gatherHazardFeatures(ctx: HazardContext): Promise<Record<s
     STLFSI4_d20: stlfsiD20,
     DGS10_d5: dgs10D5,
     DGS10_d20: dgs10D20,
-    curve_2s10s_d5: round(curve2s10s - curve7),
-    curve_2s10s_d20: round(curve2s10s - curve28),
+    curve_2s10s_d5: round(curve2s10s - curve5),
+    curve_2s10s_d20: round(curve2s10s - curve20),
   };
 }

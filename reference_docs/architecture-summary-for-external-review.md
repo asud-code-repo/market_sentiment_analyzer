@@ -1210,22 +1210,49 @@ chosen to align with the plateau structure, not evenly spaced, and
 deliberately not styled with the panel's green/amber/red convention (see
 Formatting Requirements below) since this isn't a gating status.
 
-**Known production approximation**: the research validated this model using
-5-trading-day/20-trading-day deltas (SPY's own trading calendar). Production
-approximates these as **7 and 28 calendar days** instead, matching this
-system's own pre-existing delta convention (see "Delta standard" in
-Formatting Requirements) rather than building trading-day-aware lookback
-logic that exists nowhere else in this codebase. This is a deliberate,
-flagged divergence from the exact research methodology, not a silent one —
-worth remembering if this model's live behavior is ever compared directly
-against the original backtest numbers.
+**Trading-day-exact deltas (fixed 2026-09-15)**: the research validated this
+model using 5-trading-day/20-trading-day deltas. Production previously
+approximated these as 7/28 calendar days (flagged, not silent) — an external
+review pointed out this was an avoidable research-to-production mismatch,
+especially since a small raw-score movement can cross a plateau boundary in
+the isotonic calibration curve. Fixed via `getTradingDayAnchor()`
+(`rule_engine/src/lib/seriesDelta.ts`), which counts back rows in `SP500`
+(this system's own market-calendar reference series) instead of
+approximating with calendar subtraction. Verified live: 5 trading days back
+from 2026-09-14 correctly resolves to 2026-09-04, properly skipping both the
+weekend and Labor Day — the old calendar-7-day approximation landed on
+2026-09-07 (Labor Day itself, not a real trading day).
 
 **Credit-spread proxy**: uses `BAA10Y` (Moody's Baa − 10yr Treasury spread)
 rather than the production HY OAS series (`BAMLH0A0HYM2`), because the
 latter has no usable history before 2023-07-11 — nowhere near enough to
 validate against any of the 5 real historical crises this model was trained
 and tested on. `BAA10Y` is a different economic object (an investment-grade
-spread, not a junk-grade one) and a reasonable, not exact, substitute.
+spread, not a junk-grade one) and a reasonable, not exact, substitute. An
+external review (2026-09-15) confirmed this substitution is sound as long as
+training and production score off the same series consistently (true here)
+— the dangerous version would be training on one and scoring on the other.
+
+**Known, confirmed data-leakage issue — not fixed, requires retraining, not
+just a code change**: `RECPROUSM156N` (Chauvet-Piger smoothed recession
+probability) is one of the 32 trained features. Its producer's own FAQ
+confirms smoothed historical values are revised using data that wasn't
+available at the time ("potentially influenced by data that wasn't
+available the first time a recession probability for a particular month was
+calculated" — jeremypiger.com/recession_probs_faq), plus a real December
+2020 methodology change for the COVID period. This means the model's
+`RECPROUSM156N` coefficient (+0.306) was fit on hindsight-contaminated
+historical data — confirmed via an external review, verified independently
+against the producer's own documentation before accepting it, not just
+taken on the reviewer's word. **This is deliberately not patched by editing
+`FEATURES`/`INTERCEPT`** — coefficients in a fitted logistic regression are
+joint; deleting or zeroing one feature's line without refitting the whole
+model doesn't remove the contamination, it just introduces a different,
+uncontrolled distortion (equivalent to silently injecting a constant bias).
+The only valid fix is retraining with the feature removed or replaced with
+point-in-time (ALFRED) vintages — real research work, not available in this
+session (the original training pipeline was never preserved in this repo).
+Tracked in `BACKLOG.md`.
 
 **Where it's surfaced**: `get_indicator_panel` (the `hazard_model_10pct`
 field) and the dashboard's "Statistical Hazard Model" card, placed

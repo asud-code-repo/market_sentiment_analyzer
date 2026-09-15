@@ -170,16 +170,53 @@ existing wave logic has strong precision even where its timing is weak.
   its bootstrap CI spanned zero (only 4 usable real episodes for that
   deeper threshold), so it couldn't be distinguished from a naive guess.
   Not shipped in any form. Revisit only if more real crises accumulate.
-- **Point-in-time data gap** — the model trains/runs on latest-revised FRED
-  values, not the real-time vintage that would actually have been knowable
-  historically (CPI/unemployment/retail sales get revised after initial
-  release). Known limitation, not fixed. Would need FRED's separate ALFRED
-  vintage API.
-- **Calendar-day vs. trading-day delta approximation** — production uses
-  7/28 calendar days for the model's velocity features instead of the
-  research's exact 5/20 trading days, to match this system's own existing
-  delta convention. Flagged, not expected to matter much  in practice, never
-  independently verified against the trading-day version live.
+- **Point-in-time data gap — partially scoped 2026-09-15, not fixed.** The
+  model trains/runs on latest-revised FRED values, not the real-time
+  vintage that would actually have been knowable historically. Correction
+  to the earlier framing here: this does **not** need a separate ALFRED
+  API — FRED's standard `series/observations` endpoint already supports
+  `realtime_start`/`realtime_end`/`vintage_dates` (confirmed against
+  FRED's own API docs). `RECPROUSM156N` specifically is now a **confirmed**
+  case, not just a theoretical risk — its producer's own FAQ states
+  smoothed historical values are revised using subsequently-available data
+  (jeremypiger.com/recession_probs_faq), plus a real Dec 2020 methodology
+  change for COVID. The model's `RECPROUSM156N` coefficient was fit on
+  hindsight-contaminated data. **Not patched by editing the model
+  artifact** — see crash-check-rules.md's hazard-model section for why
+  that would introduce a different, uncontrolled distortion rather than
+  remove the contamination. Real fix needs retraining with vintage-aware
+  data (or the feature dropped), which needs the original training
+  pipeline — not preserved anywhere in this repo (it lived only in an
+  earlier session's scratchpad). A real, scoped research task, not a code
+  fix.
+- **Calendar-day vs. trading-day delta approximation — fixed 2026-09-15.**
+  Production now uses exact trading-day anchors (`getTradingDayAnchor()`,
+  counting back rows in `SP500` as the market-calendar reference) instead
+  of the old 7/28-calendar-day approximation. Verified live: the old
+  approximation's "7 days back" landed on Labor Day (not a real trading
+  day) in a real live check.
+- **Broader hazard-model validation review (external, 2026-09-15) — not
+  yet acted on, needs scoping.** A rigorous outside review raised several
+  questions that can't be answered from what's preserved in this repo
+  (the original training pipeline is gone) — would need genuinely redoing
+  the research, not auditing it: (1) whether the model beats a naive
+  "current drawdown alone" baseline, given the target's proximity to the
+  threshold is itself informative near a 7-10% drawdown; (2) whether
+  leave-one-crisis-out training ever included crises chronologically
+  *after* the held-out one (a legitimate transfer-learning test, but not
+  a real walk-forward reproduction of "what could have been forecast
+  then"); (3) exact label/episode-eligibility definitions (closing vs.
+  intraday breach, re-entry after partial recovery). Also flagged:
+  stratified 5-fold isotonic calibration on pooled predictions can mix
+  temporally-adjacent observations across folds — worth comparing against
+  a simpler regularized logistic (Platt-style) recalibration under a
+  genuinely chronological split. Secondary ideas (not urgent): a
+  volatility/GARCH-based threshold-crossing challenger model, new
+  candidate features (VXVCLS, VIX9D/VVIX, Fed excess bond premium, OFR
+  stress index components), richer reported metrics (Brier score, log
+  loss, false-alarm episodes/year, warning lead time). Explicitly agreed
+  with the review's recommendation to keep COT/Z.1/sector-rotation out of
+  this model — informational-tier signals, not validated inputs.
 - **Crash-probability presentation: numeric % vs. categorical** — this
   question (previously an abstract external-review suggestion) now has
   real evidence behind one side of it: the hazard model's own isotonic
