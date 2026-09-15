@@ -62,29 +62,62 @@ function valueOnOrBefore(series: SeriesPoint[], onOrBeforeDate: string): number 
   return result;
 }
 
+interface RawRow {
+  series_id: string;
+  observation_date: string;
+  value: number;
+}
+
+// PostgREST silently caps every response at a project-level max-rows
+// setting (confirmed live 2026-09-15: 1000, regardless of how the query is
+// built) -- the ~6,600+ rows this query needs (26 series x ~254 trading
+// days/yr) would otherwise get truncated to the oldest slice, making
+// "latest" land on a stale middle-of-history row instead of today. Paginate
+// with .range() until a short page comes back. Secondary sort on
+// series_id makes the order fully deterministic across page boundaries --
+// many rows share the same observation_date across these 26 series, and
+// offset-based pagination needs a stable order to avoid skipping or
+// duplicating rows when ties exist on the primary sort column alone.
+async function fetchAllDataPoints(seriesIds: string[], cutoff: string): Promise<RawRow[]> {
+  const pageSize = 1000;
+  let offset = 0;
+  const allRows: RawRow[] = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("data_points")
+      .select("series_id, observation_date, value")
+      .in("series_id", seriesIds)
+      .gte("observation_date", cutoff)
+      .order("observation_date", { ascending: true })
+      .order("series_id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Failed to read sector-rotation data_points: ${error.message}`);
+    }
+    const page = data ?? [];
+    allRows.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return allRows;
+}
+
 /**
- * One batched Supabase query for the full {TICKER}_NAV/{TICKER}_SHARES_OUT
- * series set over the trailing 370 days, rather than the ~130 separate
- * round trips 13 tickers x 2 series x (1 latest + 4 lookback fetches) would
- * otherwise need. Computed entirely from that single result set.
+ * One batched (paginated) Supabase read for the full
+ * {TICKER}_NAV/{TICKER}_SHARES_OUT series set over the trailing 370 days,
+ * rather than the ~130 separate round trips 13 tickers x 2 series x (1
+ * latest + 4 lookback fetches) would otherwise need. Computed entirely
+ * from that one result set.
  */
 export async function computeSectorRotation(): Promise<TickerRotation[]> {
   const seriesIds = SECTOR_TICKERS.flatMap(({ ticker }) => [`${ticker}_NAV`, `${ticker}_SHARES_OUT`]);
   const cutoff = subtractDays(new Date().toISOString().slice(0, 10), 370);
 
-  const { data, error } = await supabase
-    .from("data_points")
-    .select("series_id, observation_date, value")
-    .in("series_id", seriesIds)
-    .gte("observation_date", cutoff)
-    .order("observation_date", { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to read sector-rotation data_points: ${error.message}`);
-  }
+  const rows = await fetchAllDataPoints(seriesIds, cutoff);
 
   const bySeriesId = new Map<string, SeriesPoint[]>();
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const list = bySeriesId.get(row.series_id) ?? [];
     list.push({ date: row.observation_date, value: row.value });
     bySeriesId.set(row.series_id, list);

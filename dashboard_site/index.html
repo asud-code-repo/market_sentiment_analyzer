@@ -1204,8 +1204,17 @@ async function main() {
       const cutoff = new Date();
       cutoff.setUTCDate(cutoff.getUTCDate() - 370);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
-      const rows = await fetchFromSupabase(
-        `data_points?select=series_id,observation_date,value&series_id=in.(${rotationSeriesIds.join(",")})&observation_date=gte.${cutoffStr}&order=observation_date.asc&limit=10000`,
+      // ~6,600+ rows for the full 26-series/370-day window (26 series x
+      // ~254 trading days/yr) -- well past PostgREST's 1000-row cap, so
+      // this must use fetchAllFromSupabase (see its own comment above for
+      // why a bigger `limit=` alone doesn't work), not fetchFromSupabase.
+      // Secondary sort on series_id (not needed by fetchAllFromSupabase's
+      // other, single-series caller) -- many rows share the same
+      // observation_date across the 26 series here, and offset-based
+      // pagination needs a fully deterministic order to avoid skipping or
+      // duplicating rows across page boundaries when ties exist.
+      const rows = await fetchAllFromSupabase(
+        `data_points?select=series_id,observation_date,value&series_id=in.(${rotationSeriesIds.join(",")})&observation_date=gte.${cutoffStr}&order=observation_date.asc,series_id.asc`,
       );
 
       const bySeriesId = new Map();
