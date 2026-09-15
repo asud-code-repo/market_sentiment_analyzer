@@ -22,6 +22,23 @@ const BACKFILL_YEARS = 2; // matches Massive's advertised free-tier historical d
 // so these can't be silently wiped out by that path.
 const BREADTH_TICKERS = ["IWM", "SPY"];
 
+// Tracked for the gold contextual indicator (get_context_indicators) —
+// gold already has a real allocation in the Type C/Type E crash-type
+// sleeves (crash-check-rules.md), but its live price was never actually
+// tracked anywhere until now. Same independent-of-watchlist rationale as
+// BREADTH_TICKERS above. GLD is a normal US-listed ETF, so it flows through
+// the same stocks grouped-daily endpoint as everything else here.
+const CONTEXT_TICKERS = ["GLD"];
+
+// Bitcoin, tracked as a secondary/awareness-only indicator (2026-09-14
+// decision, made after verifying — not assuming — that BTC is NOT a
+// reliable crash hedge: it fell MORE than equities in both the March 2020
+// COVID crash and the 2022 bear market). Crypto is a separate Massive
+// locale/market from stocks (confirmed via Massive's own REST docs), hence
+// its own ticker list and its own fetch path below rather than folding into
+// CONTEXT_TICKERS.
+const CRYPTO_CONTEXT_TICKERS = ["X:BTCUSD"];
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -66,9 +83,36 @@ async function fetchLatestGroupedDaily(apiKey: string): Promise<MassiveBar[]> {
   throw new Error(`Massive: no grouped-daily data found in the last ${maxLookbackDays} days`);
 }
 
+// Crypto is a separate Massive locale/market from stocks — same
+// walk-back-to-find-a-published-date shape as fetchLatestGroupedDaily above,
+// just a different URL. Crypto trades every day, so this will normally
+// resolve on the first try; the defensive lookback loop costs nothing to
+// reuse.
+async function fetchLatestGroupedDailyCrypto(apiKey: string): Promise<MassiveBar[]> {
+  const maxLookbackDays = 7;
+  for (let daysAgo = 1; daysAgo <= maxLookbackDays; daysAgo++) {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    const dateStr = date.toISOString().slice(0, 10);
+
+    const url = new URL(`${BASE_URL}/v2/aggs/grouped/locale/global/market/crypto/${dateStr}`);
+    url.searchParams.set("apiKey", apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`Massive crypto grouped-daily request failed for ${dateStr}: HTTP ${res.status} ${await res.text()}`);
+    }
+    const body = (await res.json()) as MassiveAggsResponse;
+    if (body.results && body.results.length > 0) {
+      return body.results;
+    }
+  }
+  throw new Error(`Massive: no crypto grouped-daily data found in the last ${maxLookbackDays} days`);
+}
+
 export async function fetchMassive(): Promise<DataPoint[]> {
   const watchlistTickers = await readWatchlistTickers();
-  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS])];
+  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS, ...CONTEXT_TICKERS])];
   if (tickers.length === 0) {
     return []; // optional source — nothing configured, nothing to fetch
   }
@@ -81,7 +125,7 @@ export async function fetchMassive(): Promise<DataPoint[]> {
   const tickerSet = new Set(tickers);
   const allResults = await fetchLatestGroupedDaily(apiKey);
 
-  return allResults
+  const stockPoints = allResults
     .filter((bar) => bar.T && tickerSet.has(bar.T))
     .map((bar) => ({
       series_id: bar.T!,
@@ -92,6 +136,30 @@ export async function fetchMassive(): Promise<DataPoint[]> {
       unit: "usd",
       raw_payload: bar,
     }));
+
+  // Isolated: BTC is explicitly a secondary, awareness-only indicator (not
+  // load-bearing the way watchlist tickers and GLD are), so a crypto-endpoint
+  // failure shouldn't take down the whole ingestion run over it.
+  let cryptoPoints: DataPoint[] = [];
+  try {
+    const cryptoTickerSet = new Set(CRYPTO_CONTEXT_TICKERS);
+    const cryptoResults = await fetchLatestGroupedDailyCrypto(apiKey);
+    cryptoPoints = cryptoResults
+      .filter((bar) => bar.T && cryptoTickerSet.has(bar.T))
+      .map((bar) => ({
+        series_id: bar.T!,
+        source: "MASSIVE",
+        source_series_code: bar.T!,
+        observation_date: toDateString(bar.t),
+        value: bar.c,
+        unit: "usd",
+        raw_payload: bar,
+      }));
+  } catch (err) {
+    console.warn(`Massive crypto fetch failed, continuing without it: ${(err as Error).message}`);
+  }
+
+  return [...stockPoints, ...cryptoPoints];
 }
 
 async function fetchTickerRange(symbol: string, apiKey: string, from: string, to: string): Promise<DataPoint[]> {
@@ -119,7 +187,12 @@ async function fetchTickerRange(symbol: string, apiKey: string, from: string, to
 
 export async function fetchMassiveBackfill(): Promise<DataPoint[]> {
   const watchlistTickers = await readWatchlistTickers();
-  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS])];
+  // fetchTickerRange is ticker-symbol-generic (asset class is encoded in the
+  // symbol itself, e.g. crypto's "X:" prefix), so CRYPTO_CONTEXT_TICKERS
+  // rides the same per-ticker loop below as everything else — no separate
+  // crypto backfill function, unlike the daily grouped-endpoint path above.
+  // Unverified assumption: first real backfill run is the actual check.
+  const tickers = [...new Set([...watchlistTickers, ...BREADTH_TICKERS, ...CONTEXT_TICKERS, ...CRYPTO_CONTEXT_TICKERS])];
   if (tickers.length === 0) {
     return [];
   }

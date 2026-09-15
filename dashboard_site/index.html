@@ -450,6 +450,16 @@ const CONTEXT_INFO = {
     signal: (v) => (v < 0 ? "Small-caps underperforming — early domestic-credit-stress signal, not backtested" : "Small-caps keeping pace or outperforming"),
     notable: (v) => v < 0,
   },
+  gold: {
+    label: "Gold (GLD)",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}% / 7d`,
+    signal: () => "Already has a real allocation in the Type C/Type E crash-type sleeves — directional context for that, not a new signal. Not a universal hedge: sold off with equities in 2008's acute margin-call phase before rallying later.",
+  },
+  bitcoin: {
+    label: "Bitcoin (BTC)",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}% / 7d`,
+    signal: () => "Tracked for awareness only — NOT a hedge. Fell more than equities in both real crashes tracked here: -40 to -58% vs S&P -30 to -35% in March 2020; -77% vs S&P -25%/Nasdaq -33% in 2022.",
+  },
 };
 
 /**
@@ -502,6 +512,8 @@ function renderContextIndicators(latest) {
     recprousm156n: latest.RECPROUSM156N,
     nyFedRecessionProb: nyFedProb,
     smallCapBreadth: latest.SMALL_CAP_BREADTH_SPREAD_7D,
+    gold: latest.GOLD_PCT_CHANGE_7D,
+    bitcoin: latest.BITCOIN_PCT_CHANGE_7D,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -1047,6 +1059,36 @@ async function main() {
       } catch (err) {
         // Isolated: no IWM/SPY history yet (e.g. before the first backfill)
         // shouldn't take down every other contextual indicator.
+      }
+
+      // Gold (GLD) and Bitcoin (X:BTCUSD) 7-day % change — each its own
+      // price, not a spread, so a simpler single-ticker version of the
+      // IWM/SPY lookup above. Same isolated try/catch per ticker: missing
+      // history for one (e.g. before backfill runs) shouldn't block the
+      // other or anything else on this dashboard.
+      const fetchPctChange7d = async (seriesId) => {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+        const [latestRows, pastRows] = await Promise.all([
+          fetchFromSupabase(`data_points?select=value&series_id=eq.${encodeURIComponent(seriesId)}&order=observation_date.desc&limit=1`),
+          fetchFromSupabase(`data_points?select=value&series_id=eq.${encodeURIComponent(seriesId)}&observation_date=lte.${sevenDaysAgoStr}&order=observation_date.desc&limit=1`),
+        ]);
+        const latestVal = latestRows[0]?.value, pastVal = pastRows[0]?.value;
+        if (latestVal == null || pastVal == null || pastVal === 0) return null;
+        return ((latestVal - pastVal) / pastVal) * 100;
+      };
+      try {
+        const goldPct7d = await fetchPctChange7d("GLD");
+        if (goldPct7d != null) latestBySeriesId.GOLD_PCT_CHANGE_7D = Math.round(goldPct7d * 100) / 100;
+      } catch (err) {
+        // Isolated: no GLD history yet shouldn't take down anything else.
+      }
+      try {
+        const bitcoinPct7d = await fetchPctChange7d("X:BTCUSD");
+        if (bitcoinPct7d != null) latestBySeriesId.BITCOIN_PCT_CHANGE_7D = Math.round(bitcoinPct7d * 100) / 100;
+      } catch (err) {
+        // Isolated: no BTC history yet shouldn't take down anything else.
       }
 
       renderContextIndicators(latestBySeriesId);

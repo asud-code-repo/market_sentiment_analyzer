@@ -1103,6 +1103,20 @@ confidence qualifier per Signal Tiering.
 | Recession probability (smoothed) | FRED `RECPROUSM156N` | Chauvet & Piger's published dynamic-factor Markov-switching model, hosted on FRED by the St. Louis Fed (not built by them — correct attribution matters) | External cross-check against this system's own crash-probability estimate — never validation of it. Agreeing or disagreeing with it doesn't make the estimate more or less correct |
 | Recession probability (NY Fed, 12mo) | Computed from FRED `DGS10`/`DGS3MO` | The NY Fed's own published Estrella-Mishkin (1998) yield-curve probit formula, `Φ(-0.5333 - 0.6629 × (DGS10-DGS3MO))`, evaluated here rather than scraped — the NY Fed does not publish this as its own FRED series (verified before adding it) | Same external-cross-check caveat as above. The model is deliberately simple by its own authors' design — adding more variables tends to overfit out-of-sample, worth remembering before adding a 3rd/4th competing probability model here |
 | Small-cap breadth (IWM vs. SPY) | Derived: Massive IWM/SPY 7-day return spread | Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return — the closest free proxy for market breadth (no raw advance/decline or %-above-200dma series exists for free). Small-caps are more exposed to domestic credit conditions and floating-rate debt, so persistent underperformance can be an early stress signal before it shows up in large-cap earnings | First cut, not backtested — persistently negative for 2+ weeks is worth a second look, not a calibrated threshold. Tracked independently of the BrokerageLink watchlist (`ingestion/src/sources/massive.ts`'s `BREADTH_TICKERS`) so a Portfolio Opportunity Review's full-replacement watchlist sync can never delete it |
+| Gold price (`gold_price`) | Massive `GLD` (SPDR Gold Shares) 7-day % change | Directional context for gold's *existing* real allocation in the Type C (6.96%) and Type E (4.35%) crash-type sleeves (see Stage 3 below) — not a new signal. Not a universal hedge: sold off alongside equities during 2008's acute margin-call/liquidity-panic phase before rallying later once the monetary response kicked in | Read directionally alongside the sleeve rationale, not as a hard flag — a decline here doesn't automatically contradict the crash thesis |
+| Bitcoin price (`bitcoin_price`) | Massive `X:BTCUSD` (crypto locale) 7-day % change | Added 2026-09-14, tracked for awareness only — explicitly **not** a defensive/hedge asset. Verified against actual crash-period data before adding: BTC fell 40-58% in the March 2020 COVID crash (S&P fell 30-35%) and 77% in the 2022 bear market (S&P -25%/Nasdaq -33%) — higher-beta than equities in both of this system's real crash episodes | Never treat a BTC decline as confirming, or a BTC rally as contradicting, the crash thesis. This is tracking only — it does not add BTC to any crash-sleeve allocation, and does not resolve the still-open "gold sleeve-weight assumptions" question below |
+
+> **2026-09-14 note:** gold and Bitcoin were added as tracked contextual
+> indicators after a discussion about defensive assets. Gold already had a
+> real allocation in the crash-type sleeves but no live price was ever
+> tracked anywhere — this closes that gap, purely as tracking; it does not
+> touch the sleeve allocation percentage, which stays an open, unexamined
+> question (see `BACKLOG.md`'s "Allocation assumptions inside the crash-type
+> layers"). Bitcoin was added only after verifying — not assuming — its
+> actual crash-period behavior; the popular "digital gold, uncorrelated
+> hedge" narrative did not survive contact with either real crash episode
+> this system tracks, so it is deliberately framed here as informational
+> awareness only, never as a defensive signal.
 
 > **2026-08-16 note:** `OECDLOLITOAASTSAM` (OECD Composite Leading Indicator, a candidate
 > global-PMI stand-in) was tried and dropped after verification showed its
@@ -1396,6 +1410,7 @@ price relative to its Wave 1/2/3 targets, not be evenly spaced by default.
 - Radar chart comparing current vs prior check across: Geopolitical, Policy/Fed,
   Inflation, Valuation, Labor Market, Earnings
 - No excessive prose inside dashboard widgets — explanatory text goes outside them
+
 
 <!-- END crash-check-rules.md -->
 

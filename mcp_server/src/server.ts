@@ -336,8 +336,12 @@ server.registerTool(
       "Returns supplementary macro context — financial stress/conditions indices, breakeven " +
       "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
       "delinquencies, WTI, retail sales, IG credit spread, SOFR, broad dollar index, NFCI " +
-      "sub-indices, TIPS real yield, two external recession-probability models, and small-cap " +
-      "breadth. Informational only — never part of the 6-indicator wave-authorization gate. " +
+      "sub-indices, TIPS real yield, two external recession-probability models, small-cap " +
+      "breadth, gold price (GLD), and Bitcoin price. Informational only — never part of the " +
+      "6-indicator wave-authorization gate. gold_price is directional context for the existing " +
+      "Type C/Type E sleeve allocation, not a new signal. bitcoin_price is tracked for awareness " +
+      "only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) — never " +
+      "treat it as confirming or contradicting the crash thesis. " +
       "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
       "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
@@ -347,7 +351,7 @@ server.registerTool(
       "cross-checks only, never validation of your own estimate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -373,6 +377,8 @@ server.registerTool(
         getLatestDataPoint("RECPROUSM156N"),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
+        computeSeriesDelta("GLD"),
+        computeSeriesDelta("X:BTCUSD"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -408,6 +414,43 @@ server.registerTool(
               "stress signal before it shows up in large-cap earnings. Informational only, Tier 2 " +
               "— never part of the 3-of-6 wave-authorization gate. Threshold/magnitude is a first " +
               "cut, not backtested — read directionally, not as a hard flag.",
+          }
+        : null;
+
+    // Gold and Bitcoin, added 2026-09-14. Both informational-only, never
+    // part of the 3-of-6 wave-authorization gate — same tier as
+    // small_cap_breadth above.
+    const goldPct7d = pctChange(goldDelta.latest_value, goldDelta.delta_7d);
+    const goldPrice =
+      goldDelta.latest_value !== null
+        ? {
+            value_usd: goldDelta.latest_value,
+            pct_change_7d: goldPct7d !== null ? round2(goldPct7d) : null,
+            as_of: goldDelta.latest_date,
+            signal:
+              "GLD (SPDR Gold Shares) as a gold-price proxy. Gold already has a real allocation in " +
+              "the Type C (6.96%) and Type E (4.35%) crash-type sleeves (crash-check-rules.md Stage 3) " +
+              "— tracked here as live directional context for that existing allocation, not a new " +
+              "signal. Historically NOT a universal hedge: sold off alongside equities during the " +
+              "acute margin-call/liquidity-panic phase of 2008 before rallying later once the " +
+              "monetary response kicked in — don't read a decline here as automatically contradicting " +
+              "the crash thesis.",
+          }
+        : null;
+
+    const bitcoinPct7d = pctChange(bitcoinDelta.latest_value, bitcoinDelta.delta_7d);
+    const bitcoinPrice =
+      bitcoinDelta.latest_value !== null
+        ? {
+            value_usd: bitcoinDelta.latest_value,
+            pct_change_7d: bitcoinPct7d !== null ? round2(bitcoinPct7d) : null,
+            as_of: bitcoinDelta.latest_date,
+            signal:
+              "Tracked for awareness only — NOT a defensive/hedge asset. Verified against actual " +
+              "crash-period data (2026-09-14): BTC fell 40-58% in the March 2020 COVID crash (vs " +
+              "S&P -30 to -35%) and 77% in the 2022 bear market (vs S&P -25%/Nasdaq -33%) — higher-beta " +
+              "than equities in both of this system's real crash episodes, not a hedge. Never treat a " +
+              "BTC decline as confirming, or a BTC rally as contradicting, the crash thesis.",
           }
         : null;
 
@@ -468,6 +511,8 @@ server.registerTool(
       },
       recession_probability_ny_fed_12mo_pct: nyFedRecessionProb,
       small_cap_breadth: smallCapBreadth,
+      gold_price: goldPrice,
+      bitcoin_price: bitcoinPrice,
       divergence_flags: divergenceFlags,
     });
   }),

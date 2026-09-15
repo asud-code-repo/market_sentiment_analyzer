@@ -87,6 +87,9 @@ full history of what was built and how lives in project memory, not here.
   recoveries share a shape (2009/2020/1974/2002 didn't). Different kind of
   work than the hazard model — asset-selection reasoning, not statistical
   modeling — could be tackled independently and sooner. Not started.
+  (2026-09-14: gold's live price is now tracked via `get_context_indicators`'
+  `gold_price` field — purely tracking, doesn't touch or examine the
+  sleeve-weight question itself, which remains exactly as open as before.)
 
 - **Crash-probability presentation: numeric % vs. categorical.** An
   external review suggested replacing the percentage entirely with
@@ -137,7 +140,7 @@ existing wave logic has strong precision even where its timing is weak.
 - **Calendar-day vs. trading-day delta approximation** — production uses
   7/28 calendar days for the model's velocity features instead of the
   research's exact 5/20 trading days, to match this system's own existing
-  delta convention. Flagged, not expected to matter much in practice, never
+  delta convention. Flagged, not expected to matter much  in practice, never
   independently verified against the trading-day version live.
 - **Crash-probability presentation: numeric % vs. categorical** — this
   question (previously an abstract external-review suggestion) now has
@@ -170,14 +173,15 @@ existing wave logic has strong precision even where its timing is weak.
 
 ## Process & content
 
-- **Reassess recent shipped work after a real stretch of usage —
-  significantly overdue.** Originally set for ~2026-07-18; a large amount
-  has landed since, including the entire 2026-08-15/16/17 batch (wave
-  deployment fixes, honest relabeling, divergence expansion, recovery
-  detection, the rate-reset trigger saga, two new indicators) and now the
-  2026-08-26 batch (the hazard model v1, the Fed-event/inflation-print
-  trigger fix). Each piece validated once at build/verification time, not
-  yet observed over a real stretch of repeated daily runs in practice.
+- **Reassess shipped work after a stretch of usage — recurring practice,
+  next one not yet due.** Done 2026-09-12 against 126 real `crash_checks`
+  rows (July 9 – Sep 11): confirmed the hazard model, divergence detection,
+  delta log, and daily/scheduled run cadence are all behaving correctly in
+  practice, and surfaced one real gap invisible at build time — `trigger_status`
+  never retired stale entries (fixed same day, commit `61e12f2`). Worth
+  repeating after the next meaningful batch of shipped work has had a real
+  stretch of daily runs behind it — this is exactly the kind of thing that
+  only shows up in production data, not a build-time check.
 
 - **BrokerageLink watchlist ticker selection has no documented rationale.**
   The 7 tickers each have a one-line theme tag but no written reasoning for
