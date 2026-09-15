@@ -58,6 +58,23 @@ full history of what was built and how lives in project memory, not here.
   observation, last successful ingestion time, data-quality state
   (current/expected-lag/stale/failed/quarantined). Not started.
 
+- **Tier 2 confidence-escalation rule has zero code enforcement.** Surfaced
+  2026-09-15 while reviewing an external (GPT) critique of a proposed
+  capital-rotation feature — checked and confirmed via grep, not asserted:
+  `crash-check-rules.md`'s "3+ Tier 2 indicators moving adverse across 4+
+  consecutive weekly readings must raise the confidence qualifier" rule
+  (Signal Tiering & Confirmation Windows section) has no match anywhere in
+  `rule_engine` or `mcp_server` — it is pure prose, trusting the LLM to
+  remember and compare Tier 2 indicator trends across 4+ weekly reports
+  purely from memory. This already silently applies to every Tier 2 field
+  shipped so far (small-cap breadth, gold, Bitcoin), not just anything added
+  later. Same class of bug this project has fixed three times already (the
+  rate-reset trigger, the Fed-event/inflation-print calendar,
+  `trigger_status` dedup) — "prose instructions for anything with one
+  objectively correct answer are the wrong tool, even when very explicit."
+  Not started; would need per-Tier-2-indicator trend tracking across
+  ingestion dates, deterministically computed rather than LLM-recalled.
+
 - **`rules_version` stamped on every `crash_checks` row.** Small, cheap,
   independent of the bigger "shared executable rules package" idea (rules
   are still duplicated across the prose doc, `rule_engine`, `mcp_server`,
