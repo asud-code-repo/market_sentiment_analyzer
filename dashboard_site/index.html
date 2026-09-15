@@ -246,6 +246,23 @@
   .collapse-toggle { font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; font-family: inherit; }
   .collapse-toggle:hover { color: var(--text-primary); }
 
+  /* Risk Radar -- ported from full_report_site/functions/index.ts's
+     existing radar chart (identical CSS token names/values there, so this
+     is a direct port, not a redesign). Current-vs-prior overlay, same
+     convention as that file's own private Risk Radar (different cadence:
+     that one is Portfolio-Review-triggered, this one is daily). */
+  .radar-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .radar-svg { width: 240px; height: 240px; flex-shrink: 0; }
+  .radar-grid { fill: none; stroke: var(--grid); stroke-width: 1; }
+  .radar-axis { stroke: var(--grid); stroke-width: 1; }
+  .radar-label { font-size: 10px; fill: var(--text-secondary); }
+  .radar-current { fill: var(--neutral-blue); fill-opacity: 0.18; stroke: var(--neutral-blue); stroke-width: 2; }
+  .radar-prior { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .radar-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-secondary); max-width: 320px; }
+  .radar-legend .sw { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; }
+  .radar-legend .sw.current { background: var(--neutral-blue); height: 3px; }
+  .radar-legend .sw.prior { border-top: 2px dashed var(--text-muted); }
+
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
 </style>
@@ -1009,6 +1026,64 @@ function renderHazardModel(row) {
   `;
 }
 
+// Daily public Risk Radar -- ported from full_report_site/functions/
+// index.ts's RADAR_AXES/radarPolygonPoints (identical geometry, identical
+// CSS token names there, so this is a direct port). Hexagon axes at 30deg
+// intervals starting at -90deg (12 o'clock), center (150,150), max radius
+// 120 -- matches the fixed grid-ring/axis-line coordinates below exactly.
+const RADAR_AXES = [
+  { key: "geopolitical", label: "Geopolitical", labelX: 150, labelY: 20, anchor: "middle" },
+  { key: "policy_fed", label: "Policy / Fed", labelX: 262, labelY: 80, anchor: "start" },
+  { key: "inflation", label: "Inflation", labelX: 262, labelY: 224, anchor: "start" },
+  { key: "valuation", label: "Valuation", labelX: 150, labelY: 284, anchor: "middle" },
+  { key: "labor_market", label: "Labor Market", labelX: 38, labelY: 224, anchor: "end" },
+  { key: "earnings", label: "Earnings", labelX: 38, labelY: 80, anchor: "end" },
+];
+
+function radarPolygonPoints(scores) {
+  const center = 150, maxRadius = 120;
+  return RADAR_AXES.map((axis, i) => {
+    const angle = (Math.PI / 180) * (i * 60 - 90);
+    const r = (Math.max(0, Math.min(100, scores[axis.key])) / 100) * maxRadius;
+    return `${(center + r * Math.cos(angle)).toFixed(1)},${(center + r * Math.sin(angle)).toFixed(1)}`;
+  }).join(" ");
+}
+
+function renderRiskRadar(row, priorFullReport) {
+  if (!row.risk_radar) return "";
+  const priorRadar = priorFullReport?.risk_radar ?? null;
+  return `
+    <p class="eyebrow" style="margin-top:16px;">Risk Radar — current vs. prior report</p>
+    <p class="caveat" style="margin: 0 0 10px;">
+      Discretionary LLM estimate, same tier as the crash-probability estimate above — not a
+      calibrated model, never gates. Policy/Fed, Inflation, and Labor Market anchor to real series
+      already tracked in this system; Valuation partially does (real-yield leg only). Geopolitical
+      and Earnings have no free anchoring data and stay narrative judgment only — see
+      crash-check-rules.md's "Risk Radar Scoring Methodology."
+    </p>
+    <div class="radar-wrap">
+      <svg class="radar-svg" viewBox="0 0 300 300">
+        <polygon class="radar-grid" points="150,110 184.6,130 184.6,170 150,190 115.4,170 115.4,130" />
+        <polygon class="radar-grid" points="150,70 219.3,110 219.3,190 150,230 80.7,190 80.7,110" />
+        <polygon class="radar-grid" points="150,30 253.9,90 253.9,210 150,270 46.1,210 46.1,90" />
+        <line class="radar-axis" x1="150" y1="150" x2="150" y2="30" />
+        <line class="radar-axis" x1="150" y1="150" x2="253.9" y2="90" />
+        <line class="radar-axis" x1="150" y1="150" x2="253.9" y2="210" />
+        <line class="radar-axis" x1="150" y1="150" x2="150" y2="270" />
+        <line class="radar-axis" x1="150" y1="150" x2="46.1" y2="210" />
+        <line class="radar-axis" x1="150" y1="150" x2="46.1" y2="90" />
+        ${priorRadar ? `<polygon class="radar-prior" points="${radarPolygonPoints(priorRadar)}" />` : ""}
+        <polygon class="radar-current" points="${radarPolygonPoints(row.risk_radar)}" />
+        ${RADAR_AXES.map((axis) => `<text class="radar-label" x="${axis.labelX}" y="${axis.labelY}" text-anchor="${axis.anchor}">${axis.label}</text>`).join("")}
+      </svg>
+      <div class="radar-legend">
+        <div><span class="sw current"></span>Current: ${RADAR_AXES.map((a) => `${a.label} ${row.risk_radar[a.key]}`).join(", ")}</div>
+        ${priorRadar ? `<div><span class="sw prior"></span>Prior: ${RADAR_AXES.map((a) => `${a.label} ${priorRadar[a.key]}`).join(", ")}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 // The colored +/- bulleted list already rendered live in the chat HTML
 // artifact (dashboard-template.html's cc-delta-log) — persisted as
 // structured data since 2026-08-27 so this site can finally show the same
@@ -1137,6 +1212,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
         ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
       </div>
       ${scenarioSection}
+      ${renderRiskRadar(row, priorFullReport)}
       ${renderDivergenceFlags(row.divergence_flags)}
       ${renderHazardModel(row)}
       ${triggerSection}
@@ -1359,7 +1435,7 @@ if (isStandalonePwa) {
 async function main() {
   try {
     ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of&order=run_at.asc&limit=1000",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,risk_radar&order=run_at.asc&limit=1000",
     );
 
     if (ALL_ROWS.length === 0) {
