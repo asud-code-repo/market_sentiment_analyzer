@@ -134,10 +134,14 @@ full history of what was built and how lives in project memory, not here.
   alternative, not obviously right or wrong — needs a deliberate decision,
   not a default.
 
-- **Dashboard hierarchy reorganization** — a suggested 4-layer top-level
-  structure (Current state / What changed / Why it matters / Decision
-  policy) instead of the current single scroll. UX idea, moderate value,
-  lower urgency than the substantive gaps above.
+- **Dashboard hierarchy reorganization — partially addressed 2026-09-15.**
+  The full 4-layer structure (Current state / What changed / Why it
+  matters / Decision policy) is still unbuilt, but the specific pain this
+  was flagging — a long single scroll, worse once the sector-rotation
+  card added real height — got a cheap partial fix: 6-Indicator History's
+  trend charts now collapse by default (state remembered per-viewer via
+  localStorage), since that's review/verification detail, not
+  current-state info. The bigger structural reorg remains open.
 
 ## The hazard-model / regime-detection work (the big one)
 
