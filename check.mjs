@@ -45,6 +45,7 @@ async function checkTicker(symbol) {
   divUrl.searchParams.set("ticker", symbol);
   divUrl.searchParams.set("apiKey", apiKey);
   divUrl.searchParams.set("limit", "50");
+  divUrl.searchParams.set("sort", "ex_dividend_date.desc");
   const divData = await fetchJson(divUrl.toString());
   if (!divData) {
     console.log(`  Dividends endpoint failed for ${symbol}.`);
@@ -53,6 +54,7 @@ async function checkTicker(symbol) {
   const divResults = divData.results || divData.data || [];
   console.log(`  Dividends endpoint raw shape (first result keys): ${divResults[0] ? Object.keys(divResults[0]).join(", ") : "no results field found — full body keys: " + Object.keys(divData).join(", ")}`);
   console.log(`  Total dividend records returned: ${divResults.length}`);
+  console.log(`  First 5 records (date, ticker, amount): ${divResults.slice(0, 5).map(d => `${d.ex_dividend_date}/${d.ticker}/$${d.cash_amount}`).join(" | ")}`);
 
   // Filter to trailing 1yr window using whatever date field is present
   const dateField = divResults[0] ? (divResults[0].ex_dividend_date ? "ex_dividend_date" : Object.keys(divResults[0]).find(k => k.includes("date"))) : null;
