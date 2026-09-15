@@ -156,6 +156,30 @@
   #sector-rotation-wrap .view-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
   #sector-rotation-wrap .view-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
 
+  /* Scatter is the primary view (confirmed rotation vs. divergence --
+     return alone can't tell genuine flow from price noise, see
+     mcp_server/src/lib/sectorRotation.ts's classifyRotation). Table stays
+     underneath as the "all four windows at once" detail view, sortable by
+     column since that's cheaper than a separate ranked bar chart and the
+     table already exists. */
+  #sector-rotation-wrap .rotation-section-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 18px 0 8px; }
+  #sector-rotation-wrap .rotation-section-label:first-child { margin-top: 0; }
+  #sector-rotation-wrap .scatter-svg { width: 100%; height: auto; display: block; }
+  #sector-rotation-wrap .scatter-axis { stroke: var(--grid); stroke-width: 1; }
+  #sector-rotation-wrap .scatter-quadrant-label { font-size: 10px; fill: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+  #sector-rotation-wrap .scatter-point-label { font-size: 10px; fill: var(--text-primary); font-weight: 600; pointer-events: none; }
+  #sector-rotation-wrap .scatter-axis-label { font-size: 10px; fill: var(--text-muted); }
+  #sector-rotation-wrap .scatter-point { cursor: pointer; }
+  #sector-rotation-wrap .scatter-tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 11px; color: var(--text-primary); white-space: nowrap;
+    display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1;
+  }
+  #sector-rotation-wrap .scatter-wrap { position: relative; }
+  #sector-rotation-wrap th.sortable { cursor: pointer; user-select: none; }
+  #sector-rotation-wrap th.sortable .sort-arrow { display: inline-block; width: 10px; opacity: 0.5; }
+  #sector-rotation-wrap th.sortable.sorted .sort-arrow { opacity: 1; }
+
   /* Scenario distribution */
   .stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
   .stackbar .seg.bull { background: var(--good); }
@@ -583,7 +607,9 @@ const SECTOR_ROTATION_TICKERS = [
 ];
 const ROTATION_WINDOWS = [30, 90, 180, 365];
 
-let rotationView = "return"; // "return" | "flow" -- toggled client-side, no refetch needed
+let rotationView = "return"; // table's metric toggle -- "return" | "flow"
+let rotationScatterWindow = 180; // scatter's single-window pick
+let rotationSort = { column: null, dir: "desc" }; // table's sortable-column state
 
 function fmtRotationPct(v) {
   if (v == null) return "—";
@@ -598,40 +624,194 @@ function fmtRotationFlow(v) {
   return `<span class="${cls}">${v >= 0 ? "+" : "-"}$${scaled}</span>`;
 }
 
-// bySymbol: Map<symbol, { navReturn: {30d,90d,180d,365d}, flow: {...} }>
-function renderSectorRotation(bySymbol) {
-  const wrap = document.getElementById("sector-rotation-wrap");
-  const rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => {
-    const data = bySymbol.get(symbol);
-    const metrics = data ? (rotationView === "return" ? data.navReturn : data.flow) : {};
-    const fmt = rotationView === "return" ? fmtRotationPct : fmtRotationFlow;
-    return `
-      <tr>
-        <td class="ticker">${symbol} <span class="sub">${label}</span></td>
-        <td>${fmt(metrics[30])}</td>
-        <td>${fmt(metrics[90])}</td>
-        <td>${fmt(metrics[180])}</td>
-        <td>${fmt(metrics[365])}</td>
-      </tr>
-    `;
-  }).join("");
+// Confirmed-vs-divergent read -- mirrors mcp_server/src/lib/sectorRotation.ts's
+// classifyRotation exactly (duplicated, not shared across the package
+// boundary, same convention as this file's other MCP-mirrored logic). A
+// return-only read can't tell genuine rotation from price noise; this is
+// why the scatter is the primary view, not the table.
+function classifyRotation(navReturnPct, flowUsd) {
+  if (navReturnPct >= 0 && flowUsd >= 0) return "confirmed_in";
+  if (navReturnPct < 0 && flowUsd < 0) return "confirmed_out";
+  if (navReturnPct < 0 && flowUsd >= 0) return "accumulation_divergence";
+  return "distribution_divergence";
+}
 
-  wrap.innerHTML = `
+// bySymbol: Map<symbol, { navReturn: {30,90,180,365}, flow: {...} }>
+function renderRotationScatter(bySymbol) {
+  const w = rotationScatterWindow;
+  const points = SECTOR_ROTATION_TICKERS
+    .map(({ symbol, label }) => {
+      const data = bySymbol.get(symbol);
+      const ret = data?.navReturn?.[w];
+      const flow = data?.flow?.[w];
+      return ret != null && flow != null ? { symbol, label, ret, flow } : null;
+    })
+    .filter(Boolean);
+
+  const W = 700, H = 480, PAD = 46;
+  const retMax = Math.max(...points.map((p) => Math.abs(p.ret)), 1) * 1.15;
+  const flowMax = Math.max(...points.map((p) => Math.abs(p.flow)), 1) * 1.15;
+  const cx = (v) => PAD + ((v + retMax) / (2 * retMax)) * (W - 2 * PAD);
+  const cy = (v) => H - PAD - ((v + flowMax) / (2 * flowMax)) * (H - 2 * PAD);
+  const zeroX = cx(0), zeroY = cy(0);
+
+  const svgPoints = points
+    .map((p) => {
+      const x = cx(p.ret), y = cy(p.flow);
+      const read = classifyRotation(p.ret, p.flow);
+      const pointColor =
+        read === "confirmed_in" ? "var(--good)" : read === "confirmed_out" ? "var(--critical)" : "var(--neutral-blue)";
+      return `
+        <g class="scatter-point" data-symbol="${p.symbol}" data-label="${p.label}" data-ret="${p.ret.toFixed(1)}" data-flow="${fmtRotationFlow(p.flow).replace(/<[^>]+>/g, "")}" data-read="${read}">
+          <circle cx="${x}" cy="${y}" r="6" fill="${pointColor}" stroke="var(--surface-1)" stroke-width="2" />
+          <text x="${x}" y="${y - 11}" text-anchor="middle" class="scatter-point-label">${p.symbol}</text>
+        </g>
+      `;
+    })
+    .join("");
+
+  const windowToggle = ROTATION_WINDOWS.map(
+    (win) => `<button class="view-btn ${win === rotationScatterWindow ? "active" : ""}" data-window="${win}">${win}D</button>`,
+  ).join("");
+
+  return `
+    <div class="view-toggle">${windowToggle}</div>
+    <div class="scatter-wrap">
+      <svg viewBox="0 0 ${W} ${H}" class="scatter-svg">
+        <text x="${PAD}" y="16" class="scatter-quadrant-label">↑ flow in, price down — accumulation</text>
+        <text x="${W - PAD}" y="16" text-anchor="end" class="scatter-quadrant-label">confirmed rotation in</text>
+        <text x="${PAD}" y="${H - 10}" class="scatter-quadrant-label">confirmed rotation out</text>
+        <text x="${W - PAD}" y="${H - 10}" text-anchor="end" class="scatter-quadrant-label">price up, flow out — unconfirmed</text>
+        <line x1="${PAD}" y1="${zeroY}" x2="${W - PAD}" y2="${zeroY}" class="scatter-axis" />
+        <line x1="${zeroX}" y1="${PAD - 6}" x2="${zeroX}" y2="${H - PAD + 6}" class="scatter-axis" />
+        <text x="${W - PAD}" y="${zeroY - 8}" text-anchor="end" class="scatter-axis-label">NAV return (${w}D) →</text>
+        <text x="${zeroX + 8}" y="${PAD + 4}" class="scatter-axis-label">↑ flow in</text>
+        ${svgPoints}
+      </svg>
+      <div class="scatter-tooltip" id="scatter-tooltip"></div>
+    </div>
+  `;
+}
+
+const ROTATION_READ_LABEL = {
+  confirmed_in: "Confirmed rotation in — return and flow agree",
+  confirmed_out: "Confirmed rotation out — return and flow agree",
+  accumulation_divergence: "Accumulation divergence — price down, real money still arriving",
+  distribution_divergence: "Distribution divergence — price up, real money leaving",
+};
+
+function attachScatterInteractivity(bySymbol) {
+  const wrap = document.getElementById("sector-rotation-wrap");
+  const tooltip = document.getElementById("scatter-tooltip");
+  wrap.querySelectorAll(".scatter-point").forEach((el) => {
+    el.addEventListener("mouseenter", (e) => {
+      const { label, ret, flow, read } = el.dataset;
+      tooltip.innerHTML = `<b>${label}</b><br>${ret >= 0 ? "+" : ""}${ret}% return, ${flow} flow<br><span style="color:var(--text-muted)">${ROTATION_READ_LABEL[read]}</span>`;
+      tooltip.style.display = "block";
+    });
+    el.addEventListener("mousemove", (e) => {
+      const rect = wrap.querySelector(".scatter-wrap").getBoundingClientRect();
+      tooltip.style.left = `${e.clientX - rect.left + 12}px`;
+      tooltip.style.top = `${e.clientY - rect.top + 12}px`;
+    });
+    el.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  });
+  wrap.querySelectorAll("[data-window]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      rotationScatterWindow = Number(btn.dataset.window);
+      renderSectorRotation(bySymbol);
+    });
+  });
+}
+
+function renderRotationTable(bySymbol) {
+  const columns = [
+    { key: "symbol", label: "Sector" },
+    { key: 30, label: "30d" },
+    { key: 90, label: "90d" },
+    { key: 180, label: "180d" },
+    { key: 365, label: "365d" },
+  ];
+  const fmt = rotationView === "return" ? fmtRotationPct : fmtRotationFlow;
+  const metricOf = (symbol) => (rotationView === "return" ? bySymbol.get(symbol)?.navReturn : bySymbol.get(symbol)?.flow) ?? {};
+
+  let rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => ({ symbol, label, metrics: metricOf(symbol) }));
+  if (rotationSort.column !== null) {
+    rows = rows.slice().sort((a, b) => {
+      const av = a.metrics[rotationSort.column], bv = b.metrics[rotationSort.column];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return rotationSort.dir === "desc" ? bv - av : av - bv;
+    });
+  }
+
+  const headerCells = columns
+    .map((col) => {
+      if (col.key === "symbol") return `<th>${col.label}</th>`;
+      const sorted = rotationSort.column === col.key;
+      const arrow = sorted ? (rotationSort.dir === "desc" ? "▼" : "▲") : "↕";
+      return `<th class="sortable${sorted ? " sorted" : ""}" data-sort-col="${col.key}">${col.label} <span class="sort-arrow">${arrow}</span></th>`;
+    })
+    .join("");
+
+  const bodyRows = rows
+    .map(
+      (r) => `
+      <tr>
+        <td class="ticker">${r.symbol} <span class="sub">${r.label}</span></td>
+        <td>${fmt(r.metrics[30])}</td>
+        <td>${fmt(r.metrics[90])}</td>
+        <td>${fmt(r.metrics[180])}</td>
+        <td>${fmt(r.metrics[365])}</td>
+      </tr>
+    `,
+    )
+    .join("");
+
+  return `
     <div class="view-toggle">
       <button class="view-btn ${rotationView === "return" ? "active" : ""}" data-view="return">NAV return</button>
       <button class="view-btn ${rotationView === "flow" ? "active" : ""}" data-view="flow">Est. flow</button>
     </div>
     <table>
-      <thead><tr><th>Sector</th><th>30d</th><th>90d</th><th>180d</th><th>365d</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${bodyRows}</tbody>
     </table>
   `;
-  wrap.querySelectorAll(".view-btn").forEach((btn) => {
+}
+
+function attachTableInteractivity(bySymbol) {
+  const wrap = document.getElementById("sector-rotation-wrap");
+  wrap.querySelectorAll("[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
       rotationView = btn.dataset.view;
       renderSectorRotation(bySymbol);
     });
   });
+  wrap.querySelectorAll("[data-sort-col]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const col = Number(th.dataset.sortCol);
+      if (rotationSort.column === col) {
+        rotationSort.dir = rotationSort.dir === "desc" ? "asc" : "desc";
+      } else {
+        rotationSort = { column: col, dir: "desc" };
+      }
+      renderSectorRotation(bySymbol);
+    });
+  });
+}
+
+function renderSectorRotation(bySymbol) {
+  const wrap = document.getElementById("sector-rotation-wrap");
+  wrap.innerHTML = `
+    <div class="rotation-section-label">Confirmed rotation vs. divergence — return vs. flow</div>
+    ${renderRotationScatter(bySymbol)}
+    <div class="rotation-section-label">All windows — sortable</div>
+    ${renderRotationTable(bySymbol)}
+  `;
+  attachScatterInteractivity(bySymbol);
+  attachTableInteractivity(bySymbol);
 }
 
 // Reads the rule engine's own confirmation_state (crash-check-rules.md v5's

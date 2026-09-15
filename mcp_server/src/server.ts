@@ -525,8 +525,12 @@ server.registerTool(
           "price-independent) -- not a price proxy. But it's ETF-VEHICLE-level flow, not a complete " +
           "picture of money entering/leaving the underlying sector -- investors can get the same " +
           "exposure through other ETFs (e.g. QQQ/VGT/SMH instead of XLK). nav_return_pct is price " +
-          "only, not total return (dividends excluded). Informational only, Tier 2 -- never part of " +
-          "the 3-of-6 wave-authorization gate.",
+          "only, not total return (dividends excluded). rotation_read classifies each window as " +
+          "confirmed_in/confirmed_out (return and flow agree) or accumulation_divergence/" +
+          "distribution_divergence (they disagree -- e.g. price falling while real money is still " +
+          "arriving) -- report this distinction explicitly rather than just the raw return, since a " +
+          "return-only read can't tell genuine rotation from price noise. Informational only, Tier " +
+          "2 -- never part of the 3-of-6 wave-authorization gate.",
       },
       divergence_flags: divergenceFlags,
     });

@@ -27,12 +27,29 @@ export const SECTOR_TICKERS: { ticker: string; label: string }[] = [
 const LOOKBACK_WINDOWS_DAYS = [30, 90, 180, 365] as const;
 type LookbackWindow = (typeof LOOKBACK_WINDOWS_DAYS)[number];
 
+// Confirmed-vs-divergent read, from the same "return alone is just price
+// noise, flow alone misses whether the market agrees" reasoning that
+// motivated finding a real flow source in the first place (see this
+// module's own doc comment). Computed per window from the same
+// nav_return_pct/flow_estimate_usd values below -- not a new data source,
+// just naming the quadrant so a narrative-synthesis consumer (or a UI)
+// doesn't have to cross-reference two separate fields to see it.
+export type RotationRead = "confirmed_in" | "confirmed_out" | "accumulation_divergence" | "distribution_divergence";
+
 export interface TickerRotation {
   symbol: string;
   label: string;
   as_of: string | null;
   nav_return_pct: Partial<Record<`${LookbackWindow}d`, number>>;
   flow_estimate_usd: Partial<Record<`${LookbackWindow}d`, number>>;
+  rotation_read: Partial<Record<`${LookbackWindow}d`, RotationRead>>;
+}
+
+function classifyRotation(navReturnPct: number, flowUsd: number): RotationRead {
+  if (navReturnPct >= 0 && flowUsd >= 0) return "confirmed_in";
+  if (navReturnPct < 0 && flowUsd < 0) return "confirmed_out";
+  if (navReturnPct < 0 && flowUsd >= 0) return "accumulation_divergence"; // price down, real money arriving
+  return "distribution_divergence"; // price up, real money leaving
 }
 
 interface SeriesPoint {
@@ -183,6 +200,7 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
 
     const navReturn: Partial<Record<`${LookbackWindow}d`, number>> = {};
     const flowEstimate: Partial<Record<`${LookbackWindow}d`, number>> = {};
+    const rotationRead: Partial<Record<`${LookbackWindow}d`, RotationRead>> = {};
 
     if (latestNav && latestShares) {
       for (const windowDays of LOOKBACK_WINDOWS_DAYS) {
@@ -191,14 +209,22 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
         const pastShares = valueOnOrBefore(sharesSeries, pastDate);
         const key = `${windowDays}d` as const;
 
+        let windowReturn: number | null = null;
+        let windowFlow: number | null = null;
+
         if (pastNav !== null && pastNav !== 0) {
-          navReturn[key] = round(((latestNav.value - pastNav) / pastNav) * 100);
+          windowReturn = round(((latestNav.value - pastNav) / pastNav) * 100);
+          navReturn[key] = windowReturn;
         }
         if (pastShares !== null) {
           // Approximate creation/redemption dollar flow -- share-count
           // delta (price-independent) x latest NAV. Not reinvestment-
           // adjusted, not a complete sector-flow picture (see module doc).
-          flowEstimate[key] = Math.round((latestShares.value - pastShares) * latestNav.value);
+          windowFlow = Math.round((latestShares.value - pastShares) * latestNav.value);
+          flowEstimate[key] = windowFlow;
+        }
+        if (windowReturn !== null && windowFlow !== null) {
+          rotationRead[key] = classifyRotation(windowReturn, windowFlow);
         }
       }
     }
@@ -209,6 +235,7 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
       as_of: latestNav?.date ?? null,
       nav_return_pct: navReturn,
       flow_estimate_usd: flowEstimate,
+      rotation_read: rotationRead,
     };
   });
 }
