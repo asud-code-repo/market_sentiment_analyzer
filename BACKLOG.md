@@ -50,6 +50,23 @@ full history of what was built and how lives in project memory, not here.
   same relative-return-spread pattern in `get_context_indicators`), just not
   extended to these two yet.
 
+- **Sector capital-rotation — v1 shipped 2026-09-15, two pieces
+  deliberately descoped.** `sector_rotation` (11 SPDRs + SPY + GLD, real
+  SSGA-sourced flow) is live. Explicitly deferred by user decision, not
+  forgotten:
+  - **Z.1 macro-transactions panel** — 4 FRED series (household/foreign
+    Treasury and equity acquisitions) independently verified feasible the
+    same session, not yet wired into `get_context_indicators`.
+  - **TLT/DBC in the rotation panel** — different issuers (iShares/
+    Invesco) than the SPDR suite; no SSGA-equivalent free NAV-history
+    source confirmed for either. Would need per-issuer verification before
+    adding, or a Massive-price-only fallback (no real flow signal, just a
+    return figure, same caveat this whole search was trying to move past).
+  - **Total return (with dividends)** — v1 uses NAV price-only return.
+    Massive's `/stocks/v1/dividends` endpoint was verified working and
+    free; combining it with SSGA's NAV series for a proper total-return
+    calc is a natural fast-follow, not done to keep v1 single-source.
+
 - **Per-series data-quality/freshness metadata.** The whole-run freshness
   check exists; nothing per-series. A "green" panel could still be built
   from a mix of today's VIX, last week's claims, and a silently-stale

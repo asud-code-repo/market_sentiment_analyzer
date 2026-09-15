@@ -139,6 +139,23 @@
   .indicator .indicator-info strong { color: var(--text-primary); font-weight: 600; }
   .context-note { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
 
+  /* Sector capital-rotation table -- 13 rows x multiple columns doesn't fit
+     the single-value .indicator card grid above, so this gets its own
+     table, scoped under #sector-rotation-wrap so its .pos/.neg classes
+     can't collide with unrelated uses elsewhere on the page. */
+  #sector-rotation-wrap { overflow-x: auto; }
+  #sector-rotation-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #sector-rotation-wrap th, #sector-rotation-wrap td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  #sector-rotation-wrap th:first-child, #sector-rotation-wrap td:first-child { text-align: left; }
+  #sector-rotation-wrap th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  #sector-rotation-wrap td.ticker { font-weight: 600; }
+  #sector-rotation-wrap td .sub { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+  #sector-rotation-wrap .pos { color: var(--good); }
+  #sector-rotation-wrap .neg { color: var(--critical); }
+  #sector-rotation-wrap .view-toggle { display: flex; gap: 4px; margin-bottom: 10px; }
+  #sector-rotation-wrap .view-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
+  #sector-rotation-wrap .view-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
+
   /* Scenario distribution */
   .stackbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; }
   .stackbar .seg.bull { background: var(--good); }
@@ -226,6 +243,12 @@
     <p class="eyebrow">Contextual Indicators — informational, not wave-gating</p>
     <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
     <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+  </div>
+
+  <div class="card">
+    <p class="eyebrow">Sector Capital Rotation — informational, not wave-gating</p>
+    <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return.</p>
+    <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
   </div>
 
   <div class="card">
@@ -536,6 +559,79 @@ function renderContextIndicators(latest) {
       `;
     })
     .join("");
+}
+
+// 11 Select Sector SPDRs + SPY + GLD, same label set as
+// mcp_server/src/lib/sectorRotation.ts (duplicated, not shared across the
+// package boundary -- same convention as this file's other duplicated
+// constants/formulas). Order here is display order, largest-sector-first
+// rather than alphabetical.
+const SECTOR_ROTATION_TICKERS = [
+  { symbol: "XLK", label: "Technology" },
+  { symbol: "XLF", label: "Financials" },
+  { symbol: "XLE", label: "Energy" },
+  { symbol: "XLV", label: "Health Care" },
+  { symbol: "XLI", label: "Industrials" },
+  { symbol: "XLY", label: "Consumer Discretionary" },
+  { symbol: "XLP", label: "Consumer Staples" },
+  { symbol: "XLU", label: "Utilities" },
+  { symbol: "XLB", label: "Materials" },
+  { symbol: "XLRE", label: "Real Estate" },
+  { symbol: "XLC", label: "Communication Services" },
+  { symbol: "SPY", label: "S&P 500" },
+  { symbol: "GLD", label: "Gold" },
+];
+const ROTATION_WINDOWS = [30, 90, 180, 365];
+
+let rotationView = "return"; // "return" | "flow" -- toggled client-side, no refetch needed
+
+function fmtRotationPct(v) {
+  if (v == null) return "—";
+  const cls = v >= 0 ? "pos" : "neg";
+  return `<span class="${cls}">${v >= 0 ? "+" : ""}${v.toFixed(1)}%</span>`;
+}
+function fmtRotationFlow(v) {
+  if (v == null) return "—";
+  const cls = v >= 0 ? "pos" : "neg";
+  const abs = Math.abs(v);
+  const scaled = abs >= 1e9 ? `${(abs / 1e9).toFixed(2)}B` : `${(abs / 1e6).toFixed(0)}M`;
+  return `<span class="${cls}">${v >= 0 ? "+" : "-"}$${scaled}</span>`;
+}
+
+// bySymbol: Map<symbol, { navReturn: {30d,90d,180d,365d}, flow: {...} }>
+function renderSectorRotation(bySymbol) {
+  const wrap = document.getElementById("sector-rotation-wrap");
+  const rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => {
+    const data = bySymbol.get(symbol);
+    const metrics = data ? (rotationView === "return" ? data.navReturn : data.flow) : {};
+    const fmt = rotationView === "return" ? fmtRotationPct : fmtRotationFlow;
+    return `
+      <tr>
+        <td class="ticker">${symbol} <span class="sub">${label}</span></td>
+        <td>${fmt(metrics[30])}</td>
+        <td>${fmt(metrics[90])}</td>
+        <td>${fmt(metrics[180])}</td>
+        <td>${fmt(metrics[365])}</td>
+      </tr>
+    `;
+  }).join("");
+
+  wrap.innerHTML = `
+    <div class="view-toggle">
+      <button class="view-btn ${rotationView === "return" ? "active" : ""}" data-view="return">NAV return</button>
+      <button class="view-btn ${rotationView === "flow" ? "active" : ""}" data-view="flow">Est. flow</button>
+    </div>
+    <table>
+      <thead><tr><th>Sector</th><th>30d</th><th>90d</th><th>180d</th><th>365d</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  wrap.querySelectorAll(".view-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      rotationView = btn.dataset.view;
+      renderSectorRotation(bySymbol);
+    });
+  });
 }
 
 // Reads the rule engine's own confirmation_state (crash-check-rules.md v5's
@@ -1094,6 +1190,69 @@ async function main() {
       renderContextIndicators(latestBySeriesId);
     } catch (err) {
       document.getElementById("context-grid").innerHTML = `<p class="loading">Failed to load contextual indicators: ${err.message}</p>`;
+    }
+
+    // Isolated: a sector-rotation fetch failure shouldn't take down date
+    // navigation, trend charts, or the contextual-indicators card above,
+    // which depend on nothing here. One batched query for all 26 series
+    // (13 tickers x NAV/shares-outstanding) over the trailing 370 days,
+    // rather than dozens of per-series/per-window round trips -- mirrors
+    // mcp_server's computeSectorRotation, duplicated not shared across the
+    // Supabase-REST-vs-supabase-js boundary.
+    try {
+      const rotationSeriesIds = SECTOR_ROTATION_TICKERS.flatMap(({ symbol }) => [`${symbol}_NAV`, `${symbol}_SHARES_OUT`]);
+      const cutoff = new Date();
+      cutoff.setUTCDate(cutoff.getUTCDate() - 370);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const rows = await fetchFromSupabase(
+        `data_points?select=series_id,observation_date,value&series_id=in.(${rotationSeriesIds.join(",")})&observation_date=gte.${cutoffStr}&order=observation_date.asc&limit=10000`,
+      );
+
+      const bySeriesId = new Map();
+      for (const row of rows) {
+        if (!bySeriesId.has(row.series_id)) bySeriesId.set(row.series_id, []);
+        bySeriesId.get(row.series_id).push({ date: row.observation_date, value: row.value });
+      }
+      const valueOnOrBefore = (series, onOrBeforeDate) => {
+        let result = null;
+        for (const point of series) {
+          if (point.date > onOrBeforeDate) break;
+          result = point.value;
+        }
+        return result;
+      };
+      const subtractDaysStr = (dateStr, days) => {
+        const d = new Date(`${dateStr}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() - days);
+        return d.toISOString().slice(0, 10);
+      };
+
+      const bySymbol = new Map();
+      for (const { symbol } of SECTOR_ROTATION_TICKERS) {
+        const navSeries = bySeriesId.get(`${symbol}_NAV`) ?? [];
+        const sharesSeries = bySeriesId.get(`${symbol}_SHARES_OUT`) ?? [];
+        const latestNav = navSeries[navSeries.length - 1];
+        const latestShares = sharesSeries[sharesSeries.length - 1];
+        const navReturn = {};
+        const flow = {};
+        if (latestNav && latestShares) {
+          for (const windowDays of ROTATION_WINDOWS) {
+            const pastDate = subtractDaysStr(latestNav.date, windowDays);
+            const pastNav = valueOnOrBefore(navSeries, pastDate);
+            const pastShares = valueOnOrBefore(sharesSeries, pastDate);
+            if (pastNav != null && pastNav !== 0) {
+              navReturn[windowDays] = ((latestNav.value - pastNav) / pastNav) * 100;
+            }
+            if (pastShares != null) {
+              flow[windowDays] = (latestShares.value - pastShares) * latestNav.value;
+            }
+          }
+        }
+        bySymbol.set(symbol, { navReturn, flow });
+      }
+      renderSectorRotation(bySymbol);
+    } catch (err) {
+      document.getElementById("sector-rotation-wrap").innerHTML = `<p class="loading">Failed to load sector rotation: ${err.message}</p>`;
     }
 
     document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));

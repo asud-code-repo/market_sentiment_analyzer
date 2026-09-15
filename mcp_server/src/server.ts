@@ -11,6 +11,7 @@ import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
+import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -337,11 +338,13 @@ server.registerTool(
       "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
       "delinquencies, WTI, retail sales, IG credit spread, SOFR, broad dollar index, NFCI " +
       "sub-indices, TIPS real yield, two external recession-probability models, small-cap " +
-      "breadth, gold price (GLD), and Bitcoin price. Informational only — never part of the " +
-      "6-indicator wave-authorization gate. gold_price is directional context for the existing " +
-      "Type C/Type E sleeve allocation, not a new signal. bitcoin_price is tracked for awareness " +
-      "only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) — never " +
-      "treat it as confirming or contradicting the crash thesis. " +
+      "breadth, gold price (GLD), Bitcoin price, and sector capital-rotation. Informational only — " +
+      "never part of the 6-indicator wave-authorization gate. gold_price is directional context for " +
+      "the existing Type C/Type E sleeve allocation, not a new signal. bitcoin_price is tracked for " +
+      "awareness only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) " +
+      "— never treat it as confirming or contradicting the crash thesis. sector_rotation gives real " +
+      "creation/redemption flow (not a price proxy) for the 11 sector SPDRs + SPY + GLD, but only " +
+      "at the ETF-vehicle level — see its own signal field for the full caveat. " +
       "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
       "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
@@ -351,7 +354,7 @@ server.registerTool(
       "cross-checks only, never validation of your own estimate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -379,6 +382,7 @@ server.registerTool(
         computeSeriesDelta("SPY"),
         computeSeriesDelta("GLD"),
         computeSeriesDelta("X:BTCUSD"),
+        computeSectorRotation(),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -513,6 +517,17 @@ server.registerTool(
       small_cap_breadth: smallCapBreadth,
       gold_price: goldPrice,
       bitcoin_price: bitcoinPrice,
+      sector_rotation: {
+        tickers: sectorRotation,
+        signal:
+          "11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history files. " +
+          "flow_estimate_usd is a genuine creation/redemption signal (share-count change x NAV, " +
+          "price-independent) -- not a price proxy. But it's ETF-VEHICLE-level flow, not a complete " +
+          "picture of money entering/leaving the underlying sector -- investors can get the same " +
+          "exposure through other ETFs (e.g. QQQ/VGT/SMH instead of XLK). nav_return_pct is price " +
+          "only, not total return (dividends excluded). Informational only, Tier 2 -- never part of " +
+          "the 3-of-6 wave-authorization gate.",
+      },
       divergence_flags: divergenceFlags,
     });
   }),

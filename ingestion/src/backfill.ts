@@ -1,6 +1,7 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
 import { fetchMassiveBackfill } from "./sources/massive.js";
+import { fetchSsgaBackfill } from "./sources/ssga.js";
 
 // One-time historical backfill for data_points — NOT part of the daily
 // ingestion run (see ingest.ts), which only ever needs the latest reading.
@@ -19,7 +20,11 @@ async function main() {
   const tickerPoints = await fetchMassiveBackfill();
   console.log(`Massive backfill: ${tickerPoints.length} total observations.`);
 
-  const allPoints = [...fredPoints, ...tickerPoints];
+  console.log("Backfilling sector-rotation NAV/shares-outstanding (5yr via SSGA)...");
+  const ssgaPoints = await fetchSsgaBackfill();
+  console.log(`SSGA backfill: ${ssgaPoints.length} total observations.`);
+
+  const allPoints = [...fredPoints, ...tickerPoints, ...ssgaPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
   await writeDataPoints(allPoints);
   console.log("Backfill complete.");

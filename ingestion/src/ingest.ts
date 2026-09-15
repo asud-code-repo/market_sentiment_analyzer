@@ -5,6 +5,7 @@ import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
 import { fetchMassive } from "./sources/massive.js";
+import { fetchSsga } from "./sources/ssga.js";
 
 interface SourceResult {
   name: string;
@@ -41,6 +42,9 @@ async function main() {
     // supplementary to the crash-check core (not one of the 6 gating
     // indicators), and a free-tier data source can be flaky/rate-limited.
     runSource("Massive", false, fetchMassive),
+    // Best-effort like Massive: sector-rotation flow data is supplementary
+    // context (see ssga.ts), not one of the 6 gating indicators.
+    runSource("SSGA", false, fetchSsga),
   ]);
 
   const requiredFailures = results.filter((r) => r.error && r.required);
