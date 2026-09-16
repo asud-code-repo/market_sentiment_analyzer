@@ -122,6 +122,12 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                       // has no usable history before 2023-07-11 and so couldn't
                                       // be used to train/validate the hazard model against real
                                       // historical crises.
+
+  // 2026-09-15 addition — external review: ICSA/CCSA (jobless claims) only
+  // measure layoffs, not whether laid-off (or job-seeking) workers are
+  // actually finding new positions. JTSHIR (BLS hires rate, via JOLTS)
+  // fills that gap — confirmed real and free on FRED before adding.
+  { id: "JTSHIR", unit: "percent" }, // Hires: Total Nonfarm (JOLTS) — monthly.
 ];
 
 interface FredObservation {

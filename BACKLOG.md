@@ -67,13 +67,24 @@ full history of what was built and how lives in project memory, not here.
     free; combining it with SSGA's NAV series for a proper total-return
     calc is a natural fast-follow, not done to keep v1 single-source.
 
-- **Per-series data-quality/freshness metadata.** The whole-run freshness
-  check exists; nothing per-series. A "green" panel could still be built
-  from a mix of today's VIX, last week's claims, and a silently-stale
-  monthly series. Concrete field list proposed: latest observation date,
-  source publication timestamp, expected cadence, days since latest valid
-  observation, last successful ingestion time, data-quality state
-  (current/expected-lag/stale/failed/quarantined). Not started.
+- **Per-series data-quality/freshness metadata — given more concrete shape
+  2026-09-15 via external review, still not started.** The whole-run
+  freshness check exists; nothing per-series. A "green" panel could still
+  be built from a mix of today's VIX, last week's claims, and a
+  silently-stale monthly series. Concrete field list proposed: latest
+  observation date, source publication timestamp, expected cadence, days
+  since latest valid observation, last successful ingestion time,
+  data-quality state (current/expected-lag/stale/failed/quarantined). A
+  review of the public dashboard added a second, related gap: Contextual
+  Indicators always show *today's* latest value regardless of which
+  historical report is selected in the date picker (already disclosed on
+  the page, but genuinely confusing — a reader can combine an old
+  assessment with newer evidence). Real fix needs two things: (1) when
+  viewing a historical report, show indicator values as they were *then*,
+  not today's; (2) explicit per-value state (newly-released / revised /
+  carried-forward), not just a date. A genuine redesign of how that
+  section works, not a quick patch — same underlying gap as the item
+  above, just more concrete now.
 
 - **Tier 2 confidence-escalation rule has zero code enforcement.** Surfaced
   2026-09-15 while reviewing an external (GPT) critique of a proposed
@@ -247,6 +258,32 @@ existing wave logic has strong precision even where its timing is weak.
   about when the 2nd model was added.
 
 ## Process & content
+
+- **External public-report review (2026-09-15) — three larger items
+  deliberately deferred, not built.**
+  - **Evidence-grouping framework**: guidance for grouping ~20 contextual
+    indicators by underlying risk factor (equity stress / credit stress /
+    funding stress / labor stress), so several correlated cards moving
+    together don't read as independent confirmations of the same
+    underlying signal. Mostly a reasoning/instructions change, not new
+    infrastructure — the real work is designing a principled grouping
+    that doesn't itself become a new source of overclaiming.
+  - **Forecast/alert track record system**: freeze each report's stated
+    probability and hazard-model band, define what counts as a "hit"
+    against realized outcomes, and score live predictions going forward.
+    Blocked on the same wall the hazard-model review hit:
+    `crash_probability_pct` has no formal target/horizon definition at all
+    (the "Crash-Probability Scoring Methodology" section is an explicit,
+    unimplemented draft) — building a track record for an undefined
+    target doesn't work until that's settled first. The largest single
+    item from this review; multi-session-scale, not a bolt-on feature.
+  - **Whether the rate-reset trigger belongs on the public report at
+    all.** It reveals the existence and rough timing of a specific
+    personal holding (a stable-value fund), even without dollar figures —
+    arguably different in kind from the Fed-event/inflation/
+    earnings-guidance triggers, which are pure macro calendar facts. Not
+    moved unilaterally; needs a real decision about whether it belongs on
+    the private, Access-gated `full_report_site` instead.
 
 - **Reassess shipped work after a stretch of usage — recurring practice,
   next one not yet due.** Done 2026-09-12 against 126 real `crash_checks`

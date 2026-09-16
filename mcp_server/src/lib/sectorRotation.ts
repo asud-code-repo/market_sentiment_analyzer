@@ -43,6 +43,16 @@ export interface TickerRotation {
   nav_return_pct: Partial<Record<`${LookbackWindow}d`, number>>;
   flow_estimate_usd: Partial<Record<`${LookbackWindow}d`, number>>;
   rotation_read: Partial<Record<`${LookbackWindow}d`, RotationRead>>;
+  // Added 2026-09-15 (external review): a positive absolute return can
+  // still be substantial underperformance against the market -- e.g. a
+  // sector up 2.9% over 180 days while SPY is up 15% is not "keeping up."
+  // SPY's own entry is always 0.
+  nav_return_vs_spy_pct: Partial<Record<`${LookbackWindow}d`, number>>;
+  // Flow in dollar terms doesn't distinguish "$1B into a $10B sector" from
+  // "$1B into a $1T one" -- this expresses the same flow_estimate_usd as a
+  // % of assets at the start of that window, using data already fetched
+  // (no new ingestion needed).
+  flow_pct_of_assets: Partial<Record<`${LookbackWindow}d`, number>>;
 }
 
 function classifyRotation(navReturnPct: number, flowUsd: number): RotationRead {
@@ -164,7 +174,7 @@ async function fetchAllDataPoints(seriesIds: string[], cutoff: string): Promise<
  * latest + 4 lookback fetches) would otherwise need. Computed entirely
  * from that one result set.
  */
-export async function computeSectorRotation(): Promise<TickerRotation[]> {
+async function computeSectorRotationRaw(): Promise<TickerRotation[]> {
   const seriesIds = SECTOR_TICKERS.flatMap(({ ticker }) => [`${ticker}_NAV`, `${ticker}_SHARES_OUT`]);
   const cutoff = subtractDays(new Date().toISOString().slice(0, 10), 370);
 
@@ -201,6 +211,7 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
     const navReturn: Partial<Record<`${LookbackWindow}d`, number>> = {};
     const flowEstimate: Partial<Record<`${LookbackWindow}d`, number>> = {};
     const rotationRead: Partial<Record<`${LookbackWindow}d`, RotationRead>> = {};
+    const flowPctOfAssets: Partial<Record<`${LookbackWindow}d`, number>> = {};
 
     if (latestNav && latestShares) {
       for (const windowDays of LOOKBACK_WINDOWS_DAYS) {
@@ -222,6 +233,13 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
           // adjusted, not a complete sector-flow picture (see module doc).
           windowFlow = Math.round((latestShares.value - pastShares) * latestNav.value);
           flowEstimate[key] = windowFlow;
+
+          // Flow as % of assets at the START of the window (pastShares x
+          // pastNav) -- both already fetched above, no new data needed.
+          if (pastNav !== null && pastNav !== 0 && pastShares !== 0) {
+            const startingAssets = pastShares * pastNav;
+            flowPctOfAssets[key] = round((windowFlow / startingAssets) * 100);
+          }
         }
         if (windowReturn !== null && windowFlow !== null) {
           rotationRead[key] = classifyRotation(windowReturn, windowFlow);
@@ -236,6 +254,33 @@ export async function computeSectorRotation(): Promise<TickerRotation[]> {
       nav_return_pct: navReturn,
       flow_estimate_usd: flowEstimate,
       rotation_read: rotationRead,
+      flow_pct_of_assets: flowPctOfAssets,
+      nav_return_vs_spy_pct: {}, // filled in below -- needs SPY's own return, not available within this single-ticker pass
     };
+  });
+}
+
+/**
+ * Public entry point: computeSectorRotationRaw's per-ticker pass, plus
+ * nav_return_vs_spy_pct filled in as a second pass -- needs SPY's own
+ * already-computed nav_return_pct looked up across tickers, which isn't
+ * available inside the single-ticker loop above.
+ */
+export async function computeSectorRotation(): Promise<TickerRotation[]> {
+  const rows = await computeSectorRotationRaw();
+  const spy = rows.find((r) => r.symbol === "SPY");
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  return rows.map((r) => {
+    const vsSpy: Partial<Record<`${LookbackWindow}d`, number>> = {};
+    for (const windowDays of LOOKBACK_WINDOWS_DAYS) {
+      const key = `${windowDays}d` as const;
+      const ownReturn = r.nav_return_pct[key];
+      const spyReturn = spy?.nav_return_pct[key];
+      if (ownReturn !== undefined && spyReturn !== undefined) {
+        vsSpy[key] = round(ownReturn - spyReturn);
+      }
+    }
+    return { ...r, nav_return_vs_spy_pct: vsSpy };
   });
 }

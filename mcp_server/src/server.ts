@@ -286,7 +286,11 @@ server.registerTool(
       "print/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
       "remove superseded entries yourself. When a trigger's target rolls to a new occurrence, " +
       "either replace the old entry in place or simply append a new one; the server keeps whichever " +
-      "has the later date. `risk_radar` (geopolitical/policy_fed/inflation/valuation/labor_market/" +
+      "has the later date. fed-event/inflation-print entries also get their `status` forced to " +
+      "'fired' server-side once their own `date` is today or in the past, regardless of what you " +
+      "supply -- you still write the qualitative outcome in `note` (was it hawkish/dovish, in-line " +
+      "or a beat/miss), just don't worry about the status enum lagging behind it. `risk_radar` " +
+      "(geopolitical/policy_fed/inflation/valuation/labor_market/" +
       "earnings, each 0-100) is required every run — see crash-check-rules.md's 'Risk Radar Scoring " +
       "Methodology' for the per-axis banded rubric (4 of the 6 axes anchor to real series already " +
       "tracked in this system; geopolitical/earnings stay narrative-only, no free anchoring data " +
@@ -364,13 +368,17 @@ server.registerTool(
       "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
       "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
-      "rate_pct is structural (AI/remote-work displacement), not a crash-timing signal — see " +
-      "project-instructions.md's NVDA thesis step for how to use it. The two recession-probability " +
+      "rate_pct likely reflects both structural (AI/remote-work displacement) and cyclical factors -- " +
+      "this measurement alone can't separate the two; not treated as a crash-timing signal either " +
+      "way — see project-instructions.md's NVDA thesis step for how to use it. hires_rate_pct " +
+      "(JTSHIR) pairs with initial/continuing jobless claims -- claims measure layoffs, hires rate " +
+      "measures whether people are finding new jobs, together a fuller labor-market read than " +
+      "claims alone. The two recession-probability " +
       "fields are external published models (Chauvet-Piger; NY Fed Estrella-Mishkin) — calibration " +
       "cross-checks only, never validation of your own estimate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -383,6 +391,7 @@ server.registerTool(
         getLatestDataPoint("DGS3MO"),
         getLatestDataPoint("ICSA"),
         getLatestDataPoint("CCSA"),
+        getLatestDataPoint("JTSHIR"),
         getLatestDataPoint("DRCCLACBS"),
         getLatestDataPoint("DCOILWTICO"),
         getLatestDataPoint("RSAFS"),
@@ -491,7 +500,7 @@ server.registerTool(
             value_pct: Math.round(estrellaMishkinRecessionProbability(dgs10.value - dgs3mo.value) * 10) / 10,
             as_of: dgs10.observation_date,
             spread_10y_3mo_pct: Math.round((dgs10.value - dgs3mo.value) * 100) / 100,
-            signal: "external published model (NY Fed, Estrella-Mishkin 1998) — a calibration cross-check, not validation of your own estimate",
+            signal: "external published model (NY Fed, Estrella-Mishkin 1998) — a calibration cross-check, not validation of your own estimate. Uses today's spot DGS10/DGS3MO, not the NY Fed's own monthly-average convention -- a known, flagged approximation.",
           }
         : null;
 
@@ -499,11 +508,12 @@ server.registerTool(
       financial_stress_index: stlfsi4 && { ...stlfsi4, signal: stlfsi4.value > 0 ? "above-average stress" : "below-average stress" },
       national_financial_conditions: nfci && { ...nfci, signal: nfci.value > 0 ? "tighter than average" : "looser than average" },
       breakeven_inflation_10y: t10yie,
-      bank_lending_standards_tightening_pct: drtscilm && { ...drtscilm, signal: drtscilm.value > 0 ? "net tightening" : "net easing" },
+      bank_lending_standards_tightening_pct: drtscilm && { ...drtscilm, signal: drtscilm.value > 0 ? "net tightening" : drtscilm.value < 0 ? "net easing" : "net unchanged" },
       reverse_repo_usd_billions: rrpontsyd,
       yield_curve_2s10s: twoTenSpread,
       initial_jobless_claims: icsa,
       continuing_jobless_claims: ccsa && { ...ccsa, signal: "see divergence_flags.initial_vs_continuing_claims for the computed divergence read against initial_jobless_claims" },
+      hires_rate_pct: jtshir && { ...jtshir, signal: "read alongside initial/continuing jobless claims -- claims measure layoffs, hires rate measures whether people are finding new jobs. A falling hires rate alongside flat claims can mask a hiring slowdown claims alone wouldn't show." },
       credit_card_delinquency_rate_pct: drcclacbs,
       wti_crude_usd_per_barrel: wti && { ...wti, signal: wti.value > 100 ? "above $100 — stagflation accelerant watch" : "below $100" },
       retail_sales_usd_millions: retailSales,
@@ -514,11 +524,11 @@ server.registerTool(
       },
       recent_grad_unemployment_rate_pct: recentGradUnemployment && {
         ...recentGradUnemployment,
-        signal: "structural/secular (AI + remote-work displacement of entry-level hiring), not cyclical — not a crash-timing signal, but ambiguous evidence for the NVDA 'AI recovery trough bet' thesis during a Portfolio Opportunity Review",
+        signal: "likely reflects both structural factors (AI + remote-work displacement of entry-level hiring) and cyclical labor-market softness -- this measurement alone can't separate the two. Not treated as a crash-timing signal either way, but ambiguous evidence for the NVDA 'AI recovery trough bet' thesis during a Portfolio Opportunity Review",
       },
       thirty_year_treasury_pct: dgs30 && {
         ...dgs30,
-        signal: dgs30.value > 5.0 ? "ABOVE 5.0% — bond vigilante signal per crash-check-rules.md" : "below the 5.0% bond-vigilante threshold",
+        signal: dgs30.value > 5.0 ? "ABOVE 5.0% — elevated long-term yields worth watching (crash-check-rules.md's threshold)" : "below the 5.0% elevated-yield watch threshold",
       },
       sofr_pct: sofr && { ...sofr, signal: "repo/dollar-funding stress reference rate — read alongside reverse_repo_usd_billions, no single-direction band" },
       broad_dollar_index: dtwexbgs && { ...dtwexbgs, signal: "rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities" },
@@ -545,8 +555,12 @@ server.registerTool(
           "confirmed_in/confirmed_out (return and flow agree) or accumulation_divergence/" +
           "distribution_divergence (they disagree -- e.g. price falling while real money is still " +
           "arriving) -- report this distinction explicitly rather than just the raw return, since a " +
-          "return-only read can't tell genuine rotation from price noise. Informational only, Tier " +
-          "2 -- never part of the 3-of-6 wave-authorization gate.",
+          "return-only read can't tell genuine rotation from price noise. nav_return_vs_spy_pct is " +
+          "return relative to the market -- a positive absolute return can still be substantial " +
+          "underperformance (e.g. +2.9% over 180d while SPY did +15%). flow_pct_of_assets expresses " +
+          "flow_estimate_usd as a % of assets at the start of that window, so a $1B flow into a $10B " +
+          "sector and a $1B flow into a $1T one don't read as equally significant. Informational " +
+          "only, Tier 2 -- never part of the 3-of-6 wave-authorization gate.",
       },
       divergence_flags: divergenceFlags,
     });

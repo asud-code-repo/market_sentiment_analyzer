@@ -324,15 +324,29 @@ export async function writeSnapshot(qualitative: {
   // whenever fed_pivot_signal didn't actually change this run.
   // Force the rate-reset trigger's status/note to the computed value,
   // regardless of what the caller supplied — matched by name against the
-  // existing "Rate-reset trigger (stable-value fund)" convention. Any other
-  // trigger entry (Fed-event, inflation-print, earnings-guidance) passes
-  // through untouched — those still need real qualitative judgment.
+  // existing "Rate-reset trigger (stable-value fund)" convention.
+  //
+  // Also force fed-event/inflation-print entries to "fired" once their own
+  // date is today or in the past -- found live 2026-09-15: an August CPI
+  // entry's note correctly described the release ("Released Sep 11:
+  // headline +0.4%...") while status stayed stuck at "approaching," same
+  // bug class as the rate-reset trigger before it was made deterministic.
+  // "Has this date passed" is purely mechanical; only forced one-way
+  // (past-dated -> fired), never for future-dated entries, since
+  // approaching-vs-pending for an upcoming date is a genuine judgment call
+  // this doesn't touch. earnings-guidance passes through untouched, same
+  // as before -- no deterministic calendar backs it.
+  const today = new Date().toISOString().slice(0, 10);
   const resolvedTriggerStatus = qualitative.trigger_status ?? latest.trigger_status;
   const triggerStatusRaw = Array.isArray(resolvedTriggerStatus)
     ? resolvedTriggerStatus.map((entry) => {
         const trigger = entry as Record<string, unknown>;
-        if (typeof trigger.name === "string" && trigger.name.toLowerCase().includes("rate-reset")) {
+        const name = typeof trigger.name === "string" ? trigger.name.toLowerCase() : "";
+        if (name.includes("rate-reset")) {
           return { ...trigger, status: rateResetTrigger.status, note: rateResetTrigger.note };
+        }
+        if ((name.includes("fed-event") || name.includes("inflation-print")) && typeof trigger.date === "string" && trigger.date <= today) {
+          return { ...trigger, status: "fired" };
         }
         return trigger;
       })

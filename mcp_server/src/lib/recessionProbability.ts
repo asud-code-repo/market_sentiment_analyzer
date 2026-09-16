@@ -8,11 +8,23 @@
  * not a hand-tuned threshold, and not this project inventing its own
  * probability model.
  *
- * Formula: P(recession in 12mo) = Φ(-0.5333 - 0.6629 × spread), where
+ * Formula: P(recession in 12mo) = Φ(-0.5333 - 0.6330 × spread), where
  * spread = DGS10 - DGS3MO (percentage points) and Φ is the standard normal
- * CDF. Source: Estrella, A. and Mishkin, F.S. (1998), "Predicting U.S.
- * Recessions: Financial Variables as Leading Indicators," Review of
- * Economics and Statistics — coefficients as published, not refit.
+ * CDF. Coefficients re-verified live 2026-09-15 against the NY Fed's
+ * current published PDF (newyorkfed.org/medialibrary/media/research/
+ * capital_markets/Prob_Rec.pdf, updated 06-Sep-2026): alpha=-0.5333,
+ * beta=-0.6330. The prior value (beta=-0.6629) was correct when this was
+ * first built — the NY Fed periodically re-estimates its own published
+ * model (their PDF explicitly logs the re-estimation window used), so this
+ * constant can drift the same way the FOMC calendar dates do; re-check
+ * against the source PDF if this is ever revisited.
+ *
+ * Known approximation, not fixed: the NY Fed's own convention uses a
+ * MONTHLY AVERAGE of the 10yr-3mo spread, not a single day's spot value.
+ * This implementation uses the latest daily DGS10/DGS3MO instead, matching
+ * this system's own spot-value convention elsewhere — flagged, not built
+ * out, since averaging would need new infrastructure this system doesn't
+ * otherwise have.
  */
 
 /**
@@ -41,5 +53,5 @@ function standardNormalCdf(x: number): number {
 
 /** spread10y3mo = DGS10 - DGS3MO, in percentage points. Returns a 0-100 percent. */
 export function estrellaMishkinRecessionProbability(spread10y3mo: number): number {
-  return standardNormalCdf(-0.5333 - 0.6629 * spread10y3mo) * 100;
+  return standardNormalCdf(-0.5333 - 0.6330 * spread10y3mo) * 100;
 }

@@ -429,13 +429,13 @@ const CONTEXT_INFO = {
   t10yie: {
     label: "10yr Breakeven Inflation",
     format: (v) => `${v.toFixed(1)}%`,
-    signal: (v) => (v > 2.5 ? "Above the Fed's ~2% target" : "Near the Fed's ~2% target"),
+    signal: (v) => (v > 2.5 ? "Market-implied inflation compensation, above the Fed's ~2% PCE target" : "Market-implied inflation compensation, near the Fed's ~2% PCE target"),
     notable: (v) => v > 2.5,
   },
   drtscilm: {
     label: "Bank Lending Standards",
     format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}%`,
-    signal: (v) => (v > 0 ? "Net tightening (credit contracting)" : "Net easing"),
+    signal: (v) => (v > 0 ? "Net tightening (credit contracting)" : v < 0 ? "Net easing" : "Net unchanged"),
     notable: (v) => v > 0,
   },
   rrpontsyd: {
@@ -469,6 +469,11 @@ const CONTEXT_INFO = {
     format: (v) => `${(v / 1000).toFixed(0)}K`,
     signal: () => "Read alongside Initial Jobless Claims — rising here while initial claims stay flat means laid-off workers are struggling to find new jobs",
   },
+  jtshir: {
+    label: "Hires Rate (JOLTS)",
+    format: (v) => `${v.toFixed(1)}%`,
+    signal: () => "Claims measure layoffs; this measures whether people are finding new jobs. A falling hires rate alongside flat claims can mask a hiring slowdown claims alone wouldn't show.",
+  },
   bamlc0a0cm: {
     label: "IG Credit Spread",
     format: (v) => `${Math.round(v * 100)}bps`,
@@ -477,12 +482,12 @@ const CONTEXT_INFO = {
   cgbd2024: {
     label: "Recent Grad Unemployment",
     format: (v) => `${v.toFixed(1)}%`,
-    signal: () => "Structural (AI/remote-work displacement), not cyclical — not a crash-timing signal",
+    signal: () => "Likely reflects both structural factors (AI/remote-work displacement) and cyclical labor-market softness — this measurement alone can't separate the two; not treated as a crash-timing signal either way",
   },
   dgs30: {
     label: "30yr Treasury Yield",
     format: (v) => `${v.toFixed(2)}%`,
-    signal: (v) => (v > 5.0 ? "Above 5.0% — bond vigilante signal" : "Below the 5.0% bond-vigilante threshold"),
+    signal: (v) => (v > 5.0 ? "Above 5.0% — elevated long-term yields worth watching" : "Below the 5.0% elevated-yield watch threshold"),
     notable: (v) => v > 5.0,
   },
   sofr: {
@@ -520,10 +525,10 @@ const CONTEXT_INFO = {
   nyFedRecessionProb: {
     label: "Recession Prob. (NY Fed, 12mo)",
     format: (v) => `${v.toFixed(1)}%`,
-    signal: () => "NY Fed's published Estrella-Mishkin (1998) formula, computed here from DGS10/DGS3MO (not a FRED series) — external cross-check, not validation",
+    signal: () => "NY Fed's published Estrella-Mishkin (1998) formula, computed here from DGS10/DGS3MO (not a FRED series) — external cross-check, not validation. Uses spot values, not the NY Fed's own monthly-average convention.",
   },
   smallCapBreadth: {
-    label: "Small-Cap Breadth (IWM vs SPY)",
+    label: "Small-Cap Relative Performance (IWM vs SPY)",
     format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}pp / 7d`,
     signal: (v) => (v < 0 ? "Small-caps underperforming — early domestic-credit-stress signal, not backtested" : "Small-caps keeping pace or outperforming"),
     notable: (v) => v < 0,
@@ -557,7 +562,7 @@ function erf(x) {
 }
 
 function estrellaMishkinRecessionProbability(spread10y3mo) {
-  const phi = 0.5 * (1 + erf((-0.5333 - 0.6629 * spread10y3mo) / Math.SQRT2));
+  const phi = 0.5 * (1 + erf((-0.5333 - 0.6330 * spread10y3mo) / Math.SQRT2));
   return phi * 100;
 }
 
@@ -579,6 +584,7 @@ function renderContextIndicators(latest) {
     dcoilwtico: latest.DCOILWTICO,
     rsafs: latest.RSAFS,
     ccsa: latest.CCSA,
+    jtshir: latest.JTSHIR,
     bamlc0a0cm: latest.BAMLC0A0CM,
     cgbd2024: latest.CGBD2024,
     dgs30: latest.DGS30,
@@ -638,7 +644,7 @@ const SECTOR_ROTATION_TICKERS = [
 ];
 const ROTATION_WINDOWS = [30, 90, 180, 365];
 
-let rotationView = "return"; // table's metric toggle -- "return" | "flow"
+let rotationView = "return"; // table's metric toggle -- one of ROTATION_VIEWS' keys
 let rotationScatterWindow = 180; // scatter's single-window pick
 let rotationSort = { column: null, dir: "desc" }; // table's sortable-column state
 
@@ -798,8 +804,14 @@ function renderRotationTable(bySymbol) {
     { key: 180, label: "180d" },
     { key: 365, label: "365d" },
   ];
-  const fmt = rotationView === "return" ? fmtRotationPct : fmtRotationFlow;
-  const metricOf = (symbol) => (rotationView === "return" ? bySymbol.get(symbol)?.navReturn : bySymbol.get(symbol)?.flow) ?? {};
+  const ROTATION_VIEWS = {
+    return: { fmt: fmtRotationPct, of: (d) => d?.navReturn, label: "NAV return" },
+    flow: { fmt: fmtRotationFlow, of: (d) => d?.flow, label: "Est. flow" },
+    vsSpy: { fmt: fmtRotationPct, of: (d) => d?.vsSpy, label: "Return vs SPY" },
+    flowPct: { fmt: fmtRotationPct, of: (d) => d?.flowPctOfAssets, label: "Flow % of assets" },
+  };
+  const fmt = ROTATION_VIEWS[rotationView].fmt;
+  const metricOf = (symbol) => ROTATION_VIEWS[rotationView].of(bySymbol.get(symbol)) ?? {};
 
   let rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => ({ symbol, label, metrics: metricOf(symbol) }));
   if (rotationSort.column !== null) {
@@ -837,8 +849,9 @@ function renderRotationTable(bySymbol) {
 
   return `
     <div class="view-toggle">
-      <button class="view-btn ${rotationView === "return" ? "active" : ""}" data-view="return">NAV return</button>
-      <button class="view-btn ${rotationView === "flow" ? "active" : ""}" data-view="flow">Est. flow</button>
+      ${Object.entries(ROTATION_VIEWS)
+        .map(([key, v]) => `<button class="view-btn ${rotationView === key ? "active" : ""}" data-view="${key}">${v.label}</button>`)
+        .join("")}
     </div>
     <table>
       <thead><tr>${headerCells}</tr></thead>
@@ -962,7 +975,7 @@ function renderDivergenceFlags(flags) {
           // concerning — must not share the warning pill with the other two.
           const isReassuringPair = f.pair === "vix_vs_hy_credit_spread";
           const pillCls = f.diverging ? (isReassuringPair ? "good" : "warning") : "muted";
-          const pillText = f.diverging ? (isReassuringPair ? "Decoupled (reassuring)" : "Diverging") : "Tracking together";
+          const pillText = f.diverging ? (isReassuringPair ? "Decoupled (reassuring)" : "Diverging") : "No flagged divergence";
           return `
           <div class="divergence-item">
             <div class="divergence-head">
@@ -1014,13 +1027,15 @@ function renderHazardModel(row) {
     <div class="indicator notable">
       <div class="notable-tag">● Rule-engine computed, calibrated — not the discretionary estimate above</div>
       <div class="value"><span class="pill ${HAZARD_BAND_PILL[row.hazard_10pct_band] || "muted"}">${HAZARD_BAND_LABELS[row.hazard_10pct_band] || row.hazard_10pct_band}</span></div>
-      <div class="signal">Calibrated ${row.hazard_10pct_calibrated_pct}% (raw model output ${row.hazard_10pct_raw_pct}%) as of ${row.hazard_10pct_as_of}.</div>
+      <div class="signal">P(S&amp;P drawdown reaches &ge;10% from ATH within ~21 trading days) — as of ${row.hazard_10pct_as_of}.</div>
       <div class="indicator-info">
-        Walk-forward-validated, isotonic-calibrated logistic model estimating P(S&amp;P drawdown reaches
-        &ge;10% from ATH within ~21 trading days | not already past it). Shown as a band, not a precise
+        Walk-forward-validated, isotonic-calibrated logistic model. Shown as a band, not a precise
         percentage, because the calibration curve has two wide flat plateaus — nearby raw scores inside
         one plateau aren't meaningfully different probabilities. Not part of the 3-of-6 wave-authorization
         gate, and not meant to agree or be averaged with the crash-probability estimate above.
+        <br><br>
+        <em>Methodology detail: calibrated ${row.hazard_10pct_calibrated_pct}% (raw model output ${row.hazard_10pct_raw_pct}%)
+        — shown for transparency, not as a precision claim the band above doesn't already make.</em>
       </div>
     </div>
   `;
@@ -1449,7 +1464,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough
@@ -1616,6 +1631,7 @@ async function main() {
         const latestShares = sharesSeries[sharesSeries.length - 1];
         const navReturn = {};
         const flow = {};
+        const flowPctOfAssets = {};
         if (latestNav && latestShares) {
           for (const windowDays of ROTATION_WINDOWS) {
             const pastDate = subtractDaysStr(latestNav.date, windowDays);
@@ -1625,11 +1641,32 @@ async function main() {
               navReturn[windowDays] = ((latestNav.value - pastNav) / pastNav) * 100;
             }
             if (pastShares != null) {
-              flow[windowDays] = (latestShares.value - pastShares) * latestNav.value;
+              const windowFlow = (latestShares.value - pastShares) * latestNav.value;
+              flow[windowDays] = windowFlow;
+              // Flow as % of assets at the START of the window -- same data
+              // already fetched above, no new ingestion. Distinguishes a
+              // $1B flow into a $10B sector from one into a $1T sector.
+              if (pastNav != null && pastNav !== 0 && pastShares !== 0) {
+                flowPctOfAssets[windowDays] = (windowFlow / (pastShares * pastNav)) * 100;
+              }
             }
           }
         }
-        bySymbol.set(symbol, { navReturn, flow });
+        bySymbol.set(symbol, { navReturn, flow, flowPctOfAssets });
+      }
+      // Return relative to SPY -- a positive absolute return can still be
+      // substantial underperformance (e.g. +2.9% over 180d while SPY did
+      // +15%). Second pass: needs SPY's own already-computed navReturn.
+      const spyData = bySymbol.get("SPY");
+      for (const { symbol } of SECTOR_ROTATION_TICKERS) {
+        const data = bySymbol.get(symbol);
+        const vsSpy = {};
+        for (const windowDays of ROTATION_WINDOWS) {
+          if (data.navReturn[windowDays] != null && spyData?.navReturn[windowDays] != null) {
+            vsSpy[windowDays] = data.navReturn[windowDays] - spyData.navReturn[windowDays];
+          }
+        }
+        data.vsSpy = vsSpy;
       }
       renderSectorRotation(bySymbol);
     } catch (err) {
