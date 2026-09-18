@@ -92,11 +92,38 @@ Supplementary Tier 2 context — financial stress indices, breakeven
 inflation, continuing jobless claims, investment-grade credit spreads,
 2s10s curve, WTI, retail sales, repo/liquidity stress (SOFR), the broad
 dollar index, bank-funding/credit-conditions stress (NFCI risk/credit
-subindexes), the 10yr TIPS real yield, etc. — is available via
-`get_context_indicators` and on `dashboard_site`, informational only,
-never part of the gate. `get_series_deltas` provides real 3-day/7-day
-historical lookback for any series, fulfilling the rules doc's
-delta-reporting requirement.
+subindexes), the 10yr TIPS real yield, recent-grad unemployment (a FRED
+proxy for the NY Fed's own research, `CGBD2024`), the NY Fed's published
+Estrella-Mishkin yield-curve recession-probability model (computed locally
+from `DGS10`/`DGS3MO` — no FRED series exists for it), and an 11-sector +
+SPY/GLD sector-rotation panel (State Street's free NAV-history files),
+etc. — is available via `get_context_indicators` and on `dashboard_site`,
+informational only, never part of the gate. `get_series_deltas` provides
+real 3-day/7-day historical lookback for any series, fulfilling the rules
+doc's delta-reporting requirement.
+
+**Statistical hazard model (additive, non-gating)**: alongside the panel,
+`rule_engine/src/hazardModel.ts` runs a logistic-regression model — fit
+once, offline, on real crisis history and isotonic-recalibrated — that
+estimates P(S&P reaches a 10%+ drawdown within ~21 trading days | not
+already past it). Shown as its own LOW/TRANSITIONING/HIGH card, never
+blended with `crash_probability_pct` (which stays 100% LLM judgment). See
+[`reference_docs/hazard-model-explained.md`](reference_docs/hazard-model-explained.md)
+for a full plain-language walkthrough of the data flow and math, including
+its documented limitations (a confirmed data-leakage issue in one input
+feature, tracked in `BACKLOG.md`).
+
+**Public Risk Radar (`risk_radar`, daily)**: a 6-axis discretionary
+macro-risk read (geopolitical, policy_fed, inflation, valuation,
+labor_market, earnings — each 0-100), required on every `write_snapshot`
+call and shown on the public dashboard. Like `crash_probability_pct`, this
+is LLM judgment, not a calibrated model — but 4 of the 6 axes are anchored
+to real series/fields already tracked in this system (fed pivot signal,
+breakeven inflation, Sahm Rule/claims, real 10yr yield), while
+`geopolitical`/`earnings` stay purely narrative-judged since no free
+anchoring data exists for either. Full banding rubric in
+`reference_docs/rules/crash-check-rules.md`'s "Risk Radar Scoring
+Methodology" section.
 
 **Cross-indicator divergence detection**: three pairs of normally-correlated
 series (IG-vs-HY credit spreads, initial-vs-continuing jobless claims,
