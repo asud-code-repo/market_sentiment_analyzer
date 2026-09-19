@@ -1,13 +1,24 @@
-// Hardcoded port of a research-validated logistic-regression "hazard model":
-// P(S&P drawdown reaches >=10% from ATH within 21 trading days | not already
-// past that threshold). Walk-forward validated (expanding window,
-// leave-one-crisis-out: dot-com/GFC/Dec-2018/COVID/2022), isotonic-
-// recalibrated (stratified 5-fold on pooled out-of-sample predictions),
-// block-bootstrap CI confirmed a real edge over the historical base rate for
-// THIS target specifically. A companion 20% target was tested and shelved
-// (its CI spanned zero, given only 4 usable real episodes) — not
-// represented here. See reference_docs/rules/crash-check-rules.md's
-// "Statistical Hazard Model" section for the full writeup.
+// Hardcoded port of a logistic-regression "hazard model": P(S&P drawdown
+// reaches >=10% from ATH within 21 trading days | not already past that
+// threshold). The ORIGINAL RESEARCH CLAIMED walk-forward validation
+// (expanding window, leave-one-crisis-out: dot-com/GFC/Dec-2018/COVID/2022),
+// isotonic recalibration (stratified 5-fold on pooled out-of-sample
+// predictions), and a block-bootstrap CI confirming a real edge over the
+// historical base rate for THIS target specifically (plus a companion 20%
+// target that was tested and shelved — its CI spanned zero, given only 4
+// usable real episodes — not represented here).
+//
+// STATUS (confirmed 2026-09-19, external review + a follow-up search of
+// this repo): the original training script/notebook, this artifact's
+// derivation, the label/fold definitions, and the bootstrap output are not
+// recoverable from anything in this repository. The paragraph above
+// describes what the original research CLAIMED, not something currently
+// independently verifiable — treat it as documented, not established.
+// Reproducing it would be a full rebuild from raw data (point-in-time
+// FRED/SPY reconstruction, refit, leakage-safe backtest against simple
+// baselines), not a recovery of existing work. See
+// reference_docs/rules/crash-check-rules.md's "Statistical Hazard Model"
+// section for the full writeup (same caveat applies there).
 //
 // DO NOT hand-edit FEATURES/INTERCEPT/ISOTONIC_TABLE below — they are a
 // direct, byte-for-byte port of the trained artifact

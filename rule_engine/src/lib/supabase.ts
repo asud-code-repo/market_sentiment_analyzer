@@ -53,6 +53,8 @@ export interface LatestSnapshotRow {
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
   recovery_confirmed_date: string | null;
+  // Slow-bear wave pathway state (added 2026-09-19) — see rules.ts.
+  sp500_days_since_252d_low: number | null;
 }
 
 /** The most recent crash_checks row, for carrying forward manually-judged
@@ -64,7 +66,7 @@ export async function getLatestCrashCheck(): Promise<LatestSnapshotRow | null> {
   const { data, error } = await supabase
     .from("crash_checks")
     .select(
-      "warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state, confirmed_red_count, sp500_trough, sp500_trough_date, recovery_confirmed, recovery_confirmed_date",
+      "warsh_classification, warsh_classification_date, warsh_hard_rules_active, fed_pivot_signal, trigger_status, confirmation_state, confirmed_red_count, sp500_trough, sp500_trough_date, recovery_confirmed, recovery_confirmed_date, sp500_days_since_252d_low",
     )
     .order("run_at", { ascending: false })
     .limit(1)
@@ -97,6 +99,14 @@ export interface CrashCheckInsert {
   confirmation_state: Record<string, ConfirmationEntry>;
   wave_authorized: boolean;
   wave_active: "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";
+  // Which pathway produced wave_active — FAST_PANIC (drawdown+VIX, the
+  // original rule) or SLOW_BEAR (drawdown depth + a fresh trailing low,
+  // added 2026-09-19 — see rules.ts); null when wave_active is NONE.
+  wave_active_reason: "FAST_PANIC" | "SLOW_BEAR" | null;
+  // Trading days since S&P last set a fresh 252-day (~1yr) rolling low —
+  // backs the slow-bear pathway's freshness filter (rules.ts). Carried
+  // forward day-to-day, not recomputed from full history each run.
+  sp500_days_since_252d_low: number;
   warsh_classification: "HAWKISH" | "MODERATE" | "DOVISH" | "PENDING" | null;
   warsh_classification_date: string | null;
   warsh_hard_rules_active: boolean;

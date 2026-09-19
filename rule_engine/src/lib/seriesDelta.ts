@@ -118,3 +118,34 @@ export async function getTradingDayAnchor(anchorDate: string, tradingDaysBack: n
   }
   return data[tradingDaysBack].observation_date;
 }
+
+/**
+ * Whether `anchorValue` (the S&P close on `anchorDate`) is at or below the
+ * lowest close in the trailing `windowSize` trading days, inclusive of
+ * anchorDate itself — i.e. a fresh N-trading-day low, not just "below some
+ * old all-time high". Backs rules.ts's slow-bear wave pathway (added
+ * 2026-09-19): distinguishes an actively deteriorating market from one
+ * that's merely still below a stale multi-year-old peak (SPY didn't
+ * reclaim its Oct-2007 high until 2013, so "still below ATH" alone stayed
+ * true for years after the GFC actually bottomed and calmed down).
+ *
+ * Degrades to false (not a throw) when fewer than windowSize rows exist —
+ * early in this system's own SP500 backfill history, rather than blocking
+ * the whole classify() run over an insufficiently long lookback.
+ */
+export async function isTrailingLow(anchorDate: string, anchorValue: number, windowSize: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("value")
+    .eq("series_id", "SP500")
+    .lte("observation_date", anchorDate)
+    .order("observation_date", { ascending: false })
+    .limit(windowSize);
+
+  if (error) {
+    throw new Error(`isTrailingLow: failed reading SP500 history on/before ${anchorDate}: ${error.message}`);
+  }
+  if (!data || data.length === 0) return false;
+  const windowMin = Math.min(...data.map((d) => d.value));
+  return anchorValue <= windowMin;
+}

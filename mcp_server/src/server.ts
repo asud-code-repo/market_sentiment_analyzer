@@ -116,6 +116,11 @@ server.registerTool(
       confirmed_red_count: latest.confirmed_red_count,
       wave_authorized: latest.wave_authorized,
       wave_active: latest.wave_active,
+      // FAST_PANIC (drawdown+VIX, the original rule) or SLOW_BEAR (drawdown
+      // depth + a fresh trailing low, added 2026-09-19 for crises where
+      // price damage is severe but volatility never spikes — see
+      // crash-check-rules.md); null when wave_active is NONE.
+      wave_active_reason: latest.wave_active_reason,
       sp500_level: latest.sp500_level,
       sp500_ath: latest.sp500_ath,
       sp500_ath_date: latest.sp500_ath_date,
@@ -630,6 +635,7 @@ server.registerTool(
     }
 
     const waveActive = latest.wave_active as Wave | "NONE" | null;
+    const waveActiveReason = latest.wave_active_reason;
     if (!waveActive || waveActive === "NONE") {
       return json({
         wave_active: "NONE",
@@ -640,6 +646,7 @@ server.registerTool(
     if (!latest.wave_authorized) {
       return json({
         wave_active: waveActive,
+        wave_active_reason: waveActiveReason,
         wave_authorized: false,
         message:
           `${waveActive}'s S&P drawdown/VIX threshold has been observed but is not yet authorized — ` +
@@ -657,6 +664,7 @@ server.registerTool(
     if (pendingWaves.length === 0) {
       return json({
         wave_active: waveActive,
+        wave_active_reason: waveActiveReason,
         wave_authorized: true,
         message: `All waves through ${waveActive} have already been executed (see wave_deployment_state) — nothing new to deploy.`,
         deployment_state: deploymentState,
@@ -670,6 +678,7 @@ server.registerTool(
 
     return json({
       wave_active: waveActive,
+      wave_active_reason: waveActiveReason,
       wave_authorized: true,
       dry_powder_usd: dryPowderUsd,
       pending_waves: pendingWaves,

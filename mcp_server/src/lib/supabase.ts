@@ -73,6 +73,9 @@ export interface CrashCheckRow {
   confirmation_state: Record<string, ConfirmationEntry> | null;
   wave_authorized: boolean;
   wave_active: string | null;
+  // Which pathway produced wave_active (FAST_PANIC or SLOW_BEAR, added
+  // 2026-09-19 — see rule_engine/src/rules.ts); null when wave_active is NONE.
+  wave_active_reason: string | null;
   crash_type: string | null;
   warsh_classification: string | null;
   warsh_classification_date: string | null;
@@ -90,6 +93,8 @@ export interface CrashCheckRow {
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
   recovery_confirmed_date: string | null;
+  // Slow-bear wave pathway state (added 2026-09-19) — see rule_engine/src/rules.ts.
+  sp500_days_since_252d_low: number | null;
   // Statistical Hazard Model (10% drawdown target, added 2026-08-26) — see
   // reference_docs/rules/crash-check-rules.md. Rule-engine-computed and
   // calibrated, genuinely different from crash_probability_pct above
@@ -406,6 +411,13 @@ export async function writeSnapshot(qualitative: {
     confirmation_state: latest.confirmation_state,
     wave_authorized: waveAuthorized,
     wave_active: latest.wave_active,
+    // Also rule-engine-owned (slow-bear wave pathway, added 2026-09-19) —
+    // carried forward for the same reason as confirmation_state above:
+    // dropping either here would misrepresent which pathway triggered
+    // wave_active, and reset the next classify() run's freshness-window
+    // tracking to "not at a fresh low" even if it truly was one.
+    wave_active_reason: latest.wave_active_reason,
+    sp500_days_since_252d_low: latest.sp500_days_since_252d_low,
     // Also rule-engine-owned (computed once daily by classify.ts's
     // computeDivergences(), not recomputed by Claude) — carried forward like
     // the other mechanical fields above. Missing this previously meant every

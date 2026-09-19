@@ -226,11 +226,14 @@ Additional bond-market bands (Tier 1, elevated priority, informational):
 
 Deploy in 3 waves only — **never all at once, never two waves in the same
 week.** Amounts are % of the account's dry-powder pool (see
-`local_state/portfolio.yaml` for the live dollar figure). All S&P
-drawdown/VIX conditions below require confirmation per the Signal Tiering
-rule — true across 2+ distinct daily ingestion runs, not just repeated
-intraday checks against the same day's data — a single volatile trading day
-does not authorize deployment, even once that day's data has landed.
+`local_state/portfolio.yaml` for the live dollar figure). Note: the
+drawdown/VIX conditions below (`activeWave()` in `rules.ts`) are evaluated
+same-day, not run through the Signal Tiering 2-distinct-date mechanism the
+6 core indicators use — a documentation/code discrepancy noted 2026-09-19,
+left as-is since fixing it wasn't in scope of the slow-bear pathway work
+below and changing it would affect the fast-panic pathway's already-
+validated lead times. The **slow-bear pathway** added below *does* use
+real 2-day confirmation.
 
 Triggers are expressed as **drawdown from the running all-time-high**, not
 fixed nominal S&P index levels — a fixed level like "S&P ≤ 6,200" decays as
@@ -264,6 +267,47 @@ not as a deployable plan.
 - 40% → US large-cap value/income fund (restore to prior weight)
 - 35% → Target-date/glide-path fund (final add)
 - 25% → Gold ETF (via brokerage window)
+
+### Slow-bear pathway (Wave 2/3 only, added 2026-09-19)
+
+A second, independent way to reach Wave 2/3, alongside the drawdown+VIX
+pathway above — never a replacement for it. Fixes a gap an external
+backtest found: replaying the original pathway against all 5 real
+≥20%-drawdown S&P episodes since 1993 (dot-com, GFC, Dec 2018, COVID, 2022)
+showed Wave 3 never confirmed for dot-com (the single worst crash in the
+dataset, -49.1%, because VIX only touched 45 for one day) and Wave 2 never
+confirmed for 2022 (because VIX's peak and the deepest drawdown never
+coincided in that grinding, low-volatility bear).
+
+**Condition:** `drawdown ≥ wave's threshold (24% for Wave 2, 35% for Wave 3)
+AND the S&P has set a fresh ~1-year (252-trading-day) rolling low within
+the last 40 trading days`, confirmed across 2+ distinct observation dates
+(real Signal Tiering confirmation, via `confirmation_state.slow_bear_w2` /
+`slow_bear_w3`) — unlike the pathway above, this one is genuinely
+confirmation-gated, not same-day.
+
+The freshness requirement (not just depth alone) is load-bearing: SPY
+didn't reclaim its October 2007 high until 2013, so "still below the
+all-time high" stayed true for *years* after the GFC actually bottomed and
+markets calmed down. A depth-only check with no freshness filter fired
+constantly through the calm 2010-2011 recovery period in backtesting —
+this distinguishes an actively deteriorating market from one merely still
+below a stale multi-year-old peak.
+
+Backtest result (33 years / 8,467 trading days of real SPY+VIX+FRED
+history): the slow-bear Wave 3 pathway produces 5 events, all 5 inside
+dot-com/GFC, zero false positives. The slow-bear Wave 2 pathway produces
+13 events — 10 inside the 5 labeled episodes (including 2022) and 3 that
+are real, separately-identifiable stress episodes (the Aug-Oct 2011
+debt-ceiling crisis/US credit downgrade, and COVID's own volatile tail one
+week past its trough), not genuinely ordinary days — the same "a near-miss
+is a real crisis, not a false alarm" standard the original backtest already
+established for 1998 LTCM/April 2025.
+
+`wave_active_reason` (`FAST_PANIC` or `SLOW_BEAR`, null when no wave is
+active) records which pathway actually produced a given day's `wave_active`
+value. Whichever pathway reaches the higher wave wins; on a tie, the
+fast-panic pathway's reason is reported.
 
 Total across all 3 waves: ~56.5% of dry powder. Remainder stays in stable value —
 deployment is intentionally partial, not full liquidation of the reserve.
@@ -685,22 +729,34 @@ documents that `crash_probability_pct` is 100% LLM judgment. The two numbers
 measure different things and are never meant to be blended, averaged, or
 treated as validating one another.
 
-**Methodology**: a logistic regression over 32 features (FRED macro/market
-levels + their 7/28-calendar-day deltas, plus a derived 2s10s curve spread
-and 20-day realized volatility) — walk-forward validated with an expanding
-window, leave-one-crisis-out across the 5 real ≥20%-drawdown episodes since
-1993 (dot-com, GFC, Dec 2018, COVID, 2022), then recalibrated with isotonic
-regression (stratified 5-fold on the pooled out-of-sample predictions) after
-the raw model was found miscalibrated. An episode-level block bootstrap
-(resampling whole crises, not individual days — daily observations inside
-one crisis aren't independent) confirmed a real, non-noise edge over a naive
+**Methodology (as originally claimed — see status note below)**: a logistic
+regression over 32 features (FRED macro/market levels + their trading-day
+deltas, plus a derived 2s10s curve spread and 20-day realized volatility) —
+walk-forward validated with an expanding window, leave-one-crisis-out across
+the 5 real ≥20%-drawdown episodes since 1993 (dot-com, GFC, Dec 2018, COVID,
+2022), then recalibrated with isotonic regression (stratified 5-fold on the
+pooled out-of-sample predictions) after the raw model was found
+miscalibrated. An episode-level block bootstrap (resampling whole crises,
+not individual days — daily observations inside one crisis aren't
+independent) reportedly confirmed a real, non-noise edge over a naive
 base-rate guess specifically for this 10% target.
 
-**A companion 20%-drawdown target was tested and explicitly shelved** — its
+**A companion 20%-drawdown target was reportedly tested and shelved** — its
 bootstrap confidence interval spanned zero (given only 4 usable real
 episodes for that deeper threshold), meaning it couldn't be statistically
-distinguished from a naive guess. Not shipped in any form. If more real
-crises accumulate over time, it's worth revisiting, not before.
+distinguished from a naive guess. Not shipped in any form.
+
+**Status (confirmed 2026-09-19)**: the original training script/notebook,
+the trained artifact's derivation, label/fold definitions, and bootstrap
+output are not recoverable from this repository — an external review plus
+a follow-up search turned up nothing beyond the frozen coefficients already
+in `hazardModel.ts`. Everything in the two paragraphs above is what the
+original research *claimed*, not something anyone can currently
+independently verify or reproduce. Treat this model's validation as
+documented but unverified, not as an established fact, until a full rebuild
+(point-in-time data reconstruction, refit, leakage-safe backtest against
+simple baselines — a substantial standalone project, not a quick check) is
+actually done.
 
 **Why it's shown as a band, not a percentage**: the isotonic calibration
 curve is steppy, not smooth — two wide flat plateaus (~22-24% for any raw

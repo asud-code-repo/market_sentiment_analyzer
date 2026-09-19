@@ -14,9 +14,10 @@ Every weekday, one function (`computeHazardProbability` in
 isn't already down 10%+ from its high, what's the chance it gets there in
 the next ~21 trading days?"** It does this by plugging 32 numbers — mostly
 macro/market data already sitting in this system's Supabase database — into
-a fixed formula that was fit *once*, offline, by a data scientist doing
-real statistical research back in August 2026. Nothing here "learns" or
-retrains at runtime. Production just replays arithmetic: standardize each
+a fixed formula that was reportedly fit *once*, offline, back in August
+2026 — see the status note under Known Limitations below: the original
+research behind that fit is not independently verifiable from anything in
+this repository. Nothing here "learns" or retrains at runtime. Production just replays arithmetic: standardize each
 input, multiply by a pre-computed weight, sum it up, squash it into a 0-1
 range, then nudge that number through a lookup table to correct for the
 model's own known bias. The output is a probability plus a LOW /
@@ -280,6 +281,19 @@ drawdown at roughly that same high rate.
 
 ## Known Limitations (Documented On Purpose)
 
+- **The original validation cannot currently be independently verified.**
+  Confirmed 2026-09-19: an external review plus a follow-up search of this
+  repository and every reference doc found no training script/notebook,
+  no label or fold definitions, no bootstrap output, and no artifact
+  manifest behind `hazard_model_10pct_artifact.json` — only the frozen
+  coefficients already ported into `hazardModel.ts`. Every claim elsewhere
+  in this doc and in `crash-check-rules.md` about walk-forward validation,
+  leave-one-crisis-out testing, or a bootstrap-confirmed edge describes
+  what the original research *reported*, not something reproducible today.
+  Reproducing it would mean a full rebuild from raw data — point-in-time
+  FRED/SPY reconstruction, refitting, and a leakage-safe backtest against
+  simple baselines — not a recovery of existing work. Treat this model's
+  validation status as documented, not established, until that happens.
 - **One feature has confirmed data leakage.** `RECPROUSM156N` (the
   third-party smoothed recession-probability series) gets revised after
   the fact using information that wasn't available at the time —
@@ -294,10 +308,12 @@ drawdown at roughly that same high rate.
 - **The credit-spread feature is a substitute, not the real thing.**
   `BAA10Y` stands in for the more standard high-yield credit spread
   series, because that series' history doesn't go back far enough to
-  cover the crises this model was validated against. It's a reasonable
-  substitute (both move together), but it's an investment-grade spread,
-  not a junk-grade one — confirmed sound specifically because training
-  and production both consistently use the `BAA10Y` version.
+  cover the crises this model was reportedly trained against. It's a
+  reasonable substitute (both move together), but it's an
+  investment-grade spread, not a junk-grade one — sound specifically
+  because training and production both consistently use the `BAA10Y`
+  version, though see the status note above on what "trained against"
+  can currently be verified to mean.
 - **A companion 20%-drawdown version was tried and shelved.** Only 4 real
   historical episodes ever reached a 20% drawdown, too few to
   statistically distinguish the model's edge from a lucky guess (the

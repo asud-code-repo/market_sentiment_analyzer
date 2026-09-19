@@ -14,10 +14,14 @@ import {
   countReds,
   isWaveAuthorized,
   activeWave,
+  slowBearW2Condition,
+  slowBearW3Condition,
   drawdownPct,
   computeConfirmation,
   type ConfirmationEntry,
+  type WaveActive,
 } from "./rules.js";
+import { isTrailingLow } from "./lib/seriesDelta.js";
 
 async function requireLatest(seriesId: string) {
   const point = await getLatestDataPoint(seriesId);
@@ -60,7 +64,6 @@ export async function classify(): Promise<void> {
   const fedPivotColor = bandFedPivotSignal(fedPivotSignal);
 
   const redCount = countReds([vixColor, hySpreadColor, spDrawdownColor, treasury10yColor, sahmRuleColor, fedPivotColor]);
-  const waveActive = activeWave(drawdown, vix.value);
 
   // Signal Tiering & Confirmation Windows (crash-check-rules.md v5): each of
   // the 5 numeric Tier-1 indicators must hold its color across 2+ distinct
@@ -82,6 +85,38 @@ export async function classify(): Promise<void> {
     Object.values(confirmationState).filter((c) => c.color === "RED" && c.confirmed).length +
     (fedPivotColor === "RED" ? 1 : 0);
   const waveAuthorized = isWaveAuthorized(confirmedRedCount);
+
+  // Slow-bear wave pathway (external backtest 2026-09-19, see rules.ts's
+  // slowBearW2Condition/slowBearW3Condition docblock for the full
+  // rationale) — additive to, never a replacement for, the fast-panic
+  // pathway below. daysSinceTrailingLow is carried forward day-to-day like
+  // sp500_trough above, rather than recomputed from full history each run:
+  // 0 whenever today sets a fresh 252-trading-day S&P low, otherwise the
+  // prior count plus one. Defaults to a large sentinel (never "fresh") on
+  // the very first run after this column exists, so a pre-migration row
+  // can't be misread as "at a fresh low today".
+  const isFreshTrailingLow = await isTrailingLow(sp500.observation_date, sp500.value, 252);
+  const daysSinceTrailingLow = isFreshTrailingLow ? 0 : (prior?.sp500_days_since_252d_low ?? 9999) + 1;
+
+  const slowBearW2Flag = slowBearW2Condition(drawdown, daysSinceTrailingLow) ? "RED" : "GREEN";
+  const slowBearW3Flag = slowBearW3Condition(drawdown, daysSinceTrailingLow) ? "RED" : "GREEN";
+  const slowBearW2Entry = computeConfirmation(slowBearW2Flag, sp500.observation_date, priorConfirmation.slow_bear_w2);
+  const slowBearW3Entry = computeConfirmation(slowBearW3Flag, sp500.observation_date, priorConfirmation.slow_bear_w3);
+  confirmationState.slow_bear_w2 = slowBearW2Entry;
+  confirmationState.slow_bear_w3 = slowBearW3Entry;
+
+  const fastPanicWaveActive = activeWave(drawdown, vix.value);
+  const slowBearWaveActive: WaveActive =
+    slowBearW3Entry.color === "RED" && slowBearW3Entry.confirmed
+      ? "WAVE_3"
+      : slowBearW2Entry.color === "RED" && slowBearW2Entry.confirmed
+        ? "WAVE_2"
+        : "NONE";
+  const WAVE_RANK: Record<WaveActive, number> = { NONE: 0, WAVE_1: 1, WAVE_2: 2, WAVE_3: 3 };
+  const fastPanicWins = WAVE_RANK[fastPanicWaveActive] >= WAVE_RANK[slowBearWaveActive];
+  const waveActive = fastPanicWins ? fastPanicWaveActive : slowBearWaveActive;
+  const waveActiveReason: "FAST_PANIC" | "SLOW_BEAR" | null =
+    waveActive === "NONE" ? null : fastPanicWins ? "FAST_PANIC" : "SLOW_BEAR";
 
   const divergenceFlags = await computeDivergences();
 
@@ -212,6 +247,8 @@ export async function classify(): Promise<void> {
     confirmation_state: confirmationState,
     wave_authorized: waveAuthorized,
     wave_active: waveActive,
+    wave_active_reason: waveActiveReason,
+    sp500_days_since_252d_low: daysSinceTrailingLow,
     warsh_classification: (prior?.warsh_classification as "HAWKISH" | "MODERATE" | "DOVISH" | "PENDING" | null) ?? "PENDING",
     warsh_classification_date: prior?.warsh_classification_date ?? null,
     warsh_hard_rules_active: prior?.warsh_hard_rules_active ?? false,
@@ -236,7 +273,7 @@ export async function classify(): Promise<void> {
   console.log(
     `Classified: ${redCount}/6 RED (${confirmedRedCount} confirmed) (VIX=${vixColor}, HY=${hySpreadColor}, ` +
       `Drawdown=${spDrawdownColor}, 10y=${treasury10yColor}, Sahm=${sahmRuleColor}, FedPivot=${fedPivotColor}). ` +
-      `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}. ` +
+      `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}${waveActiveReason ? ` (${waveActiveReason})` : ""}. ` +
       `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
       `Recovery confirmed: ${recoveryConfirmed}. ` +
       `Hazard model (10% target): ${hazard ? `${hazard.band} (${(hazard.calibrated_probability * 100).toFixed(1)}% calibrated)` : hazardStatus}.`,

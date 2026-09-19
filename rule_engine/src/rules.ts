@@ -73,6 +73,49 @@ export function activeWave(drawdownPct: number, vix: number): WaveActive {
   return "NONE";
 }
 
+// Slow-bear depth pathway (added 2026-09-19) — a second, independent way to
+// reach Wave 2/3 that doesn't require a VIX spike, for crises where price
+// damage is severe but volatility never sustains at panic levels. Backtest
+// against 33 years / 8,467 trading days of real SPY+VIX+FRED history
+// (external Phase 0 Wave Backtest, then a follow-up design/validation pass)
+// found the pathway above alone never confirms Wave 3 for dot-com (VIX only
+// touched 45 for a single day despite a -49.1% drawdown, the single worst
+// in the dataset) and never confirms Wave 2 for 2022 (VIX's peak and the
+// deepest drawdown never coincided in that "grinding," low-volatility bear).
+//
+// The naive fix — depth + persistence, dropping VIX entirely — fails badly:
+// SPY didn't reclaim its Oct-2007 high until 2013, so "still below the
+// all-time high" stayed true for *years* after the GFC actually bottomed
+// and markets calmed down. A depth-only check with no freshness filter
+// fired constantly through the calm 2010-2011 recovery period, which would
+// have broken the fast-panic pathway's own zero-false-alarm record.
+// daysSinceTrailingLow (a fresh ~1-year/252-trading-day S&P low, tracked in
+// classify.ts via seriesDelta.ts's isTrailingLow()) fixes this by requiring
+// the decline to be ACTIVELY FRESH, not merely "still below a stale peak".
+//
+// Validated result at this threshold (40 trading days): 5/5 Wave-3 events
+// across all 33 years land inside dot-com/GFC, zero false positives; 13
+// Wave-2 events, 10 inside the 5 labeled episodes (including 2022) and the
+// remaining 3 are real, separately-identifiable stress episodes (the 2011
+// debt-ceiling crisis/US downgrade, and COVID's own immediate volatile
+// tail one week past its trough) — not genuinely ordinary days, matching
+// the same "near-miss is a real crisis, not a false alarm" standard the
+// original backtest already established for 1998 LTCM/April 2025.
+//
+// Caller confirms the boolean result over 2+ distinct observation dates via
+// computeConfirmation before treating it as active — same as every other
+// confirmed indicator in this system — not evaluated raw/same-day like the
+// pathway above.
+const SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS = 40;
+
+export function slowBearW2Condition(drawdownPct: number, daysSinceTrailingLow: number): boolean {
+  return drawdownPct >= 24 && daysSinceTrailingLow <= SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS;
+}
+
+export function slowBearW3Condition(drawdownPct: number, daysSinceTrailingLow: number): boolean {
+  return drawdownPct >= 35 && daysSinceTrailingLow <= SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS;
+}
+
 export function drawdownPct(level: number, ath: number): number {
   return ((ath - level) / ath) * 100;
 }
