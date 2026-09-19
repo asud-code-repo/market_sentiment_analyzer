@@ -86,9 +86,18 @@
   .banner.good { background: var(--good-bg); }
   .banner b { font-weight: 700; }
 
-  /* Hero probability */
-  .hero-value { font-size: 48px; font-weight: 600; line-height: 1; display: inline-block; }
+  /* Discretionary LLM crash-probability estimate — deliberately NOT styled
+     as a dominant "hero" number (previously 48px, larger than every other
+     figure on the page, with no visual distinction from a validated
+     reading). This is a subjective judgment with no defined forecast
+     horizon and no track record, same tier as risk_radar and scenario
+     percentages elsewhere on this page — sizing it down to match the
+     hazard-model card's own indicator-value size keeps it from implying
+     more certainty than the rest of this page claims for it (external
+     review 2026-09-19, F09). */
+  .hero-value { font-size: 22px; font-weight: 600; line-height: 1; display: inline-block; }
   .hero-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .hero-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 4px; }
   .delta { font-size: 13px; font-weight: 600; }
   .delta.up-bad { color: var(--critical); }
   .delta.up-good { color: var(--good); }
@@ -1149,7 +1158,14 @@ function renderReport(row, priorFullReport, priorAnyRow) {
 
   let probSection = "";
   if (row.crash_probability_pct != null) {
-    const meterColor = row.crash_probability_pct >= 35 ? "var(--critical)" : row.crash_probability_pct >= 20 ? "var(--warning)" : "var(--good)";
+    // Deliberately non-RAG (var(--neutral-blue), same treatment as the
+    // hazard-model band below) rather than the prior red/amber/green
+    // thresholds — this is a subjective LLM judgment with no defined
+    // forecast horizon or track record, and color-coding it by severity
+    // implied a validated risk read this page doesn't actually have
+    // (external review 2026-09-19, F09; same reasoning already applied to
+    // HAZARD_BAND_PILL below).
+    const meterColor = "var(--neutral-blue)";
     let deltaHtml = '<span class="delta flat">No prior full report to diff against</span>';
     if (priorFullReport && priorFullReport.crash_probability_pct != null) {
       const diff = row.crash_probability_pct - priorFullReport.crash_probability_pct;
@@ -1158,13 +1174,14 @@ function renderReport(row, priorFullReport, priorAnyRow) {
       deltaHtml = `<span class="delta ${cls}">${sign}${diff} pts vs prior report (${priorFullReport.crash_probability_pct}%)</span>`;
     }
     probSection = `
+      <p class="hero-label">Experimental — Discretionary LLM Estimate</p>
       <div class="hero-row">
         <span class="hero-value">${row.crash_probability_pct}%</span>
         ${deltaHtml}
       </div>
       <div class="meter-track"><div class="meter-fill" style="width:${row.crash_probability_pct}%; background:${meterColor};"></div></div>
       <div class="meter-labels"><span>0%</span><span>Range: ${row.crash_probability_low_pct ?? "—"}–${row.crash_probability_high_pct ?? "—"}%</span><span>100%</span></div>
-      <p class="caveat">Discretionary LLM estimate — not a calibrated statistical forecast.</p>
+      <p class="caveat">Subjective LLM judgment, not a calibrated statistical forecast — no defined forecast horizon, no prospective track record, and not validated against outcomes. Compare with the rule-engine-computed Statistical Hazard Model below, which is a genuinely separate, non-blended signal.</p>
     `;
   }
 
@@ -1462,8 +1479,17 @@ if (isStandalonePwa) {
 
 async function main() {
   try {
-    ALL_ROWS = await fetchFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,risk_radar&order=run_at.asc&limit=1000",
+    // Paginated, NOT the single-page fetchFromSupabase — PostgREST caps any
+    // single response at 1000 rows regardless of a requested limit (see
+    // fetchAllFromSupabase's own comment above). With ascending order and
+    // "jump to latest" reading ALL_ROWS[ALL_ROWS.length - 1] below, a
+    // single-page 1000-row fetch would silently point "latest" at whatever
+    // row happened to land at position 1000 once crash_checks passes that
+    // many rows, not the true most recent report (external review
+    // 2026-09-19, F12) — the exact bug this same pagination already fixed
+    // for data_points history further down.
+    ALL_ROWS = await fetchAllFromSupabase(
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status,risk_radar&order=run_at.asc",
     );
 
     if (ALL_ROWS.length === 0) {

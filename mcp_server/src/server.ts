@@ -366,6 +366,17 @@ server.registerTool(
     if (Math.abs(scenarioSum - 100) > 0.5) {
       return json({ error: `Scenario distribution must sum to 100, got ${scenarioSum}` });
     }
+    // Previously only each bound's own 0-100 range was checked (zod), not
+    // their relative ordering — a range like low=40/point=20/high=30 would
+    // write successfully despite being internally inconsistent (external
+    // review 2026-09-19, F09).
+    if (!(input.crash_probability_low_pct <= input.crash_probability_pct && input.crash_probability_pct <= input.crash_probability_high_pct)) {
+      return json({
+        error:
+          `crash_probability range must satisfy low <= point <= high, got ` +
+          `low=${input.crash_probability_low_pct} point=${input.crash_probability_pct} high=${input.crash_probability_high_pct}`,
+      });
+    }
     const row = await writeSnapshot(input);
     return json({ written: row });
   }),
