@@ -40,20 +40,95 @@ export interface DataFreshness {
   latest_run_date: string;
   expected_date: string;
   note: string;
+  stale_series: SeriesFreshness[];
 }
 
-export function computeDataFreshness(latestRunAt: string, now: Date = new Date()): DataFreshness {
+export interface SeriesFreshness {
+  series_id: string;
+  observation_date: string;
+  cadence: "daily" | "monthly";
+  is_fresh: boolean;
+}
+
+const daysBetween = (fromDateStr: string, toDateStr: string): number => {
+  const from = new Date(`${fromDateStr}T00:00:00Z`).getTime();
+  const to = new Date(`${toDateStr}T00:00:00Z`).getTime();
+  return Math.round((to - from) / 86_400_000);
+};
+
+/**
+ * A daily-cadence series (VIX, HY spread, S&P, 10Y) is stale if its
+ * observation predates the most recent expected weekday. A monthly series
+ * (Sahm Rule, sourced from BLS employment data) is dated to the 1st of the
+ * observed month and released alongside the following month's BLS jobs
+ * report (~first Friday of month M+2) — e.g. the August reading
+ * (2026-08-01) isn't superseded until early October, a ~62-day gap between
+ * releases even when nothing is actually stale. A same daily-age bar would
+ * incorrectly flag every monthly series as stale for most of each month, so
+ * it gets a wider allowance that comfortably covers that real release
+ * cadence without treating a genuinely months-stale reading (a broken feed)
+ * as current.
+ */
+function isSeriesFresh(cadence: "daily" | "monthly", observationDate: string, now: Date): boolean {
+  if (cadence === "daily") {
+    return observationDate >= mostRecentWeekday(easternDateString(now));
+  }
+  return daysBetween(observationDate, easternDateString(now)) <= 62;
+}
+
+/**
+ * Whether the underlying core observations behind a crash_checks row are
+ * actually current — not just whether the row itself has a fresh run_at.
+ * Previously this function only compared the report's own timestamp to
+ * today (below), which meant a report generated today could still be
+ * built on quarantined/stale source data and still read as "fresh"
+ * (external review 2026-09-19, F06) — write_snapshot copies mechanical
+ * fields forward from the latest rule-engine row into a new timestamped
+ * row, so a fresh generation time never proved the copied values were
+ * current. coreSeries should be each of the 6 core indicators' latest
+ * data_points row (VIX/HY/SP500/10Y/Sahm — Fed pivot has no numeric series
+ * behind it, see rules.ts).
+ */
+export function computeDataFreshness(
+  latestRunAt: string,
+  coreSeries: { series_id: string; cadence: "daily" | "monthly"; observation_date: string }[] = [],
+  now: Date = new Date(),
+): DataFreshness {
   const latestRunDate = easternDateString(new Date(latestRunAt));
   const expectedDate = mostRecentWeekday(easternDateString(now));
-  const isFresh = latestRunDate >= expectedDate;
+  const reportIsFresh = latestRunDate >= expectedDate;
+
+  const seriesFreshness: SeriesFreshness[] = coreSeries.map((s) => ({
+    series_id: s.series_id,
+    observation_date: s.observation_date,
+    cadence: s.cadence,
+    is_fresh: isSeriesFresh(s.cadence, s.observation_date, now),
+  }));
+  const staleSeries = seriesFreshness.filter((s) => !s.is_fresh);
+  const isFresh = reportIsFresh && staleSeries.length === 0;
+
+  const notes: string[] = [];
+  if (!reportIsFresh) {
+    notes.push(
+      `Latest crash_checks row is from ${latestRunDate}, but ingestion was expected by ${expectedDate} — ` +
+        `the daily GitHub Action may not have run yet today or may have failed.`,
+    );
+  }
+  if (staleSeries.length > 0) {
+    notes.push(
+      `Stale source data despite the report timestamp: ${staleSeries
+        .map((s) => `${s.series_id} (observed ${s.observation_date})`)
+        .join(", ")}. A fresh generation time does not mean the underlying values are current.`,
+    );
+  }
+
   return {
     is_fresh: isFresh,
     latest_run_date: latestRunDate,
     expected_date: expectedDate,
     note: isFresh
-      ? "Latest data matches the expected ingestion date."
-      : `Latest crash_checks row is from ${latestRunDate}, but ingestion was expected by ${expectedDate} — ` +
-        `the daily GitHub Action may not have run yet today or may have failed. Do not treat the indicator ` +
-        `panel as today's data; flag this to the user instead of proceeding with analysis.`,
+      ? "Latest data matches the expected ingestion date and all core series are current."
+      : `${notes.join(" ")} Do not treat the indicator panel as today's data; flag this to the user instead of proceeding with analysis.`,
+    stale_series: staleSeries,
   };
 }

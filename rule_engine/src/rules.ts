@@ -131,10 +131,21 @@ export function computeConfirmation(
     return { color, observation_date: observationDate, days_confirmed: 1, confirmed: 1 >= requiredCount, first_breach_date: observationDate };
   }
   if (observationDate === prior.observation_date) {
-    // Same underlying data as last run (e.g. a same-day manual re-trigger,
-    // no new observation has landed yet) — carry the state forward as-is,
-    // don't double-count this as a second confirming date.
-    return prior;
+    if (color === prior.color) {
+      // Same underlying data as last run (e.g. a same-day manual
+      // re-trigger, no new observation has landed yet) — carry the state
+      // forward as-is, don't double-count this as a second confirming date.
+      return prior;
+    }
+    // Same date, but the value was revised to a different color (e.g. a
+    // FRED same-day correction) — the prior entry's streak was built on
+    // since-superseded data. Previously this branch didn't exist, so a
+    // revised GREEN was masked by a stale confirmed-RED object (external
+    // review 2026-09-19, F07). Treat the revision as this date's first true
+    // observation of the corrected color: don't count it as an additional
+    // independent observation (we can't reconstruct what came before this
+    // date), but don't silently keep reporting the pre-revision color either.
+    return { color, observation_date: observationDate, days_confirmed: 1, confirmed: 1 >= requiredCount, first_breach_date: observationDate };
   }
   if (color === prior.color) {
     const daysConfirmed = prior.days_confirmed + 1;

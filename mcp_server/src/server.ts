@@ -76,6 +76,22 @@ server.registerTool(
     if (!latest) {
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
     }
+    // Freshness must reflect the actual core observations, not just this
+    // row's own generated timestamp (see freshness.ts, F06) — fetch each
+    // core series' latest data_points row directly rather than trusting
+    // raw_source_data or the report's run_at alone.
+    const CORE_SERIES: { series_id: string; cadence: "daily" | "monthly" }[] = [
+      { series_id: "VIXCLS", cadence: "daily" },
+      { series_id: "BAMLH0A0HYM2", cadence: "daily" },
+      { series_id: "SP500", cadence: "daily" },
+      { series_id: "DGS10", cadence: "daily" },
+      { series_id: "SAHMREALTIME", cadence: "monthly" },
+    ];
+    const corePoints = await Promise.all(CORE_SERIES.map((s) => getLatestDataPoint(s.series_id)));
+    const coreSeriesFreshness = CORE_SERIES.map((s, i) => {
+      const point = corePoints[i];
+      return point ? { series_id: s.series_id, cadence: s.cadence, observation_date: point.observation_date } : null;
+    }).filter((s): s is { series_id: string; cadence: "daily" | "monthly"; observation_date: string } => s !== null);
     const conf = latest.confirmation_state ?? {};
     const withConfirmation = (key: string, value: unknown, color: string | null) => ({
       value,
@@ -86,7 +102,7 @@ server.registerTool(
     });
     return json({
       run_at: latest.run_at,
-      data_freshness: computeDataFreshness(latest.run_at),
+      data_freshness: computeDataFreshness(latest.run_at, coreSeriesFreshness),
       indicators: {
         vix: withConfirmation("vix", latest.vix_value, latest.vix_color),
         hy_spread_bps: withConfirmation("hy_spread", latest.hy_spread_bps, latest.hy_spread_color),
@@ -104,6 +120,7 @@ server.registerTool(
       sp500_ath: latest.sp500_ath,
       sp500_ath_date: latest.sp500_ath_date,
       hazard_model_10pct: {
+        status: latest.hazard_10pct_status,
         calibrated_pct: latest.hazard_10pct_calibrated_pct,
         band: latest.hazard_10pct_band,
         raw_pct: latest.hazard_10pct_raw_pct,
@@ -112,8 +129,12 @@ server.registerTool(
           "Rule-engine-computed and calibrated — distinct from crash_probability_pct (100% LLM " +
           "judgment, see write_snapshot). Report the BAND, never a re-derived percentage or a blend " +
           "with your own estimate (see crash-check-rules.md's Statistical Hazard Model section for " +
-          "why: steppy calibration curve, plateau structure). null fields mean this run's computation " +
-          "failed — treat as unavailable, not a reading of zero.",
+          "why: steppy calibration curve, plateau structure). Check status before reporting a band: " +
+          "ALREADY_BREACHED means live drawdown is already >=10%, so the model's target (a FUTURE " +
+          "breach conditional on not already being past it) doesn't apply — say the threshold is " +
+          "already breached, not a fresh-breach percentage. UNAVAILABLE means this run's computation " +
+          "failed (a required input series was missing) — treat as unavailable, not a reading of " +
+          "zero. Only ELIGIBLE carries a meaningful band.",
       },
     });
   }),

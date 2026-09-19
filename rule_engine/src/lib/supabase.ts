@@ -116,6 +116,10 @@ export interface CrashCheckInsert {
   hazard_10pct_calibrated_pct: number | null;
   hazard_10pct_band: "LOW" | "TRANSITIONING" | "HIGH" | null;
   hazard_10pct_as_of: string | null;
+  // Distinguishes "not scored because live drawdown is already >=10%" from
+  // "computation failed this run" — both leave band/raw/calibrated null, but
+  // mean very different things (external review 2026-09-19, F01).
+  hazard_10pct_status: "ELIGIBLE" | "ALREADY_BREACHED" | "UNAVAILABLE";
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {

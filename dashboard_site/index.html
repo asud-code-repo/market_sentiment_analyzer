@@ -1016,6 +1016,19 @@ const HAZARD_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Transitioning", HIGH: "
 const HAZARD_BAND_PILL = { LOW: "muted", TRANSITIONING: "info", HIGH: "info" };
 
 function renderHazardModel(row) {
+  // ALREADY_BREACHED and UNAVAILABLE both leave band/raw/calibrated null,
+  // but mean very different things: the model's target is a FUTURE breach
+  // conditional on not already being past the 10% threshold, so during an
+  // existing correction the question itself doesn't apply — that's not the
+  // same as "this run's computation failed" (external review 2026-09-19,
+  // F01). Older rows predate this column (hazard_10pct_status null) and
+  // fall back to the prior unavailable-only wording.
+  if (row.hazard_10pct_status === "ALREADY_BREACHED") {
+    return `
+      <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
+      <p class="loading">Not scored this run — the S&amp;P is already ${row.sp_drawdown_pct != null ? Number(row.sp_drawdown_pct).toFixed(1) + "%" : ""} below its ATH, past the model's 10% threshold. This model forecasts a FUTURE breach conditional on not already being past it, so it doesn't apply during an existing correction.</p>
+    `;
+  }
   if (row.hazard_10pct_band == null) {
     return `
       <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>

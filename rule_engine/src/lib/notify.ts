@@ -31,7 +31,7 @@ export async function notifyIfRedCountCrossedThreshold(
         Priority: "high",
         Tags: "rotating_light",
       },
-      body: `${newConfirmedRedCount} of 6 indicators are now confirmed RED — wave-authorization threshold reached. Run a crash check for details.`,
+      body: `${newConfirmedRedCount} of 6 indicators are now confirmed RED — early stress alert (below the 3-RED wave-authorization threshold). Run a crash check for details.`,
     });
     if (!res.ok) {
       console.warn(`ntfy notification failed (${res.status}): ${await res.text()}`);

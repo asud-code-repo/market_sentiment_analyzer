@@ -94,40 +94,69 @@ export async function classify(): Promise<void> {
   // those gate real deployment decisions and must never silently go stale;
   // a transient gap in one of the hazard model's own input series should
   // degrade to null fields, not block the core panel refresh.
+  //
+  // Eligibility gate (external review 2026-09-19, F01): the model's target
+  // is a FUTURE breach conditional on not already being in a >=10% drawdown
+  // — it does not answer "how much worse from here" once already past that
+  // threshold. Score only when live drawdown < 10%; otherwise record
+  // ALREADY_BREACHED and leave raw/calibrated/band null rather than
+  // presenting an out-of-population number as if it still applied.
   let hazard: HazardResult | null = null;
-  try {
-    const hazardFeatures = await gatherHazardFeatures({
-      vixValue: vix.value,
-      dgs10Value: treasury10y.value,
-      sahmValue: sahmRule.value,
-      drawdownPctLive: drawdown,
-      anchorDate: sp500.observation_date,
-    });
-    hazard = computeHazardProbability(hazardFeatures);
-  } catch (err) {
-    console.error("hazardModel: failed to compute, nulling out this run's hazard fields:", err);
+  let hazardStatus: "ELIGIBLE" | "ALREADY_BREACHED" | "UNAVAILABLE";
+  if (drawdown >= 10) {
+    hazardStatus = "ALREADY_BREACHED";
+  } else {
+    try {
+      const hazardFeatures = await gatherHazardFeatures({
+        vixValue: vix.value,
+        dgs10Value: treasury10y.value,
+        sahmValue: sahmRule.value,
+        drawdownPctLive: drawdown,
+        anchorDate: sp500.observation_date,
+      });
+      hazard = computeHazardProbability(hazardFeatures);
+      hazardStatus = "ELIGIBLE";
+    } catch (err) {
+      console.error("hazardModel: failed to compute, nulling out this run's hazard fields:", err);
+      hazardStatus = "UNAVAILABLE";
+    }
   }
 
   // Stage 4 recovery tracking (crash-check-rules.md "Recovery Signal and
   // 6-Month Transition", added 2026-08-16 — previously pure prose, no code).
-  // Trough is a running minimum, only active during a drawdown episode
-  // (>=10% from ATH, the same threshold the Crash Mode Protocol RED ALERT
-  // banner already uses — not a new number). wasInEpisode is captured
-  // *before* updating the trough for this run, so the "did we just enter a
-  // new episode" check below isn't affected by this run's own update.
-  const wasInEpisode = (prior?.sp500_trough ?? null) !== null;
+  // Trough is a running minimum for the CURRENT OPEN episode — "open" means
+  // drawdown reached >=10% at some point and recovery hasn't been confirmed
+  // yet, not merely "drawdown is >=10% right now". Previously the trough was
+  // nulled the instant drawdown dipped back under 10%, which discarded the
+  // reference recoveryCriterion1 needs on exactly the runs recovery is
+  // supposed to be detected on (external review 2026-09-19, F08: peak 100 /
+  // trough 80 / current 93 could never recover because the trough was
+  // cleared before the 15% rebound was evaluated against it). wasEpisodeOpen
+  // is captured *before* updating the trough for this run, so the "did we
+  // just start a new episode" check below isn't affected by this run's own
+  // update.
+  const wasEpisodeOpen = (prior?.sp500_trough ?? null) !== null && !(prior?.recovery_confirmed ?? false);
   const inEpisode = drawdown >= 10;
   let sp500Trough = prior?.sp500_trough ?? null;
   let sp500TroughDate = prior?.sp500_trough_date ?? null;
   if (inEpisode) {
-    if (sp500Trough === null || sp500.value < sp500Trough) {
+    if (!wasEpisodeOpen || sp500Trough === null || sp500.value < sp500Trough) {
+      // Either a fresh episode is starting (the prior one, if any, already
+      // closed via recovery_confirmed) or this run set a new deeper low
+      // within the still-open episode.
       sp500Trough = sp500.value;
       sp500TroughDate = sp500.observation_date;
     }
-  } else {
+  } else if (!wasEpisodeOpen) {
+    // Drawdown is under 10% and there's no open episode being monitored for
+    // recovery (never entered one, or the last one already closed) —
+    // nothing to track.
     sp500Trough = null;
     sp500TroughDate = null;
   }
+  // else: drawdown has pulled back under 10% but the episode is still open
+  // (recovery not yet confirmed) — retain the trough so recoveryCriterion1
+  // below can still evaluate the rebound against it.
 
   // Criterion 3 (VIX sustained below 25 for 3+ weeks) reuses
   // computeConfirmation with requiredCount: 15 (~3 weeks of trading days)
@@ -147,12 +176,13 @@ export async function classify(): Promise<void> {
 
   // recovery_confirmed is a historical fact about the most recent drawdown
   // episode, not a flickering daily state — once true it stays true until a
-  // *new* episode begins (transition into inEpisode), at which point it
-  // resets for that new episode. recovery_confirmed_date is set once, on
-  // the run it first becomes true, and never overwritten afterward.
+  // *new* episode begins (transition into an episode that wasn't already
+  // open), at which point it resets for that new episode.
+  // recovery_confirmed_date is set once, on the run it first becomes true,
+  // and never overwritten afterward.
   let recoveryConfirmed = prior?.recovery_confirmed ?? false;
   let recoveryConfirmedDate = prior?.recovery_confirmed_date ?? null;
-  if (inEpisode && !wasInEpisode) {
+  if (inEpisode && !wasEpisodeOpen) {
     recoveryConfirmed = false;
     recoveryConfirmedDate = null;
   }
@@ -195,6 +225,7 @@ export async function classify(): Promise<void> {
     hazard_10pct_calibrated_pct: hazard ? Math.round(hazard.calibrated_probability * 10000) / 100 : null,
     hazard_10pct_band: hazard?.band ?? null,
     hazard_10pct_as_of: hazard ? sp500.observation_date : null,
+    hazard_10pct_status: hazardStatus,
     raw_source_data: {
       vix, hySpread, sp500, sp500Ath, treasury10y, sahmRule,
       hazard_model_raw_probability: hazard?.raw_probability ?? null,
@@ -208,7 +239,7 @@ export async function classify(): Promise<void> {
       `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}. ` +
       `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
       `Recovery confirmed: ${recoveryConfirmed}. ` +
-      `Hazard model (10% target): ${hazard ? `${hazard.band} (${(hazard.calibrated_probability * 100).toFixed(1)}% calibrated)` : "unavailable this run"}.`,
+      `Hazard model (10% target): ${hazard ? `${hazard.band} (${(hazard.calibrated_probability * 100).toFixed(1)}% calibrated)` : hazardStatus}.`,
   );
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);

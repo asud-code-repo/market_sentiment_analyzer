@@ -98,6 +98,11 @@ export interface CrashCheckRow {
   hazard_10pct_calibrated_pct: number | null;
   hazard_10pct_band: string | null;
   hazard_10pct_as_of: string | null;
+  // ELIGIBLE / ALREADY_BREACHED / UNAVAILABLE — distinguishes "not scored,
+  // live drawdown already past 10%" from "computation failed this run"
+  // (external review 2026-09-19, F01); both otherwise leave band/raw/
+  // calibrated null.
+  hazard_10pct_status: string | null;
   // Daily public Risk Radar (added 2026-09-15) -- discretionary LLM
   // judgment like crash_probability_pct, required on every write_snapshot
   // call. See crash-check-rules.md's "Risk Radar Scoring Methodology" --
@@ -355,7 +360,20 @@ export async function writeSnapshot(qualitative: {
 
   const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
   const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);
-  const confirmedFromNumeric = Object.values(latest.confirmation_state ?? {}).filter((c) => c.color === "RED" && c.confirmed).length;
+  // Allowlisted by key, NOT Object.values(confirmation_state) over the whole
+  // object — confirmation_state also carries a "vix_recovery" entry (Stage 4
+  // recovery tracking, a 15-observation VIX<25 counter, not a 6th gating
+  // indicator). Summing every RED+confirmed value in the object let a
+  // confirmed recovery flag silently inflate the deployment-authorization
+  // count (external review 2026-09-19, F05) — classify.ts's own count
+  // already excludes it correctly by computing before vix_recovery is added
+  // to the stored object; this mirrors that same allowlist explicitly so a
+  // future new key added to confirmation_state can't repeat the bug.
+  const CORE_CONFIRMATION_KEYS = ["vix", "hy_spread", "sp_drawdown", "treasury_10y", "sahm_rule"] as const;
+  const confirmationState = latest.confirmation_state ?? {};
+  const confirmedFromNumeric = CORE_CONFIRMATION_KEYS.filter(
+    (key) => confirmationState[key]?.color === "RED" && confirmationState[key]?.confirmed,
+  ).length;
   const confirmedRedCount = confirmedFromNumeric + (fedPivotColor === "RED" ? 1 : 0);
   const waveAuthorized = confirmedRedCount >= 3;
 
@@ -413,6 +431,7 @@ export async function writeSnapshot(qualitative: {
     hazard_10pct_calibrated_pct: latest.hazard_10pct_calibrated_pct,
     hazard_10pct_band: latest.hazard_10pct_band,
     hazard_10pct_as_of: latest.hazard_10pct_as_of,
+    hazard_10pct_status: latest.hazard_10pct_status,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,
