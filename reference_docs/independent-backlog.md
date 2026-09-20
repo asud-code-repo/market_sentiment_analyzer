@@ -6,6 +6,34 @@ ZIP SHA-256: `ffa33233b7bf75d1f10ab14d0f94143497ae03e061bd60aeaf192c94f8a8d4f3`.
 
 **Purpose:** improve correctness, statistical validity and practical usefulness. This document proposes work; no implementation, production changes, statistical backtest, or demonstrated accuracy uplift occurred during the review. The current public URL could not be retrieved, so presentation findings concern repository source. The actual deployed version and affected historical records remain to be checked.
 
+## Status (updated 2026-09-20)
+
+`[x]` = shipped, at least in part (see note for what's still open) · `[ ]` = not started. Commits: `64f3d2a` (correctness fixes), `6464a75` (report de-emphasis + history pagination), `abd12df` (hazard-model honesty relabel + a new wave-trigger fix found via a separate backtest, not originally in this document).
+
+**Workstream 1 — Correct target and episode semantics**
+- [x] **B01** — Eligibility gate shipped (F01): the hazard model no longer scores while live drawdown is already ≥10%; explicit `ELIGIBLE`/`ALREADY_BREACHED`/`UNAVAILABLE` status added instead. Not done: recovering/verifying the original label definition before retraining (blocked on B03 below).
+- [x] **B07** — Recovery episode lifecycle fixed (F08): the trough is now retained until the episode actually closes, instead of being cleared right before the rebound criterion could evaluate it. Not done: an independently-enforced Fed-CUT recency limit; explicit reset interaction with already-executed waves.
+
+**Workstream 2 — Point-in-time data and freshness**
+- [ ] **B02** — Point-in-time data reconstruction. Not started — still current-vintage upserts/joins; no vintage-aware research replay built.
+- [x] **B06** — Freshness and confirmation now depend on actual observations (F06, F07): cadence-aware per-series staleness (daily vs. Sahm's real ~62-day BLS release lag), and a same-date revision to a different color no longer silently keeps the stale confirmed state alive.
+
+**Workstream 3 — Reproducible model validation**
+- [ ] **B03** — Investigated, not fixed. A follow-up search for the original hazard-model training script/notebook/artifact manifest found nothing recoverable in this repo or its reference docs. Every "walk-forward validated" / "bootstrap-confirmed" claim in the code and docs has been relabeled to say this describes what the original research *reported*, not something currently reproducible — but the model itself has not been reproduced or rebuilt.
+- [ ] **B04** — Leakage-safe baselines/calibration experiments. Not started — blocked on B02/B03.
+- [ ] **B13** — Additional predictors/models. Correctly deferred per its own stated priority — do not build until baseline evidence exists.
+
+**Workstream 4 — Safe decision state and economic usefulness**
+- [x] **B05** — Recovery state removed from the authorization gate (F05): the confirmed-RED count no longer sums the whole `confirmation_state` object (which included the non-gating `vix_recovery` flag) — now an explicit 5-key allowlist, applied consistently on both write paths.
+- [x] **B07** — see Workstream 1 above.
+- [ ] **B11** — Deployment usefulness testing (frozen, cost-aware economic backtest). Not started for the statistical hazard model's policy. Related but distinct work *was* done: an external real-data backtest of the deterministic wave-trigger rules (not the statistical model) found Wave 3 never confirmed for dot-com and Wave 2 never confirmed for 2022; a new pathway was designed, backtested against 33 years of data, and shipped to fix both gaps. That's a rule-logic correctness fix, not the dollar-outcome/economic-value backtest this item actually asks for.
+- [x] **B12** — Early-alert wording fixed (F14): the 2-RED notification no longer claims the 3-RED authorization threshold was reached.
+
+**Workstream 5 — Evidence-matched reports and LLM governance**
+- [x] **B08** — Partial. The LLM crash-probability headline was de-emphasized (resized, recolored off the red/amber/green scale, relabeled "Experimental — Discretionary LLM Estimate"), and the write path now rejects a `low/point/high` range whose bounds aren't actually ordered (F09). Not done: full report-outline restructuring, explicitly labeling risk-radar scores as subjective, the hazard-hidden-vs-visible disclosure decision (F11), the 5-question comprehension-check pilot.
+- [ ] **B09** — Provenance contract + LLM evaluation gate. Not started.
+- [x] **B10** — Partial. Fixed the 1,000-row "jump to latest" bug (F12) by switching to the paginated fetch helper already used elsewhere in the same file. Not done: displaying source dates on context cards; a true archived as-of view; statistical forecast/status/outcome history.
+
 ## Handoff instructions for a fresh Claude Code session
 
 1. Locate the files and symbols below; compare the current branch with the reviewed snapshot before assuming defects still exist. Record the current commit. Do not overwrite unrelated work.
@@ -31,26 +59,28 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ## Finding index
 
-| ID | Evidence class | Finding |
-|---|---|---|
-| F01 | Reproduced defect; label detail unknown | Conditional hazard still scored after the 10% threshold is already breached |
-| F02 | Verified data/provenance limitation; training contamination documented | Current-vintage upserts and observation-date joins do not provide point-in-time research history |
-| F03 | Unverified research claim | Training, splits, predictions and bootstrap evidence absent from supplied snapshot |
-| F04 | Verified arithmetic; research hypothesis | Calibration maps a broad raw range to 92.7%, reaches 100%, and has steep local transitions |
-| F05 | Reproduced defect | Snapshot writer counts `vix_recovery` as a gating RED, potentially changing authorization |
-| F06 | Verified freshness defect | New report timestamps can make copied stale observations appear current |
-| F07 | Reproduced revision defect; verified continuity limitation | Same-date changed color ignored; gaps do not break confirmation counters |
-| F08 | Reproduced recovery defect | Trough cleared before qualifying rebound is evaluated |
-| F09 | Verified semantics/presentation gap | Headline LLM percentage has no enforced event/horizon or range meaning |
-| F10 | Verified governance limitation | No enforced claim-to-source, model/prompt, numerical consistency or phase provenance contract |
-| F11 | Verified exposure; anchoring unmeasured | LLM sees hazard output before its own estimate; agreement is not independent evidence |
-| F12 | Verified conditional UI defect | Ascending first-1,000 history can misidentify latest; current context lacks displayed source dates |
-| F13 | Economic evidence gap | Encoded deployment arithmetic has no supplied cost-aware out-of-sample value demonstration |
-| F14 | Verified wording defect | Two-RED notification incorrectly claims wave authorization was reached |
+| ID | Evidence class | Finding | Status |
+|---|---|---|---|
+| F01 | Reproduced defect; label detail unknown | Conditional hazard still scored after the 10% threshold is already breached | [x] Fixed (`64f3d2a`) |
+| F02 | Verified data/provenance limitation; training contamination documented | Current-vintage upserts and observation-date joins do not provide point-in-time research history | [ ] Not addressed |
+| F03 | Unverified research claim | Training, splits, predictions and bootstrap evidence absent from supplied snapshot | [x] Confirmed unrecoverable and documented as such (`abd12df`); not reproduced |
+| F04 | Verified arithmetic; research hypothesis | Calibration maps a broad raw range to 92.7%, reaches 100%, and has steep local transitions | [ ] Not addressed |
+| F05 | Reproduced defect | Snapshot writer counts `vix_recovery` as a gating RED, potentially changing authorization | [x] Fixed (`64f3d2a`) |
+| F06 | Verified freshness defect | New report timestamps can make copied stale observations appear current | [x] Fixed (`64f3d2a`) |
+| F07 | Reproduced revision defect; verified continuity limitation | Same-date changed color ignored; gaps do not break confirmation counters | [x] Fixed (`64f3d2a`) |
+| F08 | Reproduced recovery defect | Trough cleared before qualifying rebound is evaluated | [x] Fixed (`64f3d2a`) |
+| F09 | Verified semantics/presentation gap | Headline LLM percentage has no enforced event/horizon or range meaning | [x] Partially fixed (`6464a75`) — de-emphasized + range ordering enforced; horizon/target still undefined |
+| F10 | Verified governance limitation | No enforced claim-to-source, model/prompt, numerical consistency or phase provenance contract | [ ] Not addressed |
+| F11 | Verified exposure; anchoring unmeasured | LLM sees hazard output before its own estimate; agreement is not independent evidence | [ ] Not addressed |
+| F12 | Verified conditional UI defect | Ascending first-1,000 history can misidentify latest; current context lacks displayed source dates | [x] Latest-row bug fixed (`6464a75`); source dates on context cards still not shown |
+| F13 | Economic evidence gap | Encoded deployment arithmetic has no supplied cost-aware out-of-sample value demonstration | [ ] Not addressed (see B11 note below) |
+| F14 | Verified wording defect | Two-RED notification incorrectly claims wave authorization was reached | [x] Fixed (`64f3d2a`) |
 
 ## Correctness and interpretation actions
 
 ### B01 — Enforce eligibility and specify the statistical target
+
+**Status: [x] Core fix shipped (`64f3d2a`).** Eligibility gate is live; original-label recovery still blocked on B03.
 
 - **Findings:** F01; related F03, F08. **Priority:** High; the displayed probability can answer the wrong question precisely when markets are stressed.
 - **Verified components:** `rule_engine/src/classify.ts:97–109`; `rule_engine/src/hazardModel.ts:119–135`; `mcp_server/src/server.ts:106–116`; `dashboard_site/index.html:1018–1038`; `supabase/migrations/20260826000000_hazard_model_10pct.sql`; hazard/rules documentation and report template.
@@ -62,6 +92,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B05 — Remove recovery state from authorization and centralize the gate
 
+**Status: [x] Done (`64f3d2a`).** Both write paths now use an explicit 5-key allowlist.
+
 - **Findings:** F05. **Priority:** Critical: a report write can enable a dollar deployment plan without changed market inputs. Actual historical incidence is unknown.
 - **Verified components:** `rule_engine/src/classify.ts:73–84,132–139`; `mcp_server/src/lib/supabase.ts:356–360`; `rule_engine/src/rules.ts`; `mcp_server/src/server.ts:600–621`.
 - **Proposed change:** allowlist `vix`, `hy_spread`, `sp_drawdown`, `treasury_10y`, `sahm_rule`; add only the explicit Fed category. Share one pure gate calculation across writers or enforce tested parity if packaging prevents reuse. Recovery keys must never affect the result. Pin writes to the numerical snapshot reviewed by the LLM.
@@ -71,6 +103,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 - **Expected benefit / downside:** removes false authorization from this code path; shared code requires coordination between two TypeScript packages.
 
 ### B06 — Make freshness and confirmation depend on the observations
+
+**Status: [x] Done (`64f3d2a`).** Cadence-aware freshness and same-date revision handling shipped. Vintage/point-in-time reconstruction (B02) remains separate and not started.
 
 - **Findings:** F06, F07; related F02. **Priority:** High: stale or revised inputs can invalidate both predictions and decision state.
 - **Verified components:** `mcp_server/src/lib/freshness.ts`; `mcp_server/src/lib/supabase.ts`, `writeSnapshot`; `mcp_server/src/server.ts`, indicator/plan tools; `ingestion/src/ingest.ts`; `rule_engine/src/rules.ts:122–145`; `rule_engine/src/lib/seriesDelta.ts:102–119`; `rule_engine/src/hazardModel.ts`, `requireLevel`.
@@ -82,6 +116,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B07 — Correct recovery episode lifecycle
 
+**Status: [x] Core fix shipped (`64f3d2a`).** Trough now retained through recovery evaluation. Not done: independent Fed-CUT recency limit; explicit reset/wave-execution interaction; F13's economic-usefulness question (see B11).
+
 - **Findings:** F08, F13. **Priority:** High: recovery status can miss a valid rebound and distort re-entry/deployment evaluation.
 - **Verified components:** `rule_engine/src/classify.ts:118–161`; `rule_engine/src/rules.ts:91–94`; `supabase/migrations/20260816000000_recovery_tracking.sql`; `mcp_server/src/lib/waveDeploymentState.ts`; rules Stage 4.
 - **Proposed change:** retain the trough through recovery evaluation; distinguish active drawdown, recovering episode and closed episode with an explicit identifier and reset policy. Define how repeated 10% crossings and a new ATH interact. Decide how Fed CUT recency is recorded. Specify how executed waves reset for a genuinely new episode without erasing execution history.
@@ -91,6 +127,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 - **Expected benefit / downside:** fixes lifecycle consistency; reset choices may change behavior and need explicit review.
 
 ### B08 — Replace misleading report emphasis and define subjective fields
+
+**Status: [x] Partial (`6464a75`).** Headline de-emphasized and range ordering enforced. Not done: report-outline restructuring, radar labeled subjective, hazard-hidden-vs-visible disclosure (F11), comprehension-check pilot.
 
 - **Findings:** F09, F11; related F01, F03, F04. **Priority:** High: prominent numerical presentation can imply evidence the system lacks.
 - **Verified components:** `dashboard_site/index.html:1018–1038,1137–1174`; `reference_docs/rules/dashboard-template.html`; `reference_docs/rules/project-instructions.md`; `mcp_server/src/server.ts:300–348`; qualitative schemas/migrations.
@@ -102,6 +140,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B09 — Add a minimal provenance contract and LLM evaluation gate
 
+**Status: [ ] Not started.**
+
 - **Findings:** F10, F11, F09; related F05, F06. **Priority:** High: factual fidelity and reproducibility are currently mostly prompt conventions.
 - **Verified components:** `mcp_server/src/server.ts`, qualitative write schemas and tool outputs; `mcp_server/src/lib/supabase.ts`, report writers; `mcp_server/src/lib/tokenLog.ts`; `reference_docs/rules/project-instructions.md`; report schemas and renderers. Evaluation harness and provenance schema would be new components.
 - **Proposed change:** store run ID, immutable numerical snapshot/hash, artifact/rules/prompt versions, model identifier where available, source/publication/retrieval metadata, and evidence-linked claims. Label each claim observed/computed/reported/inferred. Numerical prose should dereference validated fields. Pin report writes to the viewed snapshot. Persist a structured pre-prior/pre-hazard draft if claiming independence; do not depend on private working reasoning as a commitment record. External text must not act as instructions. Keep personal financial evidence local under the existing boundary.
@@ -112,6 +152,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B10 — Correct latest/history retrieval and report time context
 
+**Status: [x] Partial (`6464a75`).** Latest-row/pagination bug fixed. Not done: source dates on context cards, true archived as-of mode, statistical forecast/outcome history.
+
 - **Findings:** F12, F06. **Priority:** Medium now; high when 1,000 reports exist or stale context affects a decision.
 - **Verified components:** `dashboard_site/index.html:335–362,1450–1486,1679`; archived snapshot schema; `classify.ts`, raw source data.
 - **Proposed change:** fetch true latest explicitly and paginate history with stable ordering. Display source dates on context cards. Preserve the existing disclosure that live context is independent of selected history, or offer a genuinely archived as-of mode after B02/B09. Add statistical forecast/status/outcome history when valid labels exist.
@@ -121,6 +163,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 - **Expected benefit / downside:** trustworthy navigation and comparison; archive mode adds storage and UI complexity.
 
 ### B12 — Correct early-alert wording
+
+**Status: [x] Done (`64f3d2a`).**
 
 - **Findings:** F14. **Priority:** High for interpretation; immediate small fix.
 - **Verified components:** `rule_engine/src/lib/notify.ts`, threshold and body; `rule_engine/src/rules.ts:49–51`; deployment-plan gate.
@@ -134,6 +178,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B02 — Build point-in-time data and immutable scoring inputs
 
+**Status: [ ] Not started.**
+
 - **Findings:** F02, F06; related F03/F04. **Priority:** High: a model validated with unavailable historical information cannot establish real-time skill.
 - **Verified components:** `ingestion/src/sources/fred.ts`, latest/history functions; `ingestion/src/lib/supabase.ts:32–49`; base `data_points` schema; `rule_engine/src/hazardModel.ts:173–180,266–315`; `rule_engine/src/lib/seriesDelta.ts`; `classify.ts`, output snapshot. Vintage warehouse/research export and artifact manifest are proposed new components.
 - **Proposed change:** distinguish observation, release, vintage and acquisition times. Build historical features from information available at each forecast cutoff. Preserve all 32 feature values with source lineage and artifact hash for each issued forecast. Audit current-level versus lag-anchor timing, SP500 missing sessions, running-peak history, revisions and stale series. Remove or replace recession probability through a complete refit if valid historical vintages are unavailable. Do not assume all macro series become safe once one feature is removed.
@@ -145,6 +191,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B03 — Recover the research and reproduce the frozen artifact
 
+**Status: [ ] Investigated, not fixed.** A follow-up search (2026-09-19/20) for the original training script/notebook/artifact manifest found nothing recoverable — see `reference_docs/hazard-model-explained.md`'s Known Limitations and `hazardModel.ts`'s header (`abd12df`), both now relabeled to say the validation claims are documented, not verifiable. Reproducing this now means a full rebuild from raw data, not a recovery.
+
 - **Findings:** F03, F04, F02. **Priority:** High: validity claims cannot be audited from copied constants alone.
 - **Verified components:** `rule_engine/src/hazardModel.ts:1–166`; hazard explanation and rules statistical section. Original `hazard_model_10pct_artifact.json`, training scripts and evaluation datasets are named/documented but absent from the ZIP.
 - **Proposed change:** obtain original data manifests, labels, folds, preprocessing/regularization settings, sample/class weights, calibrator, prediction records and bootstrap outputs. Create a versioned research pipeline and generated production artifact; avoid hand-copied coefficients. Separate expanding chronological evaluation from future-trained leave-one-crisis-out diagnostics. Identify prior reuse of intended holdout data.
@@ -154,6 +202,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 - **Hypothesized benefit / downside:** auditable research-to-production parity; may reveal irreproducible prior claims.
 
 ### B04 — Run leakage-safe baselines and calibration experiments
+
+**Status: [ ] Not started.** Blocked on B02/B03.
 
 - **Findings:** F03, F04, F13; related F01/F02. **Priority:** High: directly tests whether the model adds useful predictive information.
 - **Components:** existing scoring functions and recovered research pipeline; new versioned prediction/evaluation tables and reports. No existing evaluator was found.
@@ -167,6 +217,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 
 ### B11 — Test deployment usefulness separately from prediction skill
 
+**Status: [ ] Not started as specified** (frozen, cost-aware economic backtest of the hazard-informed policy). **Related work done outside this document:** a real-data backtest (33 years of SPY/VIX/FRED) of the *deterministic wave-trigger rules* — not the statistical hazard model — found Wave 3 never confirmed for dot-com and Wave 2 never confirmed for 2022; a new pathway was designed, validated, and shipped (`abd12df`) to fix both gaps. That is a rule-logic correctness fix (closer to B07/F13's lifecycle concerns), not the dollar-outcome economic-value backtest this item calls for.
+
 - **Findings:** F13; related F05/F07/F08. **Priority:** High before describing allocation outputs as empirically supported; after correctness work.
 - **Verified components:** `rule_engine/src/rules.ts:49–73`; `mcp_server/src/lib/waveDeployment.ts`; `mcp_server/src/lib/waveDeploymentState.ts`; `mcp_server/src/server.ts:572–655`. Historical policy evaluator would be new.
 - **Proposed change/experiment:** paper-test a frozen corrected wave policy with one broad investable equity proxy first, to isolate timing. Define initial cash budget, original-versus-remaining denominator, contribution schedule, spacing, episode reset and reinvestment/re-entry. Compare immediate buy-and-hold, scheduled deployment of the same budget and simple price-only staged deployment. Use common initial wealth/date and report an exposure-matched comparison. Do not introduce hazard gating as an untested shortcut.
@@ -176,6 +228,8 @@ The system uses TypeScript ingestion → Supabase observations → deterministic
 - **Hypothesized benefit / downside:** determines risk/return and opportunity cost; a statistically useful forecast may still fail this economic gate.
 
 ### B13 — Research additional predictors or model classes only after baseline evidence
+
+**Status: [ ] Not started (correctly deferred).** Per its own priority, this waits until B01–B04 establish baseline evidence.
 
 - **Findings:** F03, F04, F13. **Priority:** Low/deferred: added complexity is not an accuracy fix.
 - **Components:** proposed research pipeline; `hazardModel.ts` only after successful evaluation and a versioned artifact export.
