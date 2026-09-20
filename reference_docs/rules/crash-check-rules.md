@@ -864,6 +864,19 @@ series) — treat as unavailable, never as a reading of zero.
 > wanted later — every weight in it is `[new default — calibrate]`, a
 > reasonable starting structure, not a validated model, and it has not been
 > back-tested against any historical data.
+>
+> **Added 2026-09-20 — internal-consistency bound (not the deferred formula
+> above, and not a rediscovered original rule):** `crash_probability_pct`
+> and the scenario distribution are committed together but previously had
+> no enforced relationship to each other, so the headline number could
+> silently contradict the scenario breakdown it's supposed to summarize.
+> `write_snapshot` now requires `scenario_crash_pct <= crash_probability_pct
+> <= scenario_bear_pct + scenario_crash_pct` — the headline can't undercut
+> your own dedicated Crash-bucket estimate, and can't exceed Bear+Crash
+> combined, since a crash is the most severe scenario, a subset of that
+> broader stress zone rather than something that can outweigh it. This is
+> an internal-consistency check only, not a claim that either number is
+> individually validated.
 
 **Base score — Tier 1 panel position (0–70 points):** for each of the 6 core
 indicators, score its position within its own band, not just its color:

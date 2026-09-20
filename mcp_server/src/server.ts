@@ -321,7 +321,11 @@ server.registerTool(
       "Methodology' for the per-axis banded rubric (4 of the 6 axes anchor to real series already " +
       "tracked in this system; geopolitical/earnings stay narrative-only, no free anchoring data " +
       "exists for either). Discretionary like crash_probability_pct -- never gates, never validated. " +
-      "Do not include any personal dollar figures in `notes` — " +
+      "crash_probability_pct must fall within [scenario_crash_pct, scenario_bear_pct + scenario_crash_pct] " +
+      "-- the headline number can't undercut your own dedicated Crash-bucket estimate, and can't exceed " +
+      "Bear+Crash combined (crash is the most severe scenario, a subset of that broader stress zone, not " +
+      "something that can outweigh it). Keep the two judgments consistent with each other when you commit " +
+      "to both in step 7. Do not include any personal dollar figures in `notes` — " +
       "this is written to Supabase, which holds macro/rule state only.",
     inputSchema: {
       crash_probability_pct: z.number().min(0).max(100),
@@ -380,6 +384,27 @@ server.registerTool(
         error:
           `crash_probability range must satisfy low <= point <= high, got ` +
           `low=${input.crash_probability_low_pct} point=${input.crash_probability_pct} high=${input.crash_probability_high_pct}`,
+      });
+    }
+    // Added 2026-09-20 (user question: the headline % and the scenario
+    // distribution are committed together but had no enforced relationship
+    // to each other — crash_probability_pct could contradict the scenario
+    // breakdown it's supposed to summarize). "Crash" is the most severe of
+    // the 4 scenario buckets, so the headline crash probability shouldn't
+    // undercut Claude's own dedicated Crash-bucket estimate (lower bound),
+    // and shouldn't exceed Bear-or-worse combined, since a crash is a
+    // subset of that broader stress zone, not something that can outweigh
+    // it (upper bound). This is a new internal-consistency convention, not
+    // a rediscovered original rule — crash-check-rules.md's own "Crash-
+    // Probability Scoring Methodology" section is explicitly deferred/draft
+    // and never specified this relationship.
+    const scenarioBearOrWorse = input.scenario_bear_pct + input.scenario_crash_pct;
+    if (!(input.scenario_crash_pct <= input.crash_probability_pct && input.crash_probability_pct <= scenarioBearOrWorse)) {
+      return json({
+        error:
+          `crash_probability_pct must fall within [scenario_crash_pct, scenario_bear_pct + scenario_crash_pct], got ` +
+          `point=${input.crash_probability_pct}, scenario_crash_pct=${input.scenario_crash_pct}, ` +
+          `bear+crash=${scenarioBearOrWorse}`,
       });
     }
     const row = await writeSnapshot(input);
