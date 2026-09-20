@@ -1247,6 +1247,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
     <div class="card">
       <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${wavePillClass}">${wavePillText}</span></p>
       ${probSection}
+      ${scenarioSection}
       ${renderDeltaLog(row.delta_log)}
       <div class="grid-3" style="margin-top:16px;">
         ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
@@ -1256,7 +1257,6 @@ function renderReport(row, priorFullReport, priorAnyRow) {
         ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, getConfirmation(row, "sahm_rule"))}
         ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
       </div>
-      ${scenarioSection}
       ${renderRiskRadar(row, priorFullReport)}
       ${renderDivergenceFlags(row.divergence_flags)}
       ${renderHazardModel(row)}
