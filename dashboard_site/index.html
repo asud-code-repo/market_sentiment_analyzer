@@ -1051,10 +1051,17 @@ function renderHazardModel(row) {
       <div class="value"><span class="pill ${HAZARD_BAND_PILL[row.hazard_10pct_band] || "muted"}">${HAZARD_BAND_LABELS[row.hazard_10pct_band] || row.hazard_10pct_band}</span></div>
       <div class="signal">P(S&amp;P drawdown reaches &ge;10% from ATH within ~21 trading days) — as of ${row.hazard_10pct_as_of}.</div>
       <div class="indicator-info">
-        Walk-forward-validated, isotonic-calibrated logistic model. Shown as a band, not a precise
-        percentage, because the calibration curve has two wide flat plateaus — nearby raw scores inside
-        one plateau aren't meaningfully different probabilities. Not part of the 3-of-6 wave-authorization
-        gate, and not meant to agree or be averaged with the crash-probability estimate above.
+        A logistic-regression model with isotonic calibration — its original research reportedly used
+        walk-forward, leave-one-crisis-out validation, but that validation cannot currently be
+        independently verified (the underlying training artifacts aren't recoverable; see project docs).
+        Shown as a band, not a precise percentage, because the calibration curve has two wide flat
+        plateaus — nearby raw scores inside one plateau aren't meaningfully different probabilities.
+        Not part of the 3-of-6 wave-authorization gate.
+        <br><br>
+        This answers a specific, defined question — S&amp;P drawdown reaching 10% from ATH within ~21
+        trading days, only scored when not already past that threshold — which is a different question
+        from the crash-probability estimate above (no defined horizon or threshold). They aren't measuring
+        the same thing, so agreement or disagreement between the two isn't meaningful; never blend or average them.
         <br><br>
         <em>Methodology detail: calibrated ${row.hazard_10pct_calibrated_pct}% (raw model output ${row.hazard_10pct_raw_pct}%)
         — shown for transparency, not as a precision claim the band above doesn't already make.</em>
@@ -1181,7 +1188,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
       </div>
       <div class="meter-track"><div class="meter-fill" style="width:${row.crash_probability_pct}%; background:${meterColor};"></div></div>
       <div class="meter-labels"><span>0%</span><span>Range: ${row.crash_probability_low_pct ?? "—"}–${row.crash_probability_high_pct ?? "—"}%</span><span>100%</span></div>
-      <p class="caveat">Subjective LLM judgment, not a calibrated statistical forecast — no defined forecast horizon, no prospective track record, and not validated against outcomes. Compare with the rule-engine-computed Statistical Hazard Model below, which is a genuinely separate, non-blended signal.</p>
+      <p class="caveat">Subjective LLM judgment, not a calibrated statistical forecast — no defined forecast horizon, no prospective track record, and not validated against outcomes. This is a different question from the Statistical Hazard Model below (a specific, defined target: S&amp;P drawdown reaching 10% within ~21 trading days) — agreement or disagreement between the two isn't meaningful, since they aren't measuring the same thing.</p>
     `;
   }
 
