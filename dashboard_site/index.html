@@ -309,19 +309,19 @@
 
   <div id="report-view"><p class="loading">Loading…</p></div>
 
-  <div class="card" id="section-charts">
+  <div class="card" id="section-context">
     <p class="eyebrow">Contextual Indicators — informational, not wave-gating</p>
     <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
     <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="section-sector">
     <p class="eyebrow">Sector Capital Rotation — informational, not wave-gating</p>
     <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return.</p>
     <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="section-charts">
     <p class="eyebrow">Crash Probability — History</p>
     <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
     <div id="chart-crash-probability"></div>
@@ -1302,8 +1302,13 @@ function populateDateSelect() {
 // uses to decide whether each section renders anything.
 function computeSectionNavItems(row) {
   const items = [];
-  if (row.crash_probability_pct != null) items.push({ id: "section-probability", label: "Probability" });
-  if (row.scenario_bull_pct != null) items.push({ id: "section-scenario", label: "Scenario" });
+  // One chip for both -- scenario sits immediately below probability in the
+  // same card (same LLM synthesis output, see the caveat text on each), so
+  // a separate jump target for each was redundant. Falls back to whichever
+  // of the two actually has content, in case they ever diverge.
+  if (row.crash_probability_pct != null || row.scenario_bull_pct != null) {
+    items.push({ id: row.crash_probability_pct != null ? "section-probability" : "section-scenario", label: "Probability" });
+  }
   items.push({ id: "section-indicators", label: "Indicators" });
   if (row.risk_radar) items.push({ id: "section-radar", label: "Radar" });
   if (Array.isArray(row.divergence_flags) && row.divergence_flags.length > 0) items.push({ id: "section-signals", label: "Signals" });
@@ -1315,7 +1320,11 @@ function computeSectionNavItems(row) {
   } catch (e) { /* malformed trigger_status -- treat as none, same as renderReport does */ }
   if (hasTriggers) items.push({ id: "section-triggers", label: "Triggers" });
   items.push({ id: "section-notes", label: "Notes" });
-  items.push({ id: "section-charts", label: "Charts" }); // static cards below report-view, always present
+  // Static cards below report-view, always present -- three separate cards,
+  // not one, so each gets its own chip rather than one lumping them together.
+  items.push({ id: "section-context", label: "Context" });
+  items.push({ id: "section-sector", label: "Sector" });
+  items.push({ id: "section-charts", label: "Charts" });
   return items;
 }
 
