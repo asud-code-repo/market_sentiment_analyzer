@@ -74,6 +74,15 @@
   .date-bar select { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); }
   .date-nav-btn { font-size: 12px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); cursor: pointer; }
   .date-nav-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* Section jump-nav -- horizontally scrollable chip row, rebuilt per
+     selected report since older automated-only rows don't have every
+     section (no narrative/scenario/triggers/divergence flags). Sits below
+     the date bar, not competing with it -- a second, distinct nav row. */
+  .section-nav { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 4px; }
+  .section-nav::-webkit-scrollbar { display: none; }
+  .section-nav-chip { flex-shrink: 0; font-size: 12px; font-weight: 600; padding: 7px 13px; border-radius: 999px; background: var(--neutral-blue-bg); color: var(--neutral-blue); border: 1px solid var(--border); cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .section-nav-chip:hover { opacity: 0.85; }
   .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   /* Hidden by default -- shown only in standalone/installed PWA mode via JS,
      since a normal browser tab already has its own reload affordance
@@ -296,9 +305,11 @@
     <button class="date-nav-btn" id="latest-btn">Jump to latest</button>
   </div>
 
+  <div id="section-nav" class="section-nav"></div>
+
   <div id="report-view"><p class="loading">Loading…</p></div>
 
-  <div class="card">
+  <div class="card" id="section-charts">
     <p class="eyebrow">Contextual Indicators — informational, not wave-gating</p>
     <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
     <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
@@ -1253,10 +1264,10 @@ function renderReport(row, priorFullReport, priorAnyRow) {
     ${banner}
     <div class="card">
       <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${wavePillClass}">${wavePillText}</span></p>
-      ${probSection}
-      ${scenarioSection}
+      <div id="section-probability">${probSection}</div>
+      <div id="section-scenario">${scenarioSection}</div>
       ${renderDeltaLog(row.delta_log)}
-      <div class="grid-3" style="margin-top:16px;">
+      <div class="grid-3" id="section-indicators" style="margin-top:16px;">
         ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
         ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps, getConfirmation(row, "hy_spread"))}
         ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct, getConfirmation(row, "sp_drawdown"))}
@@ -1264,11 +1275,11 @@ function renderReport(row, priorFullReport, priorAnyRow) {
         ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, getConfirmation(row, "sahm_rule"))}
         ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
       </div>
-      ${renderRiskRadar(row, priorFullReport)}
-      ${renderDivergenceFlags(row.divergence_flags)}
-      ${renderHazardModel(row)}
-      ${triggerSection}
-      ${notesSection}
+      <div id="section-radar">${renderRiskRadar(row, priorFullReport)}</div>
+      <div id="section-signals">${renderDivergenceFlags(row.divergence_flags)}</div>
+      <div id="section-hazard">${renderHazardModel(row)}</div>
+      <div id="section-triggers">${triggerSection}</div>
+      <div id="section-notes">${notesSection}</div>
     </div>
   `;
 }
@@ -1281,6 +1292,36 @@ function populateDateSelect() {
       return `<option value="${i}">${label}</option>`;
     })
     .reverse() // newest first in the dropdown list
+    .join("");
+}
+
+// Section jump-nav -- which chips to show depends on the SELECTED report,
+// not a fixed list: older automated-only rows have no narrative/scenario/
+// triggers/divergence flags, so a static chip set would produce dead jump
+// links on those entries. Mirrors exactly the same conditionals renderReport
+// uses to decide whether each section renders anything.
+function computeSectionNavItems(row) {
+  const items = [];
+  if (row.crash_probability_pct != null) items.push({ id: "section-probability", label: "Probability" });
+  if (row.scenario_bull_pct != null) items.push({ id: "section-scenario", label: "Scenario" });
+  items.push({ id: "section-indicators", label: "Indicators" });
+  if (row.risk_radar) items.push({ id: "section-radar", label: "Radar" });
+  if (Array.isArray(row.divergence_flags) && row.divergence_flags.length > 0) items.push({ id: "section-signals", label: "Signals" });
+  items.push({ id: "section-hazard", label: "Hazard" });
+  let hasTriggers = false;
+  try {
+    const triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]");
+    hasTriggers = triggers.length > 0;
+  } catch (e) { /* malformed trigger_status -- treat as none, same as renderReport does */ }
+  if (hasTriggers) items.push({ id: "section-triggers", label: "Triggers" });
+  items.push({ id: "section-notes", label: "Notes" });
+  items.push({ id: "section-charts", label: "Charts" }); // static cards below report-view, always present
+  return items;
+}
+
+function renderSectionNav(row) {
+  document.getElementById("section-nav").innerHTML = computeSectionNavItems(row)
+    .map((item) => `<button type="button" class="section-nav-chip" data-target="${item.id}">${item.label}</button>`)
     .join("");
 }
 
@@ -1302,6 +1343,7 @@ function selectIndex(i) {
   }
   const priorAnyRow = CURRENT_INDEX > 0 ? ALL_ROWS[CURRENT_INDEX - 1] : null;
   renderReport(ALL_ROWS[CURRENT_INDEX], priorFullReport, priorAnyRow);
+  renderSectionNav(ALL_ROWS[CURRENT_INDEX]);
 }
 
 /**
@@ -1723,6 +1765,16 @@ async function main() {
     document.getElementById("prev-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX - 1));
     document.getElementById("next-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX + 1));
     document.getElementById("latest-btn").addEventListener("click", () => selectIndex(ALL_ROWS.length - 1));
+
+    // Delegated once on the container -- renderSectionNav() replaces the
+    // chips' innerHTML on every selectIndex() call, which would drop any
+    // listener attached to an individual chip.
+    document.getElementById("section-nav").addEventListener("click", (e) => {
+      const chip = e.target.closest(".section-nav-chip");
+      if (!chip) return;
+      const target = document.getElementById(chip.dataset.target);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
 
     const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
     const withMeta = (valueKey) => ALL_ROWS.map((r) => ({ date: dateOf(r), rawDate: r.run_at, value: r[valueKey], waveActive: r.wave_active && r.wave_active !== "NONE" }));
