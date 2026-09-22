@@ -41,10 +41,11 @@ server.registerTool(
     description:
       "Returns the most recent crash_checks row plus a delta vs the last row that actually had a " +
       "probability (the last full report, not just the last row — most rows are bare automated " +
-      "refreshes). Call only after independently committing to this run's probability estimate — " +
-      "this is for the delta-log framing, not for forming the estimate itself. `risk_radar` (when " +
+      "refreshes). Call only after independently committing to this run's scenario distribution " +
+      "(crash_probability_pct is derived from that, not independently judged -- see write_snapshot) " +
+      "— this is for the delta-log framing, not for forming the estimate itself. `risk_radar` (when " +
       "present) is the prior run's discretionary macro-risk read (see crash-check-rules.md's 'Risk " +
-      "Radar Scoring Methodology') -- same tier as crash_probability_pct, never gates, useful here " +
+      "Radar Scoring Methodology') -- same tier as the scenario distribution, never gates, useful here " +
       "only as a reference point for this run's own risk_radar judgment.",
   },
   withLogging("get_latest_snapshot", async () => {
@@ -69,8 +70,9 @@ server.registerTool(
       "wave_authorized already reflects confirmed_red_count (see crash-check-rules.md's Signal Tiering " +
       "rule) — report that as the authorizing number, not raw red_count. Check data_freshness.is_fresh " +
       "before proceeding (project-instructions.md step 1). hazard_model_10pct is a separate rule-engine-" +
-      "computed estimate, not the same as your own crash_probability_pct judgment (see write_snapshot) — " +
-      "report its band, not a re-derived percentage.",
+      "computed estimate, not the same question as your own scenario-distribution judgment (crash_" +
+      "probability_pct is derived from that, see write_snapshot) — report its band, not a re-derived " +
+      "percentage.",
   },
   withLogging("get_indicator_panel", async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -132,9 +134,10 @@ server.registerTool(
         raw_pct: latest.hazard_10pct_raw_pct,
         as_of: latest.hazard_10pct_as_of,
         signal:
-          "Rule-engine-computed and calibrated — distinct from crash_probability_pct (100% LLM " +
-          "judgment, see write_snapshot). Report the BAND, never a re-derived percentage or a blend " +
-          "with your own estimate (see crash-check-rules.md's Statistical Hazard Model section for " +
+          "Rule-engine-computed and calibrated — distinct from crash_probability_pct (derived from " +
+          "the scenario distribution, which is 100% LLM judgment, see write_snapshot). Report the " +
+          "BAND, never a re-derived percentage or a blend with your own estimate (see crash-check-" +
+          "rules.md's Statistical Hazard Model section for " +
           "why: steppy calibration curve, plateau structure). Check status before reporting a band: " +
           "ALREADY_BREACHED means live drawdown is already >=10%, so the model's target (a FUTURE " +
           "breach conditional on not already being past it) doesn't apply — say the threshold is " +
@@ -321,17 +324,13 @@ server.registerTool(
       "earnings, each 0-100) is required every run — see crash-check-rules.md's 'Risk Radar Scoring " +
       "Methodology' for the per-axis banded rubric (4 of the 6 axes anchor to real series already " +
       "tracked in this system; geopolitical/earnings stay narrative-only, no free anchoring data " +
-      "exists for either). Discretionary like crash_probability_pct -- never gates, never validated. " +
-      "crash_probability_pct must fall within [scenario_crash_pct, scenario_bear_pct + scenario_crash_pct] " +
-      "-- the headline number can't undercut your own dedicated Crash-bucket estimate, and can't exceed " +
-      "Bear+Crash combined (crash is the most severe scenario, a subset of that broader stress zone, not " +
-      "something that can outweigh it). Keep the two judgments consistent with each other when you commit " +
-      "to both in step 7. Do not include any personal dollar figures in `notes` — " +
-      "this is written to Supabase, which holds macro/rule state only.",
+      "exists for either). Discretionary like the scenario distribution -- never gates, never validated. " +
+      "crash_probability_pct/low/high are NOT inputs to this tool (changed 2026-09-22) -- they are " +
+      "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
+      "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
+      "only commit to ONE judgment in step 7 (the scenario split), not two. Do not include any personal " +
+      "dollar figures in `notes` — this is written to Supabase, which holds macro/rule state only.",
     inputSchema: {
-      crash_probability_pct: z.number().min(0).max(100),
-      crash_probability_low_pct: z.number().min(0).max(100),
-      crash_probability_high_pct: z.number().min(0).max(100),
       scenario_bull_pct: z.number().min(0).max(100),
       scenario_base_pct: z.number().min(0).max(100),
       scenario_bear_pct: z.number().min(0).max(100),
@@ -376,39 +375,37 @@ server.registerTool(
     if (Math.abs(scenarioSum - 100) > 0.5) {
       return json({ error: `Scenario distribution must sum to 100, got ${scenarioSum}` });
     }
-    // Previously only each bound's own 0-100 range was checked (zod), not
-    // their relative ordering — a range like low=40/point=20/high=30 would
-    // write successfully despite being internally inconsistent (external
-    // review 2026-09-19, F09).
-    if (!(input.crash_probability_low_pct <= input.crash_probability_pct && input.crash_probability_pct <= input.crash_probability_high_pct)) {
-      return json({
-        error:
-          `crash_probability range must satisfy low <= point <= high, got ` +
-          `low=${input.crash_probability_low_pct} point=${input.crash_probability_pct} high=${input.crash_probability_high_pct}`,
-      });
-    }
-    // Added 2026-09-20 (user question: the headline % and the scenario
-    // distribution are committed together but had no enforced relationship
-    // to each other — crash_probability_pct could contradict the scenario
-    // breakdown it's supposed to summarize). "Crash" is the most severe of
-    // the 4 scenario buckets, so the headline crash probability shouldn't
-    // undercut Claude's own dedicated Crash-bucket estimate (lower bound),
-    // and shouldn't exceed Bear-or-worse combined, since a crash is a
-    // subset of that broader stress zone, not something that can outweigh
-    // it (upper bound). This is a new internal-consistency convention, not
-    // a rediscovered original rule — crash-check-rules.md's own "Crash-
-    // Probability Scoring Methodology" section is explicitly deferred/draft
-    // and never specified this relationship.
-    const scenarioBearOrWorse = input.scenario_bear_pct + input.scenario_crash_pct;
-    if (!(input.scenario_crash_pct <= input.crash_probability_pct && input.crash_probability_pct <= scenarioBearOrWorse)) {
-      return json({
-        error:
-          `crash_probability_pct must fall within [scenario_crash_pct, scenario_bear_pct + scenario_crash_pct], got ` +
-          `point=${input.crash_probability_pct}, scenario_crash_pct=${input.scenario_crash_pct}, ` +
-          `bear+crash=${scenarioBearOrWorse}`,
-      });
-    }
-    const row = await writeSnapshot(input);
+    // crash_probability_pct/low/high are DERIVED here, not supplied by the
+    // caller (changed 2026-09-22, user question: two independently-
+    // committed LLM judgments only checked for non-contradiction still let
+    // the headline drift anywhere across a wide legal band -- e.g. 5-25 in
+    // one real report -- for no explained reason). The scenario split is
+    // the more information-rich, better-calibrated of the two by
+    // construction (a forced decomposition into 4 exhaustive/exclusive
+    // buckets summing to 100, vs. a single free-floating anchor number),
+    // and the system's own prior design already treated it as primary --
+    // that's why the Sep-20 consistency check bounded the headline BY the
+    // scenario split rather than the reverse. So: stop asking for a second
+    // independent guess, compute the headline FROM the first one instead.
+    // point = crash-bucket + half the bear-bucket (crash is definitionally
+    // included in "bear or worse"; the 0.5 weight says a Bear scenario is
+    // itself only partway to crash-severity) -- low/high reuse exactly the
+    // bounds the old consistency check already validated against
+    // (scenario_crash_pct, scenario_bear_pct + scenario_crash_pct), now as
+    // the reported range's actual definition instead of just a gate. Both
+    // are guaranteed within [0,100] and low<=point<=high by construction
+    // from the scenario fields' own already-validated 0-100/sum-100
+    // constraints -- no separate runtime check needed for something
+    // algebra already guarantees.
+    const crashProbabilityLowPct = input.scenario_crash_pct;
+    const crashProbabilityHighPct = input.scenario_bear_pct + input.scenario_crash_pct;
+    const crashProbabilityPct = Math.round(input.scenario_crash_pct + 0.5 * input.scenario_bear_pct);
+    const row = await writeSnapshot({
+      ...input,
+      crash_probability_pct: crashProbabilityPct,
+      crash_probability_low_pct: crashProbabilityLowPct,
+      crash_probability_high_pct: crashProbabilityHighPct,
+    });
     return json({ written: row });
   }),
 );

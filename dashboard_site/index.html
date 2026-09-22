@@ -1595,11 +1595,13 @@ function renderReport(row, priorFullReport, priorAnyRow) {
   if (row.crash_probability_pct != null) {
     // Deliberately non-RAG (var(--neutral-blue), same treatment as the
     // hazard-model band below) rather than the prior red/amber/green
-    // thresholds — this is a subjective LLM judgment with no defined
-    // forecast horizon or track record, and color-coding it by severity
-    // implied a validated risk read this page doesn't actually have
-    // (external review 2026-09-19, F09; same reasoning already applied to
-    // HAZARD_BAND_PILL below).
+    // thresholds — even though this number is now a fixed derivation
+    // (2026-09-22) rather than a second independent guess, its input (the
+    // scenario distribution) is still subjective LLM judgment with no
+    // defined forecast horizon or track record, and color-coding it by
+    // severity implied a validated risk read this page doesn't actually
+    // have (external review 2026-09-19, F09; same reasoning already
+    // applied to HAZARD_BAND_PILL below).
     const meterColor = "var(--neutral-blue)";
     let deltaHtml = '<span class="delta flat">No prior full report to diff against</span>';
     if (priorFullReport && priorFullReport.crash_probability_pct != null) {
@@ -1609,14 +1611,14 @@ function renderReport(row, priorFullReport, priorAnyRow) {
       deltaHtml = `<span class="delta ${cls}">${sign}${diff} pts vs prior report (${priorFullReport.crash_probability_pct}%)</span>`;
     }
     probSection = `
-      <p class="hero-label">Experimental — Discretionary LLM Estimate</p>
+      <p class="hero-label">Experimental — Derived from Scenario Distribution</p>
       <div class="hero-row">
         <span class="hero-value">${row.crash_probability_pct}%</span>
         ${deltaHtml}
       </div>
       <div class="meter-track"><div class="meter-fill" style="width:${row.crash_probability_pct}%; background:${meterColor};"></div></div>
       <div class="meter-labels"><span>0%</span><span>Range: ${row.crash_probability_low_pct ?? "—"}–${row.crash_probability_high_pct ?? "—"}%</span><span>100%</span></div>
-      <p class="caveat">Subjective LLM judgment, not a calibrated statistical forecast — no defined forecast horizon, no prospective track record, and not validated against outcomes. This is a different question from the Statistical Hazard Model below (a specific, defined target: S&amp;P drawdown reaching 10% within ~21 trading days) — agreement or disagreement between the two isn't meaningful, since they aren't measuring the same thing.</p>
+      <p class="caveat">Computed directly from the scenario distribution below (point = Crash% + 0.5×Bear%; range = Crash% to Bear%+Crash%) — not a second independent guess, and not a calibrated statistical forecast. The scenario judgment underneath it still has no defined forecast horizon, no prospective track record, and isn't validated against outcomes. This is a different question from the Statistical Hazard Model below (a specific, defined target: S&amp;P drawdown reaching 10% within ~21 trading days) — agreement or disagreement between the two isn't meaningful, since they aren't measuring the same thing.</p>
     `;
   }
 

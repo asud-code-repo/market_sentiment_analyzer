@@ -61,16 +61,28 @@ this file, the 3-of-6 wave gate, and the confirmation/persistence logic. All
 of it gets written to the "current state" table. None of it is inferred,
 estimated, or "reasonably judged" by an LLM at report time.
 
-**LLM narrative/qualitative layer (reporting) owns:** the crash-probability
-score, the crash-type diagnosis, and scenario distribution — despite the
-Stage 1 criteria below being written with hard numeric triggers, `crash_type`
-is never computed by the rule engine; it's only ever set by a caller-supplied
-input to `write_snapshot`. Same for crash probability (see the "Crash-
-Probability Scoring Methodology" section — deferred, never implemented; the
-number is 100% LLM judgment today). This is a **deliberate, pre-existing
-design decision**, not an oversight this doc failed to catch — but it means
-this section previously overstated what's actually deterministic, and this
-paragraph exists to correct that rather than let the contradiction stand.
+**LLM narrative/qualitative layer (reporting) owns:** the crash-type
+diagnosis and the 4-way scenario distribution — despite the Stage 1 criteria
+below being written with hard numeric triggers, `crash_type` is never
+computed by the rule engine; it's only ever set by a caller-supplied input to
+`write_snapshot`. The scenario distribution is 100% LLM judgment too.
+**`crash_probability_pct` (and its low/high range) is the one exception,
+changed 2026-09-22**: it's no longer a caller-supplied judgment at all —
+`write_snapshot` (in `mcp_server`, not the rule engine) now derives it
+deterministically from the scenario distribution the caller supplies (point =
+`scenario_crash_pct` + 0.5×`scenario_bear_pct`; low = `scenario_crash_pct`;
+high = `scenario_bear_pct`+`scenario_crash_pct`) — see the "Crash-Probability
+Scoring Methodology" section below for why. This is a narrow exception to the
+Rule Engine Output Contract below, not a violation of it: the derivation
+lives in `mcp_server`, not `rule_engine/`, specifically because its input
+(the scenario split) is itself LLM judgment, not a real market data series —
+a genuinely deterministic layer computed from a non-deterministic input, not
+the same thing as the 6-indicator panel's bands. This is a **deliberate,
+pre-existing design decision** for `crash_type`/scenario distribution
+remaining LLM-judged, not an oversight this doc failed to catch — but it
+means this section previously overstated what's actually deterministic for
+the crash-probability headline specifically, and this paragraph exists to
+correct that rather than let the contradiction stand.
 The LLM layer also reads news and Fed communication to inform the Warsh
 classification (an explicitly flagged manual judgment call — see below), and
 renders the dashboard from values the rule engine already computed for
@@ -781,8 +793,11 @@ threshold — a "is a fresh correction about to start" read, not "how deep is
 the current one." Computed once daily by `rule_engine/src/hazardModel.ts`,
 alongside the 6-indicator panel. **This is rule-engine-owned and
 deterministic, the same way the panel above is** — contrast with the
-"Crash-Probability Scoring Methodology" section directly below, which
-documents that `crash_probability_pct` is 100% LLM judgment. The two numbers
+"Crash-Probability Scoring Methodology" section directly below: `crash_
+probability_pct` is arithmetically derived (in `mcp_server`, not the rule
+engine) from the scenario distribution, which is 100% LLM judgment with no
+backtest behind it — a genuinely different kind of number from this
+walk-forward-validated model, not just a different owner. The two numbers
 measure different things and are never meant to be blended, averaged, or
 treated as validating one another.
 
@@ -891,49 +906,69 @@ series) — treat as unavailable, never as a reading of zero.
 
 ---
 
-## Crash-Probability Scoring Methodology (DEFERRED — draft, not implemented)
+## Crash-Probability Scoring Methodology (IMPLEMENTED 2026-09-22 — derived, not judged)
 
-> **Status as of 2026-07-11:** this section was originally written on the
-> suspicion that the live crash-probability % might be coming from the LLM
-> reporting layer instead of the deterministic rule engine — a live
-> violation of this doc's own "no LLM does numeric classification" rule, if
-> true. That was checked directly against the code: `rule_engine/src/classify.ts`
-> never computes or writes `crash_probability_pct` at all; `mcp_server`'s
-> `writeSnapshot()` takes it as a caller-supplied number and inserts it
-> verbatim. So yes, the probability is 100% LLM-judgment today — but this
-> turned out to be a **deliberate, pre-existing design decision** from early
-> in this project (the original build spec wanted the rule engine to own
-> `crash_checks`; the master-prompt task list explicitly scoped "crash
-> probability + scenario distribution" as Claude's qualitative synthesis job
-> — resolved by relaxing NOT NULL constraints so the rule engine writes
-> partial rows and a later `write_snapshot` call fills in the rest), not an
-> oversight this doc caught.
+> **Status as of 2026-09-22 (current):** `crash_probability_pct` (and its
+> low/high range) is no longer a second independent LLM judgment — it's a
+> fixed arithmetic derivation from the scenario distribution, computed by
+> `mcp_server`'s `write_snapshot` (not the rule engine — see the Layer
+> Boundary section's exception note above for why that's still consistent
+> with this doc's layering):
 >
-> What *was* a real bug: the LLM was shown its own prior probability/notes
-> before forming a new estimate, creating anchoring rather than independent
-> daily judgment. That's fixed at the instruction level (commit-before-peek
-> ordering in the project instructions) and the tool level (`get_latest_snapshot`
-> now diffs against the last row with a real probability, not just the
-> chronologically-previous row) — see commit `5d791f1`. Probability itself
-> **stays LLM-synthesized for now**, anchoring-fixed rather than replaced.
+> - `crash_probability_pct` = round(`scenario_crash_pct` + 0.5 × `scenario_bear_pct`)
+> - `crash_probability_low_pct` = `scenario_crash_pct`
+> - `crash_probability_high_pct` = `scenario_bear_pct` + `scenario_crash_pct`
 >
-> The formula below is kept as a draft for if/when a deterministic version is
-> wanted later — every weight in it is `[new default — calibrate]`, a
-> reasonable starting structure, not a validated model, and it has not been
-> back-tested against any historical data.
+> **Why this replaced two independent judgments:** both numbers were
+> previously committed by the LLM in the same step, from the same
+> underlying data, with only a loose internal-consistency *bound* enforced
+> between them (added 2026-09-20, see below) — a 20-point-wide legal band
+> that let the headline drift for no explained reason (found live: one real
+> report had crash_probability_pct=17% against scenario_crash_pct=5%/
+> scenario_bear_pct=20%, technically valid but arbitrary within [5, 25]).
+> The scenario distribution is the structurally sounder of the two formats —
+> a forced decomposition into 4 mutually exclusive, exhaustive buckets
+> summing to 100 is a real forecasting-discipline technique, more resistant
+> to anchoring/round-number bias than a single free-floating number, and
+> carries strictly more information (4 numbers vs. 1). The system's own
+> prior design already treated it as more fundamental (that's why the Sep-20
+> fix bounded the headline BY the scenario split, not the reverse) — this
+> change follows that logic to its conclusion: stop asking for a second
+> guess, derive the headline from the first one.
 >
-> **Added 2026-09-20 — internal-consistency bound (not the deferred formula
-> above, and not a rediscovered original rule):** `crash_probability_pct`
-> and the scenario distribution are committed together but previously had
-> no enforced relationship to each other, so the headline number could
-> silently contradict the scenario breakdown it's supposed to summarize.
-> `write_snapshot` now requires `scenario_crash_pct <= crash_probability_pct
-> <= scenario_bear_pct + scenario_crash_pct` — the headline can't undercut
-> your own dedicated Crash-bucket estimate, and can't exceed Bear+Crash
-> combined, since a crash is the most severe scenario, a subset of that
-> broader stress zone rather than something that can outweigh it. This is
-> an internal-consistency check only, not a claim that either number is
-> individually validated.
+> **What this is not:** neither number is independently validated against
+> outcomes — the scenario distribution itself is still 100% LLM judgment,
+> with no defined forecast horizon, no historical labels, no backtest. This
+> derivation only guarantees internal consistency (impossible to contradict
+> itself by construction, instead of merely bounded), not accuracy.
+>
+> **Original history, kept for context:** this section was originally
+> written 2026-07-11 on the suspicion that the live crash-probability %
+> might be coming from the LLM reporting layer instead of the deterministic
+> rule engine. That was confirmed true but found to be a deliberate,
+> pre-existing design decision (the master-prompt task list explicitly
+> scoped "crash probability + scenario distribution" as Claude's qualitative
+> synthesis job), not an oversight. A real anchoring bug (the LLM seeing its
+> own prior probability before forming a new one) was fixed separately at
+> the instruction/tool level, without changing who computed the number —
+> see commit `5d791f1`. The point-based formula below (0–70 panel-position
+> points + confirmation multiplier + context adjustment + crash-type
+> proximity) was drafted 2026-07-11 as a possible future deterministic
+> replacement, sourced from the 6-indicator panel directly rather than the
+> scenario distribution — **never implemented, and superseded by the
+> simpler scenario-derived formula above, not merely still-deferred.** Kept
+> below only as a record of an alternative that was considered and not
+> chosen, not as a live draft.
+>
+> **2026-09-20 — internal-consistency bound (superseded 2026-09-22 by the
+> full derivation above, kept for history):** required `scenario_crash_pct
+> <= crash_probability_pct <= scenario_bear_pct + scenario_crash_pct` as a
+> validation gate on two independently-committed numbers, rather than
+> computing one from the other. This closed outright contradiction but not
+> arbitrary drift within the legal band — see "why this replaced two
+> independent judgments" above for the report that prompted going further.
+
+### Rejected alternative, kept for record (never implemented)
 
 **Base score — Tier 1 panel position (0–70 points):** for each of the 6 core
 indicators, score its position within its own band, not just its color:
@@ -964,10 +999,10 @@ every check; the confidence tag (Low/Medium/High persistence, per Formatting
 Requirements) is Low if fewer than 2 of the 6 core indicators are past their
 confirmation bar, Medium if 2–3 are, High if 4+ are.
 
-This formula should be treated as a working draft — back-test it against
-whatever historical readings you have before letting the computed % replace
-whatever ad hoc method has been producing it, and adjust the point splits
-once you've seen how it tracks against known past drawdowns.
+Not implemented, and not a live draft — superseded by the scenario-derived
+formula above. Kept only so a future editor doesn't re-propose the same
+approach without knowing it was already considered and set aside in favor
+of the simpler, more directly-grounded derivation.
 
 ---
 
@@ -1012,10 +1047,11 @@ to real series already tracked in this system, not free-form:
   escalation/broad earnings collapse) — same tier as `crash_type`/
   `warsh_classification`, already-accepted judgment fields in this system.
 
-**Non-goals**: does not feed `crash_probability_pct`, does not score into
-the 3-of-6 wave-authorization gate, is not validated or back-tested — same
-"working draft" framing as the Crash-Probability Scoring Methodology
-section above. A reader should not treat all six axes as equally grounded
+**Non-goals**: does not feed `crash_probability_pct` (which is now derived
+from the scenario distribution only — see the Crash-Probability Scoring
+Methodology section above), does not score into the 3-of-6 wave-
+authorization gate, is not validated or back-tested. A reader should not
+treat all six axes as equally grounded
 — `geopolitical`/`earnings` carry materially less anchoring than the other
 four, and the dashboard card says so explicitly.
 
@@ -1064,10 +1100,11 @@ report"). Make the distinction a rule, not an implicit side effect:
 
 **Scan order, top to bottom (fixed):**
 1. RED ALERT banner, if any indicator/wave condition is confirmed or pending confirmation
-2. Crash-probability meter: point %, confidence tag (Low/Medium/High
-   persistence, per the Crash-Probability Scoring Methodology's confirmation
-   count), 3-day Δ, 7-day Δ, visual meter. Color code: green 0–20%, amber
-   20–35%, red 35%+
+2. Crash-probability meter: point %, 3-day Δ, 7-day Δ, visual meter. Color
+   code: green 0–20%, amber 20–35%, red 35%+. (A "confidence tag" based on a
+   confirmation count was part of the rejected point-based formula above and
+   was never implemented anywhere — dropped from this scan order rather than
+   left as a dangling reference to a methodology that no longer computes it.)
 3. 6-indicator grid — each row shows current value, RED/AMBER/GREEN pill,
    3-day Δ, 7-day Δ, and confirmation status (`Confirmed` / `Pending
    confirmation (day 1 of 2)`), with RED count displayed prominently (e.g.
