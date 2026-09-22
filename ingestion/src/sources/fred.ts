@@ -156,6 +156,35 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // quarterly — the structural driver the fiscal-
                                           // dominance thesis centers on. No free FRED series
                                           // updates faster than quarterly for this.
+
+  // 2026-09-22 addition, same fiscal-dominance discussion as above — a
+  // rigorous read needs more than the debt level alone (see
+  // reference_docs/rules/crash-check-rules.md "Fiscal Dominance Regime
+  // Checklist"): whether Fed policy is actually constrained relative to what
+  // inflation/employment alone would justify (Taylor Rule gap, needs NROU),
+  // and whether the government is running primary deficits / rising interest
+  // burden even outside recessions (needs FYFSD, net interest, and GDP as
+  // the denominator).
+  { id: "NROU", unit: "percent" },       // CBO's Noncyclical (natural) Rate of Unemployment,
+                                          // quarterly — the "full employment" unemployment
+                                          // rate used to compute a Taylor Rule's output-gap
+                                          // term via Okun's Law. See fetchLatestObservation's
+                                          // observation_end fix above for why this series
+                                          // specifically needed it (CBO publishes its full
+                                          // projected path years into the future already).
+  { id: "A091RC1Q027SBEA", unit: "usd_billions_saar" }, // Federal government interest payments
+                                          // (BEA NIPA, quarterly, seasonally-adjusted annual
+                                          // rate) — the net-interest burden, both for
+                                          // interest/GDP directly and as the interest leg of
+                                          // primary-balance = total-balance + interest.
+  { id: "FYFSD", unit: "usd_millions" }, // Federal Surplus or Deficit, annual (OMB, fiscal
+                                          // year basis) — total budget balance; combined with
+                                          // A091RC1Q027SBEA above to back out the primary
+                                          // balance (deficit excluding interest payments).
+  { id: "GDP", unit: "usd_billions_saar" }, // Nominal GDP, quarterly SAAR — denominator for
+                                          // net-interest-as-%-of-GDP. Same units/cadence as
+                                          // A091RC1Q027SBEA, so this is a clean direct ratio,
+                                          // unlike the FYFSD pairing above.
 ];
 
 interface FredObservation {
@@ -200,6 +229,16 @@ async function fetchLatestObservation(seriesId: string, apiKey: string): Promise
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("file_type", "json");
   url.searchParams.set("sort_order", "desc");
+  // Most FRED series only ever publish observations up to "now," so this was
+  // never needed until NROU (added 2026-09-22): CBO's own published series
+  // already contains its full projected path years into the future (verified
+  // live — its "most recent observation" on FRED is dated a full decade out),
+  // not just historical/current readings. Without this, "sort desc, take
+  // first" would silently ingest a future projection as today's data_points
+  // row, corrupting every "latest value" lookup across this system (they all
+  // assume the max observation_date IS today's real reading). Harmless no-op
+  // for every other series here, none of which publish future dates.
+  url.searchParams.set("observation_end", new Date().toISOString().slice(0, 10));
   // FRED sometimes reports the most recent period as "." (not yet available) —
   // pull a few and take the first real value rather than assuming index 0 is valid.
   url.searchParams.set("limit", "5");
@@ -304,6 +343,10 @@ async function fetchFredHistory(seriesId: string, apiKey: string, observationSta
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("file_type", "json");
   url.searchParams.set("observation_start", observationStart);
+  // See fetchLatestObservation's identical observation_end for why this
+  // matters (NROU) — without it, backfill would write CBO's future-projected
+  // rows into data_points as if they were real historical observations.
+  url.searchParams.set("observation_end", new Date().toISOString().slice(0, 10));
   url.searchParams.set("sort_order", "asc");
   url.searchParams.set("limit", "100000");
 

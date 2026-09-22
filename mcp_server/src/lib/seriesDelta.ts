@@ -17,7 +17,7 @@ export interface SeriesDeltaResult {
   delta_7d: number | null;
 }
 
-function subtractDays(dateStr: string, days: number): string {
+export function subtractDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
@@ -29,9 +29,12 @@ function subtractDays(dateStr: string, days: number): string {
  * (weekends, holidays). This can occasionally return a value less than N
  * days old (e.g. if N-days-ago lands on a Saturday, this finds Friday's
  * value instead) — an accepted approximation, same spirit as this
- * project's other backward-search date patterns.
+ * project's other backward-search date patterns. Exported (2026-09-22) for
+ * regimeIndicators.ts's year-over-year CPI lookup — same helper, not a
+ * duplicate, since this one already handles the FRED-doesn't-publish-every-
+ * calendar-day case correctly.
  */
-async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<number | null> {
+export async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<number | null> {
   const { data, error } = await supabase
     .from("data_points")
     .select("value")

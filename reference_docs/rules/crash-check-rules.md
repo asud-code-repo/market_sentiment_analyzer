@@ -679,6 +679,45 @@ confidence qualifier per Signal Tiering.
 
 ---
 
+## Fiscal Dominance Regime Checklist (informational only — never gates, structural cadence)
+
+Added 2026-09-22, prompted by a discussion of Ritesh Jain/PineTree Macro's
+"fiscal dominance" thesis. **Fiscal dominance has a real, specific
+definition** (Leeper 1991's fiscal/monetary policy-regime framework): it is
+not "debt is high" or "yields are high" — it is a regime where the fiscal
+authority runs deficits without adjusting to stabilize debt (an "active"
+fiscal policy), which *constrains* the central bank's ability to set rates
+purely on inflation grounds (a "passive," accommodative monetary policy).
+Level alone (e.g. `federal_debt_pct_gdp` above) cannot answer whether that
+constraint actually exists — these four checks test the constraint more
+directly, each with real free data, computed identically in
+`mcp_server/src/lib/regimeIndicators.ts` and duplicated client-side in
+`dashboard_site/index.html`'s `renderFiscalDominanceChecklist()` (same
+duplication convention as every other MCP-mirrored formula in that file).
+
+**Deliberately not a single score.** Exactly like crash-type diagnosis, this
+is presented as separate checks with their own caveats, never averaged or
+reduced to one "fiscal dominance: yes/no" verdict — doing so would
+manufacture a precision none of these four checks individually supports.
+This is also a **structural, slow-moving** classification (3 of the 4 inputs
+update quarterly or slower) — reassess roughly quarterly in narrative, not
+as a daily flag.
+
+| Check | Data / formula | What it tests | Caveat |
+|---|---|---|---|
+| Taylor Rule gap | `DFF` (effective Fed funds) vs. a Taylor (1993) rule computed from `CPIAUCSL` YoY inflation and an Okun's-Law output-gap proxy (`UNRATE` − `NROU`, CBO's Noncyclical Rate of Unemployment) | Is the Fed's actual rate below what inflation/employment alone would justify — the most direct test of "policy is constrained," the actual definition of fiscal dominance | Assumes a 2% neutral real rate and 2% inflation target (the original paper's own constants, not fitted/calibrated) and an Okun coefficient of 2. A negative gap is *one candidate signal*, not proof — an ordinarily-dovish Fed looks identical in this one number. **`NROU` needed a `fetchLatestObservation`/`fetchFredHistory` fix** (`observation_end` pinned to today) before it could be added at all: CBO publishes this series' full projected path years into the future already populated as real (non-`.`) observations, so the standard "sort desc, take first" ingest pattern would otherwise have silently ingested a decade-future projection as "today's" reading |
+| Primary balance | `FYFSD` (OMB annual total budget balance) + `A091RC1Q027SBEA` (BEA net interest, quarterly SAAR) → `primary_balance = total_balance + net_interest` | Is the government running a deficit even *excluding* interest payments — the textbook "active fiscal policy" (non-Ricardian) signature: the fiscal authority isn't adjusting spending/taxes to stabilize debt on its own | `FYFSD` is annual cash-basis (OMB); `A091RC1Q027SBEA` is quarterly accrual-basis (BEA NIPA) — different period and accounting convention, combined as a structural approximation, not a precisely reconciled dollar figure |
+| Net interest as % of GDP | `A091RC1Q027SBEA` ÷ `GDP` (both $billions, quarterly SAAR — same units/cadence, a clean direct ratio unlike the primary-balance pairing above) | Whether debt service is becoming a rising, increasingly hard-to-reverse constraint on the budget — the mechanical channel through which debt actually limits how high the Fed can push rates | Watch the multi-quarter trend, not one reading |
+| Gold ↔ real-yield correlation | 180-calendar-day rolling Pearson correlation of gold's (`GLD`) daily % change vs. 10yr TIPS real yield's (`DFII10`) daily level change | Whether gold's normal inverse relationship with real yields (higher real yields = opportunity-cost headwind for a non-yielding asset) has broken down — the market-based "debasement hedge" tell, since gold rising *despite* rising real yields is harder to explain any other way | Correlation of day-over-day *changes*, not raw levels (a levels-based correlation over 180 days would mostly just reflect that both series trend). Not backtested/calibrated — a first cut, same tier as every divergence flag in this system. This is also the "rolling-correlation infrastructure" the architecture doc previously listed as deliberately deferred — built now because it's the most direct real-data test of this thesis's most distinctive claim |
+
+Exposed via `get_context_indicators`'s `fiscal_dominance_checklist` field
+(mcp_server) and a "Fiscal Dominance Regime Checklist" card on
+`dashboard_site`. Not persisted to `crash_checks` — computed fresh from
+`data_points` on every read, same treatment as `yield_curve_2s10s` and the
+NY Fed recession-probability field above, not a new column/migration.
+
+---
+
 ## Cross-Indicator Divergence Detection (informational only — never gates)
 
 Computed once daily by the rule engine (`rule_engine/src/divergence.ts`, not

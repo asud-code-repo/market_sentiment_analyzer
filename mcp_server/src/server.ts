@@ -13,6 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGoldRealYieldCorrelation } from "./lib/regimeIndicators.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -445,10 +446,21 @@ server.registerTool(
       "(DFF) is the Fed's own overnight rate -- distinct from the market-priced yield_curve_2s10s/" +
       "thirty_year_treasury_pct series above. federal_debt_pct_gdp (GFDEGDQ188S) is quarterly and " +
       "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
-      "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22.",
+      "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22. " +
+      "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
+      "same name for the full methodology) is 4 real-data checks for whether Fed policy is " +
+      "actually CONSTRAINED by the debt burden, not just whether debt/rates are high: a Taylor " +
+      "Rule gap (is the Fed's actual rate below what inflation/employment alone would justify), " +
+      "primary balance (is the government running a deficit even excluding interest payments), " +
+      "net-interest burden as % of GDP, and gold's rolling correlation with real yields (has the " +
+      "normal inverse relationship broken down, the debasement-hedge tell). None of these are a " +
+      "single verdict — report each number and its own caveat, do not synthesize them into one " +
+      "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
+      "narrative roughly at the cadence these series actually update (quarterly for 3 of the 4), " +
+      "not as a day-to-day flag.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -476,6 +488,10 @@ server.registerTool(
         getLatestDataPoint("PCOPPUSDM"),
         getLatestDataPoint("DFF"),
         getLatestDataPoint("GFDEGDQ188S"),
+        computeTaylorRuleGap(),
+        computePrimaryBalance(),
+        computeNetInterestBurden(),
+        computeGoldRealYieldCorrelation(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("GLD"),
@@ -625,6 +641,32 @@ server.registerTool(
       federal_debt_pct_gdp: debtToGdp && {
         ...debtToGdp,
         signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
+      },
+      // 4 real-data checks for whether Fed policy is actually CONSTRAINED by
+      // the debt burden (the Leeper fiscal/monetary regime framework's
+      // actual definition of fiscal dominance), not just whether debt/rates
+      // happen to be high. See crash-check-rules.md's "Fiscal Dominance
+      // Regime Checklist" for the full methodology and why no single number
+      // here is a verdict on its own.
+      fiscal_dominance_checklist: {
+        taylor_rule_gap: taylorRuleGap && {
+          ...taylorRuleGap,
+          signal: `Actual Fed funds ${taylorRuleGap.actual_fed_funds_pct}% vs. Taylor-rule-implied ${taylorRuleGap.taylor_implied_rate_pct}% (gap ${taylorRuleGap.gap_pct >= 0 ? "+" : ""}${taylorRuleGap.gap_pct}pts). ${taylorRuleGap.gap_pct < 0 ? "Policy is running LOOSER than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself (a genuinely dovish Fed for ordinary reasons looks identical here)." : "Policy is running at or above what the formula prescribes -- no gap-based fiscal-dominance signal from this check."}`,
+        },
+        primary_balance: primaryBalance && {
+          ...primaryBalance,
+          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B for FY ${primaryBalance.fiscal_year_as_of.slice(0, 4)}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."}`,
+        },
+        net_interest_pct_gdp: netInterestBurden && {
+          ...netInterestBurden,
+          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP as of ${netInterestBurden.as_of}. Rising here means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget -- watch the trend over several quarters, not one reading.`,
+        },
+        gold_real_yield_correlation: goldRealYieldCorrelation && {
+          ...goldRealYieldCorrelation,
+          signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
+        },
+        interpretation:
+          "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",
       },
       gold_price: goldPrice,
       bitcoin_price: bitcoinPrice,
