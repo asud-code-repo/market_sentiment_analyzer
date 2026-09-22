@@ -441,10 +441,14 @@ server.registerTool(
       "measures whether people are finding new jobs, together a fuller labor-market read than " +
       "claims alone. The two recession-probability " +
       "fields are external published models (Chauvet-Piger; NY Fed Estrella-Mishkin) — calibration " +
-      "cross-checks only, never validation of your own estimate.",
+      "cross-checks only, never validation of your own estimate. effective_fed_funds_rate_pct " +
+      "(DFF) is the Fed's own overnight rate -- distinct from the market-priced yield_curve_2s10s/" +
+      "thirty_year_treasury_pct series above. federal_debt_pct_gdp (GFDEGDQ188S) is quarterly and " +
+      "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
+      "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -470,6 +474,8 @@ server.registerTool(
         getLatestDataPoint("DFII10"),
         getLatestDataPoint("RECPROUSM156N"),
         getLatestDataPoint("PCOPPUSDM"),
+        getLatestDataPoint("DFF"),
+        getLatestDataPoint("GFDEGDQ188S"),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("GLD"),
@@ -611,6 +617,14 @@ server.registerTool(
       copper_price_usd_per_ton: copper && {
         ...copper,
         signal: "\"Dr. Copper\" -- a classic leading growth/recession-cycle indicator. Informational cross-check for the Type B (Recession) crash-type diagnosis (crash-check-rules.md Stage 1), NOT one of that diagnosis's hard trigger criteria (unemployment/Sahm/CPI, unchanged) and never part of the 6-indicator wave-authorization gate. Monthly cadence (IMF-sourced via FRED) -- a single month's move means little, read the trend.",
+      },
+      effective_fed_funds_rate_pct: dff && {
+        ...dff,
+        signal: "the Fed's own overnight rate -- distinct from yield_curve_2s10s/thirty_year_treasury_pct above, which are market-priced Treasury yields, not the Fed's target/effective rate. The anchor everything else in the curve is priced off.",
+      },
+      federal_debt_pct_gdp: debtToGdp && {
+        ...debtToGdp,
+        signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
       },
       gold_price: goldPrice,
       bitcoin_price: bitcoinPrice,

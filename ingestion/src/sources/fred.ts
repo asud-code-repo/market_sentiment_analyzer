@@ -137,6 +137,25 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // actually finding new positions. JTSHIR (BLS hires rate, via JOLTS)
   // fills that gap — confirmed real and free on FRED before adding.
   { id: "JTSHIR", unit: "percent" }, // Hires: Total Nonfarm (JOLTS) — monthly.
+
+  // 2026-09-22 addition — "fiscal dominance" viewpoint (Ritesh Jain/PineTree
+  // Macro): the thesis is that government borrowing/spending, not Fed policy,
+  // is now the dominant force on markets, and that debt-to-GDP direction
+  // matters more than any single rate level. Neither the policy-rate anchor
+  // nor the debt-load series itself was tracked anywhere before this — every
+  // yield series above (DGS2/10/30, DGS3MO) is a market-priced rate, not the
+  // Fed's own target/effective rate, and no series here spoke to the debt
+  // side of the thesis at all. Both are Tier 2/3 contextual (see
+  // crash-check-rules.md "Contextual Indicators"), not part of the 6-gate.
+  { id: "DFF", unit: "percent" },        // Effective Federal Funds Rate, daily — the Fed's
+                                          // actual overnight rate (distinct from DGS3MO, a
+                                          // market-priced T-bill yield). Chosen over the
+                                          // monthly FEDFUNDS series to match this file's
+                                          // existing daily-series cadence.
+  { id: "GFDEGDQ188S", unit: "percent" }, // Federal Debt: Total Public Debt as % of GDP,
+                                          // quarterly — the structural driver the fiscal-
+                                          // dominance thesis centers on. No free FRED series
+                                          // updates faster than quarterly for this.
 ];
 
 interface FredObservation {
