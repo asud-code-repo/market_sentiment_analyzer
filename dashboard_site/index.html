@@ -30,6 +30,13 @@
     --line-color:     #2a78d6;
     --meter-track:    #e1e0d9;
     --wave-shade:     rgba(208,59,59,0.10);
+    /* Sequential blue ramp, ordinal use (yield-curve snapshot recency) --
+       darkest = most prominent on this light surface, per the dataviz
+       skill's ordinal-ramp direction; lightest step stays no lighter than
+       step 250 (the documented recede floor for a light surface). */
+    --seq-old:        #6da7ec;
+    --seq-mid:        #2a78d6;
+    --seq-now:        #104281;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -51,6 +58,11 @@
       --line-color:     #3987e5;
       --meter-track:    #2c2c2a;
       --wave-shade:     rgba(230,103,103,0.14);
+      /* Direction flips on a dark surface: lightest step is most prominent,
+         darkest step (no darker than step 600) recedes. */
+      --seq-old:        #184f95;
+      --seq-mid:        #2a78d6;
+      --seq-now:        #86b6ef;
     }
   }
   * { box-sizing: border-box; }
@@ -252,16 +264,20 @@
   }
   .chart-endlabel { font-size: 11px; fill: var(--text-secondary); }
   .chart-wrap { position: relative; }
+  .axis-label { fill: var(--text-muted); font-size: 10.5px; }
+
+  /* Yield Curve Shape card -- taller than the shared .chart-svg (which is
+     sized for the small single-line indicator-history charts), and its
+     legend/note aren't reused anywhere else, so both get their own rules
+     rather than overloading the shared ones. */
+  .yield-curve-svg { height: 300px; }
+  .curve-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 4px; }
+  .curve-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .curve-legend-swatch { width: 14px; height: 2px; border-radius: 2px; flex-shrink: 0; }
+  .curve-note { font-size: 12px; color: var(--text-secondary); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 12px; }
   .data-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; display: none; }
   .data-table th, .data-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
   .data-table th { color: var(--text-muted); font-weight: 600; }
-
-  /* Always-visible sibling of .data-table above (that one defaults to
-     display:none — it's a chart's hidden table-view toggle). Reuses the
-     same th/td/border rules via the shared .data-table class alongside
-     this one, just without the display override. */
-  .snapshot-table { display: table; }
-  .snapshot-table td.today-row, .snapshot-table th.today-row { font-weight: 700; }
 
   /* Collapsible card sections -- 6-Indicator History defaults to collapsed
      (see BACKLOG.md's "Dashboard hierarchy reorganization" item; the page
@@ -323,8 +339,8 @@
   </div>
 
   <div class="card" id="section-bondyields">
-    <p class="eyebrow">Bond Yields &amp; Fiscal Snapshot — informational, not wave-gating</p>
-    <p class="context-note">Monthly snapshots (value as of each month's start, carried forward from the most recent prior observation) plus today's actual reading — the relationships behind a "fiscal dominance" read (debt-to-GDP and rate levels overriding the usual yield-vs-equity relationship), tracked automatically instead of by hand-picked news events. Broad Dollar Index is the Fed's 26-currency basket (DTWEXBGS) — directionally the same read as ICE's DXY, not numerically identical. Federal Debt/GDP is quarterly and lags by design (no faster free source exists).</p>
+    <p class="eyebrow">Yield Curve Shape — informational, not wave-gating</p>
+    <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually above and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
     <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
   </div>
 
@@ -680,20 +696,24 @@ function renderContextIndicators(latest) {
     .join("");
 }
 
-// Bond Yields & Fiscal Snapshot — the relationships a "fiscal dominance"
-// hand-curated yield-curve table typically shows (2Y/10Y/30Y + Fed Funds +
-// dollar index + gold + debt-to-GDP, side by side across dates), generated
-// from this system's own live data on fixed monthly anchors rather than
-// hand-picked FOMC/news-event dates — no event metadata exists here to
-// label rows by news the way a manually-built table would.
-const BOND_YIELD_SNAPSHOT_SERIES = [
-  { id: "DGS2", label: "2Y Yield", format: (v) => `${v.toFixed(2)}%` },
-  { id: "DGS10", label: "10Y Yield", format: (v) => `${v.toFixed(2)}%` },
-  { id: "DGS30", label: "30Y Yield", format: (v) => `${v.toFixed(2)}%` },
-  { id: "DFF", label: "Effective Fed Funds", format: (v) => `${v.toFixed(2)}%` },
-  { id: "DTWEXBGS", label: "Broad Dollar Index", format: (v) => v.toFixed(2) },
-  { id: "GLD", label: "Gold (GLD)", format: (v) => `$${v.toFixed(2)}` },
-  { id: "GFDEGDQ188S", label: "Federal Debt/GDP", format: (v) => `${v.toFixed(1)}%` },
+// Yield Curve Shape — maturity on the x-axis, yield on the y-axis, 3
+// snapshot dates overlaid, so a steepening/flattening/inversion shows up as
+// a shape change instead of something you'd have to scan across table
+// columns to notice. Replaced the prior monthly-snapshot table 2026-09-22:
+// that table's other columns (Fed Funds, Broad Dollar Index, Gold,
+// Federal Debt/GDP) are all already single-value context cards elsewhere on
+// this dashboard, and the curve SHAPE was the one thing the table couldn't
+// show at all. Real prototype data (verified against this exact database
+// before building) turned up a real finding a table would have buried: the
+// curve shifted up in level over 6 months but the 2s10s spread actually
+// NARROWED — a flattening move, not the steepening a "bond vigilante"
+// narrative would predict — which is why the note below is computed live,
+// not just decorative.
+const YIELD_CURVE_TENORS = [
+  { id: "DGS3MO", label: "3M" },
+  { id: "DGS2", label: "2Y" },
+  { id: "DGS10", label: "10Y" },
+  { id: "DGS30", label: "30Y" },
 ];
 
 // Most recent value at-or-before a given date, from a series sorted
@@ -710,14 +730,14 @@ function snapshotValueOnOrBefore(sortedSeries, onOrBeforeDate) {
   return result;
 }
 
-async function renderBondYieldSnapshot() {
+async function renderYieldCurveChart() {
   const wrap = document.getElementById("bondyields-wrap");
   try {
     const cutoff = new Date();
-    cutoff.setUTCDate(cutoff.getUTCDate() - 400); // covers 6 monthly anchors + buffer for GFDEGDQ188S's quarterly cadence
+    cutoff.setUTCDate(cutoff.getUTCDate() - 200); // covers the 6-months-ago anchor plus buffer
     const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-    const seriesIds = BOND_YIELD_SNAPSHOT_SERIES.map((s) => s.id);
+    const seriesIds = YIELD_CURVE_TENORS.map((t) => t.id);
     const rows = await fetchAllFromSupabase(
       `data_points?select=series_id,observation_date,value&series_id=in.(${seriesIds.join(",")})&observation_date=gte.${cutoffStr}&order=observation_date.asc,series_id.asc`,
     );
@@ -729,55 +749,139 @@ async function renderBondYieldSnapshot() {
     }
 
     const now = new Date();
-    const anchorDates = [];
-    for (let i = 5; i >= 1; i--) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-      anchorDates.push(d.toISOString().slice(0, 10));
-    }
-
-    const tableRows = anchorDates.map((date) => ({
-      label: date,
-      isToday: false,
-      values: BOND_YIELD_SNAPSHOT_SERIES.map((s) => snapshotValueOnOrBefore(bySeriesId.get(s.id) || [], date)),
-    }));
-    // "Today" uses each series' true latest observation, not month-anchored
-    // like the rows above -- matches the source image's own final "Today" row.
     const todayStr = now.toISOString().slice(0, 10);
-    tableRows.push({
-      label: "Today",
-      isToday: true,
-      values: BOND_YIELD_SNAPSHOT_SERIES.map((s) => snapshotValueOnOrBefore(bySeriesId.get(s.id) || [], todayStr)),
-    });
+    const threeMoAgo = new Date(now); threeMoAgo.setUTCMonth(threeMoAgo.getUTCMonth() - 3);
+    const sixMoAgo = new Date(now); sixMoAgo.setUTCMonth(sixMoAgo.getUTCMonth() - 6);
 
-    if (tableRows.every((r) => r.values.every((v) => v == null))) {
+    const snapshots = [
+      { label: "6 months ago", date: sixMoAgo.toISOString().slice(0, 10), role: "old" },
+      { label: "3 months ago", date: threeMoAgo.toISOString().slice(0, 10), role: "mid" },
+      { label: "Today", date: todayStr, role: "now" },
+    ].map((snap) => ({
+      ...snap,
+      values: YIELD_CURVE_TENORS.map((t) => snapshotValueOnOrBefore(bySeriesId.get(t.id) || [], snap.date)),
+    }));
+
+    if (snapshots.every((s) => s.values.every((v) => v == null))) {
       wrap.innerHTML = '<p class="loading">No data yet — run the backfill workflow to populate history for these series.</p>';
       return;
     }
 
-    wrap.innerHTML = `
-      <table class="data-table snapshot-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            ${BOND_YIELD_SNAPSHOT_SERIES.map((s) => `<th>${s.label}</th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRows
-            .map(
-              (r) => `
-            <tr>
-              <td${r.isToday ? ' class="today-row"' : ""}>${r.label}</td>
-              ${BOND_YIELD_SNAPSHOT_SERIES.map((s, i) => `<td${r.isToday ? ' class="today-row"' : ""}>${r.values[i] != null ? s.format(r.values[i]) : "—"}</td>`).join("")}
-            </tr>
-          `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    `;
+    drawYieldCurveChart(wrap, snapshots);
   } catch (err) {
-    wrap.innerHTML = `<p class="loading">Failed to load bond yield snapshot: ${err.message}</p>`;
+    wrap.innerHTML = `<p class="loading">Failed to load the yield curve: ${err.message}</p>`;
+  }
+}
+
+function drawYieldCurveChart(wrap, snapshots) {
+  const W = 680, H = 300, padL = 46, padR = 60, padT = 20, padB = 36;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = YIELD_CURVE_TENORS.length;
+
+  const allValues = snapshots.flatMap((s) => s.values).filter((v) => v != null);
+  const rawMin = Math.min(...allValues), rawMax = Math.max(...allValues);
+  const minV = Math.floor(rawMin * 2) / 2 - 0.5, maxV = Math.ceil(rawMax * 2) / 2 + 0.5;
+  const x = (i) => padL + (i / (n - 1)) * plotW;
+  const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * plotH;
+
+  const roleColor = { old: "var(--seq-old)", mid: "var(--seq-mid)", now: "var(--seq-now)" };
+  const roleWidth = { old: 2, mid: 2, now: 2.5 };
+
+  const gridSteps = [];
+  for (let v = minV; v <= maxV + 0.001; v += 0.5) gridSteps.push(Math.round(v * 100) / 100);
+  const gridLines = gridSteps
+    .map((v) => `<line class="chart-grid-line" x1="${padL}" x2="${W - padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" />
+      <text class="axis-label" x="${padL - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v.toFixed(1)}%</text>`)
+    .join("");
+  const xLabels = YIELD_CURVE_TENORS.map((t, i) => `<text class="axis-label" x="${x(i).toFixed(1)}" y="${H - padB + 20}" text-anchor="middle">${t.label}</text>`).join("");
+
+  const lines = snapshots
+    .filter((s) => s.values.every((v) => v != null))
+    .map((snap) => {
+      // stroke/stroke-width/fill all set via the style attribute for the
+      // same reason as hoverDots' fill above -- .chart-line and
+      // .chart-endlabel each hard-code a single shared color via a CSS
+      // class rule, which beats a bare presentation attribute; each of the
+      // 3 snapshot lines needs its own color, so the class only supplies
+      // stroke-linecap/fill:none-equivalent defaults here, not the color.
+      const d = snap.values.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+      const dots = snap.values.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4" fill="${roleColor[snap.role]}" stroke="var(--surface-1)" stroke-width="1.5" />`).join("");
+      const lastV = snap.values[snap.values.length - 1];
+      const endLabel = `<text class="chart-endlabel" x="${x(n - 1) + 9}" y="${(y(lastV) + 4).toFixed(1)}" style="fill:${roleColor[snap.role]};">${lastV.toFixed(2)}%</text>`;
+      return `<path class="chart-line" d="${d}" style="stroke:${roleColor[snap.role]}; stroke-width:${roleWidth[snap.role]}px; fill:none;" />${dots}${endLabel}`;
+    })
+    .join("");
+
+  const hoverGuide = `<line class="chart-crosshair" id="curve-guide" y1="${padT}" y2="${H - padB}" style="display:block; opacity:0;" />`;
+  // fill set via the style attribute, not a bare fill="" attribute -- the
+  // shared .chart-dot class rule (fill: var(--line-color)) would otherwise
+  // win over a presentation attribute, since a CSS class selector beats a
+  // plain SVG attribute in the cascade, and each snapshot needs its own color.
+  const hoverDots = snapshots.map((snap, si) => `<circle class="chart-dot" id="curve-hdot-${si}" r="5.5" style="display:block; opacity:0; fill:${roleColor[snap.role]};" />`).join("");
+
+  wrap.innerHTML = `
+    <div class="chart-wrap">
+      <svg class="chart-svg yield-curve-svg" id="curve-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        ${gridLines}${xLabels}${lines}${hoverGuide}${hoverDots}
+      </svg>
+      <div class="chart-tooltip" id="curve-tooltip"></div>
+    </div>
+    <div class="curve-legend" id="curve-legend"></div>
+    <div class="curve-note" id="curve-note"></div>
+  `;
+
+  const svg = document.getElementById("curve-svg");
+  const tooltip = document.getElementById("curve-tooltip");
+  const guide = document.getElementById("curve-guide");
+
+  svg.addEventListener("mousemove", (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((evt.clientX - rect.left) / rect.width) * W;
+    let nearest = 0, bestDist = Infinity;
+    YIELD_CURVE_TENORS.forEach((_, i) => {
+      const d = Math.abs(x(i) - px);
+      if (d < bestDist) { bestDist = d; nearest = i; }
+    });
+    guide.setAttribute("x1", x(nearest).toFixed(1));
+    guide.setAttribute("x2", x(nearest).toFixed(1));
+    guide.style.opacity = 1;
+
+    let rows = "";
+    snapshots.forEach((snap, si) => {
+      const v = snap.values[nearest];
+      const dot = document.getElementById(`curve-hdot-${si}`);
+      if (v == null) { dot.style.opacity = 0; return; }
+      dot.setAttribute("cx", x(nearest).toFixed(1));
+      dot.setAttribute("cy", y(v).toFixed(1));
+      dot.style.opacity = 1;
+      rows += `<div style="display:flex; justify-content:space-between; gap:14px;"><span>${snap.label}</span><b>${v.toFixed(2)}%</b></div>`;
+    });
+
+    tooltip.innerHTML = `<div style="color:var(--text-muted); margin-bottom:4px;">${YIELD_CURVE_TENORS[nearest].label} yield</div>${rows}`;
+    tooltip.style.left = `${(x(nearest) / W) * 100}%`;
+    tooltip.style.top = `${((padT - 6) / H) * 100}%`;
+    tooltip.style.transform = "translate(-50%, -100%)";
+    tooltip.style.display = "block";
+  });
+  svg.addEventListener("mouseleave", () => {
+    guide.style.opacity = 0;
+    tooltip.style.display = "none";
+    snapshots.forEach((_, si) => { document.getElementById(`curve-hdot-${si}`).style.opacity = 0; });
+  });
+
+  document.getElementById("curve-legend").innerHTML = snapshots
+    .map((s) => `<div class="curve-legend-item"><span class="curve-legend-swatch" style="background:${roleColor[s.role]}"></span>${s.label}</div>`)
+    .join("");
+
+  const noteEl = document.getElementById("curve-note");
+  const oldIdx = snapshots.find((s) => s.role === "old"), nowIdx = snapshots.find((s) => s.role === "now");
+  const spreadOld = oldIdx.values[1] != null && oldIdx.values[2] != null ? oldIdx.values[2] - oldIdx.values[1] : null;
+  const spreadNow = nowIdx.values[1] != null && nowIdx.values[2] != null ? nowIdx.values[2] - nowIdx.values[1] : null;
+  if (spreadOld != null && spreadNow != null) {
+    const direction = spreadNow > spreadOld ? "steepened" : spreadNow < spreadOld ? "narrowed (flattened)" : "held roughly flat";
+    noteEl.innerHTML = `2s10s spread ${direction}: ${spreadOld >= 0 ? "+" : ""}${spreadOld.toFixed(2)}pts &rarr; ${spreadNow >= 0 ? "+" : ""}${spreadNow.toFixed(2)}pts over the last 6 months.`;
+  } else {
+    noteEl.remove();
   }
 }
 
@@ -806,7 +910,7 @@ function pearsonCorrelation(xs, ys) {
 // Deliberately self-contained -- fetches its own "latest" values rather
 // than reusing the context-indicators card's latestBySeriesId, which is
 // scoped inside that card's own try block and isn't reachable here. Same
-// isolation principle as renderBondYieldSnapshot: a context-indicators
+// isolation principle as renderYieldCurveChart: a context-indicators
 // fetch failure must not take this card down too.
 async function renderFiscalDominanceChecklist() {
   const wrap = document.getElementById("fiscaldominance-wrap");
@@ -1948,7 +2052,7 @@ async function main() {
     // Isolated: independent of the context-indicators fetch above (its own
     // query shape needs history, not just latest-per-series) and of
     // everything below it.
-    renderBondYieldSnapshot();
+    renderYieldCurveChart();
     renderFiscalDominanceChecklist();
 
     // Isolated: a sector-rotation fetch failure shouldn't take down date
