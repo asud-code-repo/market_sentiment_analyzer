@@ -202,6 +202,24 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "FGRECPT", unit: "usd_billions_saar" }, // Federal Government Current Receipts (BEA
                                           // NIPA, total revenue — tax + social-insurance +
                                           // other), quarterly SAAR.
+
+  // 2026-09-22 additions — external review (Grok), the "macro regime
+  // detection" suggestions. Two of six checked out as real free FRED
+  // series; MOVE index and CDS spreads were investigated and rejected (no
+  // reliable free source — see BACKLOG.md/crash-check-rules.md), GPR index
+  // and TIC foreign-holdings data are real but not FRED-shaped (see
+  // gpr.ts/tic.ts), and the "term premium" ask turned out to already have
+  // a free FRED-hosted model, just not the specific one (ACM) first assumed.
+  { id: "WALCL", unit: "usd_millions" },  // Fed's consolidated balance sheet (H.4.1 release),
+                                          // weekly. The QE/QT-size series this system had no
+                                          // proxy for at all before this.
+  { id: "THREEFYTP10", unit: "percent" }, // 10yr term premium — Kim-Wright (2005) three-factor
+                                          // model, hosted directly on FRED, daily. NOT the NY
+                                          // Fed's own ACM model (Adrian-Crump-Moench), which
+                                          // isn't published as a clean downloadable series —
+                                          // this is the closest free, actively-updated,
+                                          // published academic alternative; correct attribution
+                                          // matters here, same as RECPROUSM156N above.
 ];
 
 interface FredObservation {

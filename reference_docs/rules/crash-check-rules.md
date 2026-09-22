@@ -730,6 +730,53 @@ NY Fed recession-probability field above, not a new column/migration.
 
 ---
 
+## Macro Regime Signals (informational only — never gates)
+
+Added 2026-09-22, from an external review proposing a shift toward
+macro-regime-detection tooling (HMM/GMM classifiers, a hand-built ECB CISS
+stress index, the Macrosynergy framework). Those three are real, serious
+statistical/econometric modeling projects — comparable in scope to the
+Statistical Hazard Model below, which only earned its place on this
+dashboard after an offline walk-forward-validated, isotonic-calibrated
+research pipeline, not something to bolt on casually. **Not built** — a
+candidate for a dedicated future research project, not a checklist item.
+What *did* check out as real, free, verifiable data — six specific
+suggestions, each investigated the same way every other series in this
+file was before being trusted:
+
+| Signal | Source | What it measures | Caveat |
+|---|---|---|---|
+| Fed balance sheet (`fed_balance_sheet_usd_millions`) | FRED `WALCL` (H.4.1 release), weekly | QE/QT size — this system had no proxy for balance-sheet expansion/contraction at all before this | Read the multi-month trend, not one week's move |
+| 10yr term premium (`term_premium_10y_pct`) | FRED `THREEFYTP10`, daily | Compensation investors demand for duration risk, separate from rate-expectations | **NOT the NY Fed's ACM model** (Adrian-Crump-Moench) — that one isn't published as a clean downloadable series, only as an interactive tool with no confirmed direct CSV export. This is Kim-Wright (2005), a different published academic three-factor term-structure model, hosted directly on FRED. Correct attribution matters here, same as `RECPROUSM156N` above |
+| Foreign Treasury holdings (`foreign_treasury_holdings`) | Treasury TIC System, Table 5 ("Major Foreign Holders"), a stable tab-delimited `.txt` URL (not FRED — Treasury publishes this directly), monthly, ~2mo lag | Total foreign holdings and the subset held by foreign *official* institutions (central banks/governments, not private investors) — the "who's still buying the bonds" question from the original fiscal-dominance discussion | The published file carries only a trailing ~13 months of columns, not full history (a separate MFH-history archive has more, not pulled here). One month's move can be FX-valuation noise (holdings are marked at market value), not actual buying/selling — read the multi-month trend |
+| Geopolitical Risk Index (`geopolitical_risk_index`) | Caldara & Iacoviello (Federal Reserve Board), a direct `.xls` export, monthly | A text-parsing tally of geopolitical-tension coverage across 10 major newspapers, back to 1985 for the headline `GPR` column used here (the file's pre-1985 columns are a differently-sourced historical variant, not fetched) | Elevated/spiking = heightened geopolitical tension; read alongside, not as a substitute for, actual news/Fed-communication research |
+| Stock-bond correlation (`stock_bond_correlation`) | Derived: `SPY` (Massive) vs. a bond-price proxy built from `DGS10` (FRED), 180-day rolling, day-over-day changes | The classic 60/40-portfolio diversification signal — stocks and bonds normally move oppositely (equity selloffs drive flight-to-safety bond buying) | The proxy negates DGS10's daily change (yield falling = bond price proxy rising) so the sign convention matches the commonly-quoted stock-*bond-price* correlation, not a "stock vs. yield" relationship, which would read backwards. 2022 is the well-known real case of this flipping positive (inflation drove both risk assets down together) — that flip is the actual regime-shift signature this check is watching for. Not backtested/calibrated — a first cut, same tier as every other rolling-correlation check in this system |
+
+**Investigated and rejected — real gaps, not oversights:**
+- **MOVE Index** (bond-market volatility, the fixed-income analog to VIX):
+  no reliable free source found. ICE's own MOVE index has no free FRED
+  mirror; Yahoo Finance's `^MOVE` ticker only works through unofficial,
+  undocumented endpoints (Yahoo's official API was discontinued in 2017
+  and never restored) — exactly the kind of fragile dependency this
+  project has avoided elsewhere (see `BAMLH0A0HYM2`'s own documented ICE-
+  licensing quirks). A genuinely free, stable source would make this a
+  strong addition (VIX-vs-HY already has a divergence flag; VIX-vs-MOVE
+  would fit the same pattern) — revisit if one surfaces.
+- **CDS spreads** (sovereign/corporate default risk): re-confirmed no free
+  source exists. This was already investigated and rejected once (see the
+  "Missing indicators" review status table above) — an external review
+  suggested "World Bank Open Data / BIS Data API" as a source, but neither
+  publishes live, queryable individual CDS spread series for free as far
+  as could be verified; BIS's own published statistics are aggregated and
+  lagged, not the underlying series this system would need.
+
+Exposed via `get_context_indicators`'s `macro_regime_signals` field
+(mcp_server) and 6 new cards in `dashboard_site`'s Contextual Indicators
+grid. Same "report each on its own, never synthesize into one score" rule
+as the Fiscal Dominance Regime Checklist above.
+
+---
+
 ## Cross-Indicator Divergence Detection (informational only — never gates)
 
 Computed once daily by the rule engine (`rule_engine/src/divergence.ts`, not

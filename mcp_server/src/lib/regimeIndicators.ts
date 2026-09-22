@@ -206,47 +206,118 @@ function pearsonCorrelation(xs: number[], ys: number[]): number | null {
   return num / Math.sqrt(denomX * denomY);
 }
 
-/**
- * Rolling correlation of gold's daily % change vs. 10yr TIPS real yield's
- * daily level change, over a trailing 180-calendar-day window -- DAY-OVER-
- * DAY CHANGES, not raw levels, since a levels-based correlation over a
- * 180-day window would mostly just reflect that both series trend, not
- * whether they move together day to day. This is exactly the "rolling-
- * correlation infrastructure" the architecture doc previously listed as
- * deliberately deferred, not started -- built now because it's the most
- * direct real-data test of gold's debasement-hedge behavior, one of the
- * fiscal-dominance thesis's most distinctive claims.
- */
-export async function computeGoldRealYieldCorrelation(): Promise<GoldRealYieldCorrelationResult | null> {
-  const cutoff = subtractDays(new Date().toISOString().slice(0, 10), CORRELATION_WINDOW_DAYS);
-  const [goldHistory, realYieldHistory] = await Promise.all([
-    fetchSeriesHistorySince("GLD", cutoff),
-    fetchSeriesHistorySince("DFII10", cutoff),
-  ]);
-  if (goldHistory.length < 10 || realYieldHistory.length < 10) return null;
+// "pct": day-over-day % change (for a price-like series). "level": raw
+// day-over-day change (for a yield/rate-like series already in % units).
+// "negLevel": the negated day-over-day change -- used to turn a yield
+// series into a bond-PRICE proxy (yield falls => price proxy rises), so a
+// correlation against it reads the same direction convention as the
+// commonly-quoted "stock-bond correlation" statistic (price vs. price),
+// not the differently-signed "stock vs. yield" relationship.
+type ChangeKind = "pct" | "level" | "negLevel";
 
-  const realYieldByDate = new Map(realYieldHistory.map((p) => [p.date, p.value]));
-  const goldChanges: number[] = [];
-  const realYieldChanges: number[] = [];
-  for (let i = 1; i < goldHistory.length; i++) {
-    const prevYield = realYieldByDate.get(goldHistory[i - 1].date);
-    const currYield = realYieldByDate.get(goldHistory[i].date);
-    if (prevYield === undefined || currYield === undefined) continue;
-    const prevGold = goldHistory[i - 1].value;
-    if (prevGold === 0) continue;
-    goldChanges.push((goldHistory[i].value - prevGold) / prevGold);
-    realYieldChanges.push(currYield - prevYield);
+function changeBetween(prev: number, curr: number, kind: ChangeKind): number | null {
+  if (kind === "pct") return prev === 0 ? null : (curr - prev) / prev;
+  const change = curr - prev;
+  return kind === "negLevel" ? -change : change;
+}
+
+export interface RollingCorrelationResult {
+  correlation: number;
+  window_calendar_days: number;
+  observation_count: number;
+  as_of: string;
+}
+
+/**
+ * Rolling correlation between two series' day-over-day changes (never raw
+ * levels -- a levels-based correlation over a multi-month window would
+ * mostly just reflect that both series trend, not whether they move
+ * together day to day). Walks series A's own consecutive observation
+ * dates (not a fixed calendar grid) and looks up series B's value at each
+ * of those same two dates -- skipping any date B has no observation for,
+ * rather than assuming both series publish on identical days. This is the
+ * "rolling-correlation infrastructure" the architecture doc previously
+ * listed as deliberately deferred, not started -- generalized from the
+ * gold/real-yield check (built 2026-09-22) into a reusable helper the same
+ * day, for the stock-bond correlation check below.
+ */
+async function computeRollingCorrelation(
+  seriesAId: string,
+  seriesAKind: ChangeKind,
+  seriesBId: string,
+  seriesBKind: ChangeKind,
+  windowDays: number,
+): Promise<RollingCorrelationResult | null> {
+  const cutoff = subtractDays(new Date().toISOString().slice(0, 10), windowDays);
+  const [historyA, historyB] = await Promise.all([
+    fetchSeriesHistorySince(seriesAId, cutoff),
+    fetchSeriesHistorySince(seriesBId, cutoff),
+  ]);
+  if (historyA.length < 10 || historyB.length < 10) return null;
+
+  const bByDate = new Map(historyB.map((p) => [p.date, p.value]));
+  const changesA: number[] = [];
+  const changesB: number[] = [];
+  const alignedDates: string[] = [];
+  for (let i = 1; i < historyA.length; i++) {
+    const prevDateA = historyA[i - 1].date;
+    const currDateA = historyA[i].date;
+    const prevB = bByDate.get(prevDateA);
+    const currB = bByDate.get(currDateA);
+    if (prevB === undefined || currB === undefined) continue;
+
+    const changeA = changeBetween(historyA[i - 1].value, historyA[i].value, seriesAKind);
+    const changeB = changeBetween(prevB, currB, seriesBKind);
+    if (changeA === null || changeB === null) continue;
+
+    changesA.push(changeA);
+    changesB.push(changeB);
+    alignedDates.push(currDateA);
   }
 
-  const correlation = pearsonCorrelation(goldChanges, realYieldChanges);
-  if (correlation === null) return null;
+  const correlation = pearsonCorrelation(changesA, changesB);
+  if (correlation === null || alignedDates.length === 0) return null;
 
   return {
     correlation: Math.round(correlation * 1000) / 1000,
-    window_calendar_days: CORRELATION_WINDOW_DAYS,
-    observation_count: goldChanges.length,
-    as_of: goldHistory[goldHistory.length - 1].date,
+    window_calendar_days: windowDays,
+    observation_count: alignedDates.length,
+    as_of: alignedDates[alignedDates.length - 1],
+  };
+}
+
+export async function computeGoldRealYieldCorrelation(): Promise<GoldRealYieldCorrelationResult | null> {
+  const result = await computeRollingCorrelation("GLD", "pct", "DFII10", "level", CORRELATION_WINDOW_DAYS);
+  if (!result) return null;
+  return {
+    ...result,
     typical_historical_note:
       "Gold and real yields typically run modestly negative -- higher real yields raise the opportunity cost of holding a non-yielding asset. A correlation near zero or positive is the more distinctive fiscal-dominance/debasement-hedge signature: gold rising for reasons unrelated to (or despite) the usual real-yield relationship. Not backtested/calibrated -- a first cut, same tier as every other divergence-style read in this system.",
+  };
+}
+
+export interface StockBondCorrelationResult extends RollingCorrelationResult {
+  typical_historical_note: string;
+}
+
+/**
+ * SPY's daily % change vs. a bond-PRICE proxy built from DGS10 (yield
+ * change negated -- yield falling means bond prices rose, so this reads in
+ * the same direction convention as the commonly-quoted "stock-bond
+ * correlation," not "stock vs. yield"). Added 2026-09-22 (external
+ * review): the classic 60/40-portfolio diversification signal -- stocks
+ * and bonds typically move oppositely (negative correlation: equity
+ * selloffs drive flight-to-safety bond buying). 2022 was the well-known
+ * real-world case where this flipped positive (inflation drove both risk
+ * assets down together) -- exactly the "stocks and bonds selling off
+ * together" regime-shift signature a debt/inflation crisis would produce.
+ */
+export async function computeStockBondCorrelation(): Promise<StockBondCorrelationResult | null> {
+  const result = await computeRollingCorrelation("SPY", "pct", "DGS10", "negLevel", CORRELATION_WINDOW_DAYS);
+  if (!result) return null;
+  return {
+    ...result,
+    typical_historical_note:
+      "Stocks and bonds typically run negative -- equity selloffs usually drive flight-to-safety bond buying (the classic 60/40 diversification benefit). A correlation near zero or positive is the 2022-style regime-shift signature: both risk assets selling off together, historically seen when inflation/rate concerns dominate over growth concerns. Not backtested/calibrated -- a first cut, same tier as every other divergence-style read in this system.",
   };
 }

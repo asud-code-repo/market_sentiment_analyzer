@@ -628,6 +628,32 @@ const CONTEXT_INFO = {
     format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}% / 7d`,
     signal: () => "Tracked for awareness only — NOT a hedge. Fell more than equities in both real crashes tracked here: -40 to -58% vs S&P -30 to -35% in March 2020; -77% vs S&P -25%/Nasdaq -33% in 2022.",
   },
+  walcl: {
+    label: "Fed Balance Sheet",
+    format: (v) => `$${(v / 1e6).toFixed(2)}T`,
+    signal: () => "Fed's consolidated balance sheet (H.4.1 release), weekly. Rising = QE/balance-sheet expansion; falling = QT. Read the multi-month trend, not one week's move.",
+  },
+  threefytp10: {
+    label: "10yr Term Premium",
+    format: (v) => `${v.toFixed(2)}%`,
+    signal: () => "Kim-Wright (2005) three-factor model — NOT the NY Fed's own ACM model (not published as a clean downloadable series); a comparable, actively-updated, FRED-hosted academic alternative. Rising = investors demanding more compensation to hold long-dated debt.",
+  },
+  ticForeignHoldings: {
+    label: "Foreign Treasury Holdings (Total / Official)",
+    format: (v) => `$${(v.total / 1000).toFixed(2)}T / $${(v.official / 1000).toFixed(2)}T`,
+    signal: () => "Treasury TIC data (Table 5, Major Foreign Holders), monthly, ~2mo lag. \"Official\" is the subset held by foreign central banks/governments — sustained selling here is the \"who's still buying the bonds\" fiscal-stress signal. Read the multi-month trend; one month can be FX-valuation noise, not actual buying/selling.",
+  },
+  gprIndex: {
+    label: "Geopolitical Risk Index",
+    format: (v) => v.toFixed(1),
+    signal: () => "Caldara & Iacoviello (Federal Reserve Board) — a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Elevated/spiking = heightened geopolitical tension.",
+  },
+  stockBondCorrelation: {
+    label: "Stock-Bond Correlation (180d)",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v >= -0.1 ? "Near zero or positive — the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or broken down, the 2022-style regime-shift signature: both risk assets selling off together." : "Still meaningfully negative — stocks and bonds behaving normally, no regime-shift signal here."),
+    notable: (v) => v >= -0.1,
+  },
 };
 
 /**
@@ -686,6 +712,14 @@ function renderContextIndicators(latest) {
     smallCapBreadth: latest.SMALL_CAP_BREADTH_SPREAD_7D,
     gold: latest.GOLD_PCT_CHANGE_7D,
     bitcoin: latest.BITCOIN_PCT_CHANGE_7D,
+    walcl: latest.WALCL,
+    threefytp10: latest.THREEFYTP10,
+    ticForeignHoldings:
+      latest.TIC_FOREIGN_HOLDINGS_TOTAL != null && latest.TIC_FOREIGN_OFFICIAL_HOLDINGS != null
+        ? { total: latest.TIC_FOREIGN_HOLDINGS_TOTAL, official: latest.TIC_FOREIGN_OFFICIAL_HOLDINGS }
+        : null,
+    gprIndex: latest.GPR_INDEX,
+    stockBondCorrelation: latest.STOCK_BOND_CORRELATION_180D,
   };
 
   grid.innerHTML = Object.entries(CONTEXT_INFO)
@@ -2027,7 +2061,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough
@@ -2106,6 +2140,45 @@ async function main() {
         if (bitcoinPct7d != null) latestBySeriesId.BITCOIN_PCT_CHANGE_7D = Math.round(bitcoinPct7d * 100) / 100;
       } catch (err) {
         // Isolated: no BTC history yet shouldn't take down anything else.
+      }
+
+      // Stock-bond correlation, added 2026-09-22 (external review) --
+      // mirrors mcp_server/src/lib/regimeIndicators.ts's
+      // computeStockBondCorrelation() exactly (duplicated, not shared,
+      // same convention as this file's other MCP-mirrored logic). SPY's
+      // daily % change vs. a bond-PRICE proxy (negated DGS10 daily
+      // change -- yield falling means bond prices rose), so the sign
+      // convention matches the commonly-quoted "stock-bond correlation"
+      // (price vs. price), not "stock vs. yield". pearsonCorrelation() is
+      // defined above for the Fiscal Dominance Checklist's gold/real-yield
+      // check -- reused here, not redefined.
+      try {
+        const corrCutoff = new Date();
+        corrCutoff.setUTCDate(corrCutoff.getUTCDate() - 180);
+        const corrCutoffStr = corrCutoff.toISOString().slice(0, 10);
+        const [spyHistory, dgs10History] = await Promise.all([
+          fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.SPY&observation_date=gte.${corrCutoffStr}&order=observation_date.asc`),
+          fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.DGS10&observation_date=gte.${corrCutoffStr}&order=observation_date.asc`),
+        ]);
+        if (spyHistory.length >= 10 && dgs10History.length >= 10) {
+          const dgs10ByDate = new Map(dgs10History.map((r) => [r.observation_date, r.value]));
+          const spyChanges = [], bondPriceProxyChanges = [];
+          for (let i = 1; i < spyHistory.length; i++) {
+            const prevYield = dgs10ByDate.get(spyHistory[i - 1].observation_date);
+            const currYield = dgs10ByDate.get(spyHistory[i].observation_date);
+            if (prevYield == null || currYield == null) continue;
+            const prevSpy = spyHistory[i - 1].value;
+            if (prevSpy === 0) continue;
+            spyChanges.push((spyHistory[i].value - prevSpy) / prevSpy);
+            bondPriceProxyChanges.push(-(currYield - prevYield));
+          }
+          const correlation = pearsonCorrelation(spyChanges, bondPriceProxyChanges);
+          if (correlation !== null) {
+            latestBySeriesId.STOCK_BOND_CORRELATION_180D = Math.round(correlation * 1000) / 1000;
+          }
+        }
+      } catch (err) {
+        // Isolated: no SPY/DGS10 history yet shouldn't take down anything else.
       }
 
       renderContextIndicators(latestBySeriesId);

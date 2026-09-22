@@ -6,6 +6,8 @@ import { fetchCboe } from "./sources/cboe.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
 import { fetchMassive } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
+import { fetchGpr } from "./sources/gpr.js";
+import { fetchTic } from "./sources/tic.js";
 
 interface SourceResult {
   name: string;
@@ -45,6 +47,15 @@ async function main() {
     // Best-effort like Massive: sector-rotation flow data is supplementary
     // context (see ssga.ts), not one of the 6 gating indicators.
     runSource("SSGA", false, fetchSsga),
+    // Best-effort: neither is one of the 6 gating indicators, and both are
+    // external sites outside this project's control (not FRED/a
+    // Treasury-run API), same reliability tier as CBOE/Polymarket above.
+    // Both return their full available window every run (GPR's full
+    // 1900-present history, TIC's trailing ~13 months) rather than just
+    // the latest point -- see gpr.ts/tic.ts for why that's fine to
+    // re-upsert daily at this data size.
+    runSource("GPR", false, fetchGpr),
+    runSource("TIC", false, fetchTic),
   ]);
 
   const requiredFailures = results.filter((r) => r.error && r.required);

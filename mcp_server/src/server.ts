@@ -13,7 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGoldRealYieldCorrelation } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGoldRealYieldCorrelation, computeStockBondCorrelation } from "./lib/regimeIndicators.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -454,10 +454,18 @@ server.registerTool(
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
       "narrative roughly at the cadence these series actually update (quarterly for 3 of the 4), " +
-      "not as a day-to-day flag.",
+      "not as a day-to-day flag. macro_regime_signals (added 2026-09-22, external review) is " +
+      "broader macro context, not specific to fiscal dominance: fed_balance_sheet_usd_millions " +
+      "(WALCL, weekly), term_premium_10y_pct (Kim-Wright model, NOT the NY Fed's ACM model -- see " +
+      "its own signal field), foreign_treasury_holdings (Treasury TIC data, monthly, ~2mo lag -- " +
+      "the 'who's still buying the bonds' signal), geopolitical_risk_index (Caldara-Iacoviello, " +
+      "monthly), and stock_bond_correlation (SPY vs. a DGS10-derived bond-price proxy, 180-day " +
+      "rolling -- the classic 60/40 diversification signal; a break from its usual negative " +
+      "correlation is the 2022-style regime-shift signature). Same rule as fiscal_dominance_" +
+      "checklist: report each on its own, never synthesize into one score.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -485,10 +493,16 @@ server.registerTool(
         getLatestDataPoint("PCOPPUSDM"),
         getLatestDataPoint("DFF"),
         getLatestDataPoint("GFDEGDQ188S"),
+        getLatestDataPoint("WALCL"),
+        getLatestDataPoint("THREEFYTP10"),
+        getLatestDataPoint("TIC_FOREIGN_HOLDINGS_TOTAL"),
+        getLatestDataPoint("TIC_FOREIGN_OFFICIAL_HOLDINGS"),
+        getLatestDataPoint("GPR_INDEX"),
         computeTaylorRuleGap(),
         computePrimaryBalance(),
         computeNetInterestBurden(),
         computeGoldRealYieldCorrelation(),
+        computeStockBondCorrelation(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("GLD"),
@@ -664,6 +678,34 @@ server.registerTool(
         },
         interpretation:
           "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",
+      },
+      // Added 2026-09-22 (external review): broader macro-regime context,
+      // not specific to the fiscal-dominance question above -- kept as a
+      // separate bundle rather than folded into fiscal_dominance_checklist,
+      // same "report each on its own, never synthesize" convention.
+      macro_regime_signals: {
+        fed_balance_sheet_usd_millions: walcl && {
+          ...walcl,
+          signal: "Fed's consolidated balance sheet (H.4.1 release), weekly. Rising = QE/balance-sheet expansion; falling = QT. Read the multi-month trend, not one week's move.",
+        },
+        term_premium_10y_pct: termPremium10y && {
+          ...termPremium10y,
+          signal: "Kim-Wright (2005) three-factor term premium model -- the compensation investors demand for duration risk, separate from rate-expectations. NOT the NY Fed's own ACM model (which isn't published as a clean downloadable series); a comparable, actively-updated, FRED-hosted academic alternative. Rising = investors demanding more compensation to hold long-dated debt, one market-based fiscal-stress signal.",
+        },
+        foreign_treasury_holdings: ticForeignTotal && ticForeignOfficial && {
+          total_usd_billions: ticForeignTotal.value,
+          foreign_official_usd_billions: ticForeignOfficial.value,
+          as_of: ticForeignTotal.observation_date,
+          signal: "Treasury TIC data (Table 5, Major Foreign Holders), monthly, ~2mo lag. foreign_official is the subset held by foreign central banks/governments (not private investors) -- sustained selling here is the 'who's still buying the bonds' fiscal-stress signal. Read the multi-month trend; one month's move (especially FX-driven valuation swings, not just actual buying/selling) means little.",
+        },
+        geopolitical_risk_index: gprIndex && {
+          ...gprIndex,
+          signal: "Caldara & Iacoviello (Federal Reserve Board) -- a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Elevated/spiking = heightened geopolitical tension; read alongside (not as a substitute for) actual news/Fed-communication research in step 6.",
+        },
+        stock_bond_correlation: stockBondCorrelation && {
+          ...stockBondCorrelation,
+          signal: `${stockBondCorrelation.window_calendar_days}-day rolling correlation between SPY's daily % change and a bond-price proxy (negated DGS10 daily change) is ${stockBondCorrelation.correlation}. ${stockBondCorrelation.correlation >= -0.1 ? "Near zero or positive -- the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or has broken down, the 2022-style regime-shift signature: both risk assets selling off together." : "Still meaningfully negative -- stocks and bonds are behaving like they normally do, no regime-shift signal here."} ${stockBondCorrelation.typical_historical_note}`,
+        },
       },
       gold_price: goldPrice,
       bitcoin_price: bitcoinPrice,
