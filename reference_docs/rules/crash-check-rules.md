@@ -641,6 +641,7 @@ confidence qualifier per Signal Tiering.
 | Hires rate (`hires_rate_pct`) | FRED `JTSHIR` (BLS JOLTS, monthly) | Added 2026-09-15 (external review): claims measure layoffs, this measures whether people are finding new jobs — a falling hires rate alongside flat claims can mask a hiring slowdown claims alone wouldn't show | Read alongside initial/continuing jobless claims, not as a standalone gate |
 | Credit card delinquency rate | FRED `DRCCLACBS` | Rising = consumer financial stress increasing | See Complacency Watch Bands above |
 | WTI crude oil | FRED `DCOILWTICO` | Above $100/barrel = stagflation accelerant | See Recovery/Complacency band above |
+| Copper price (`copper_price_usd_per_ton`) | FRED `PCOPPUSDM` (IMF-sourced, monthly) | Added 2026-09-22. "Dr. Copper" — a classic leading growth/recession-cycle indicator (industrial demand turns often show up here before official data). No confirmed free-flow (SSGA-style NAV-history) source exists for copper ETFs (CPER is USCF-issued, not SSGA), so this is price-level only, same treatment as WTI oil above | Informational cross-check for the Type B (Recession) crash-type diagnosis (Stage 1 below) — deliberately NOT one of that diagnosis's three hard trigger criteria (unemployment/Sahm/CPI), which stay unchanged. Monthly cadence — a single month's move means little, read the trend |
 | Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength — FRED has no public real-time card-swipe series | See Complacency Watch Bands above |
 | Secured Overnight Financing Rate (repo stress) | FRED `SOFR` | Spikes above the Fed's target range signal repo/dollar-funding stress (e.g. Sept 2019) | Read alongside overnight reverse repo — no single-direction band |
 | Broad U.S. Dollar Index | FRED `DTWEXBGS` | Rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities | Read as a global-transmission signal, not directional on its own |
@@ -695,11 +696,26 @@ marked as a starting point rather than a validated model. Each pair uses a
 | Initial vs. continuing jobless claims | Continuing claims rose ≥15,000/7d while initial claims moved ≤5,000/7d | Concerning — laid-off workers taking longer to find new jobs |
 | VIX vs. HY credit spread | VIX rose ≥3pts/7d while HY moved ≤5bps/7d | **Reassuring** — equity-specific noise, not confirmed credit stress |
 | HY widening vs. VIX calm | HY widened ≥5bps/7d while VIX moved ≤3pts/7d | Concerning — credit stress surfacing before equity vol does (credit often leads equity) |
+| Gold vs. silver | Gold's 7d % change exceeds silver's by ≥3 percentage points | Gold outperforming silver by this much is a classic flight-to-safety read (investors favoring the purer monetary metal over the more industrially/growth-linked one) — not proof of anything on its own |
 
-The last pair is the reverse direction of the third — added 2026-08-16,
-previously the more concerning "credit moves first" direction was missing
-entirely. Its thresholds deliberately reuse the VIX-vs-HY pair's own two
-constants (5bps, 3pts), flipped, rather than a fresh unbacktested number.
+The last pair before gold-vs-silver is the reverse direction of the third —
+added 2026-08-16, previously the more concerning "credit moves first"
+direction was missing entirely. Its thresholds deliberately reuse the
+VIX-vs-HY pair's own two constants (5bps, 3pts), flipped, rather than a
+fresh unbacktested number.
+
+**Gold vs. silver (added 2026-09-22)** is the one pair here compared by
+7-day **percent** change rather than a raw delta — gold's and silver's
+price levels differ too much for a raw $ move to mean anything side by
+side, unlike the bps/pts pairs above which share comparable units within
+each pair. This is a delta-based read on short-term relative performance,
+not an absolute gold/silver *ratio level* analysis (the more commonly-cited
+version of this signal, which needs historical percentile bands this
+system doesn't compute) — same "first cut, not backtested" caveat as every
+other threshold here. Silver (`SLV`, tracked via Massive) exists only as
+this pair's input — deliberately not exposed as its own standalone
+contextual indicator, since it has no tied decision the way gold's Type
+C/E sleeve allocation does; a bare silver price line would just be noise.
 
 **Known data limitation**: `BAMLH0A0HYM2`/`BAMLC0A0CM` (the two credit-spread
 series feeding 3 of these 4 pairs) only have real history back to

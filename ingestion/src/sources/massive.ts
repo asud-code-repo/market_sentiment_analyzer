@@ -28,7 +28,16 @@ const BREADTH_TICKERS = ["IWM", "SPY"];
 // tracked anywhere until now. Same independent-of-watchlist rationale as
 // BREADTH_TICKERS above. GLD is a normal US-listed ETF, so it flows through
 // the same stocks grouped-daily endpoint as everything else here.
-const CONTEXT_TICKERS = ["GLD"];
+//
+// SLV added 2026-09-22, deliberately NOT surfaced as its own standalone
+// contextual indicator the way GLD is -- it exists only to feed the
+// gold_vs_silver divergence pair (rule_engine/src/divergence.ts). Silver
+// alone has no tied decision/narrative in this system (unlike gold's real
+// Type C/E sleeve allocation), so a bare silver price line would be exactly
+// the kind of isolated, noise-adding indicator this system avoids -- the
+// gold/silver RATIO (a genuine flight-to-safety read) is the meaningful
+// signal, not either metal's price level on its own.
+const CONTEXT_TICKERS = ["GLD", "SLV"];
 
 // Bitcoin, tracked as a secondary/awareness-only indicator (2026-09-14
 // decision, made after verifying — not assuming — that BTC is NOT a

@@ -479,6 +479,11 @@ const CONTEXT_INFO = {
     signal: (v) => (v > 100 ? "Above $100 — stagflation accelerant watch" : "Below $100"),
     notable: (v) => v > 100,
   },
+  pcoppusdm: {
+    label: "Copper (\"Dr. Copper\")",
+    format: (v) => `$${(v / 1000).toFixed(2)}k/ton`,
+    signal: () => "Leading growth/recession-cycle indicator — informational cross-check for the Type B (Recession) crash-type diagnosis, not one of its hard trigger criteria. Monthly cadence — read the trend, not one month's move.",
+  },
   rsafs: {
     label: "Retail Sales (Advance)",
     format: (v) => `$${(v / 1000).toFixed(1)}B`,
@@ -602,6 +607,7 @@ function renderContextIndicators(latest) {
     icsa: latest.ICSA,
     drcclacbs: latest.DRCCLACBS,
     dcoilwtico: latest.DCOILWTICO,
+    pcoppusdm: latest.PCOPPUSDM,
     rsafs: latest.RSAFS,
     ccsa: latest.CCSA,
     jtshir: latest.JTSHIR,
@@ -969,11 +975,13 @@ const DIVERGENCE_PAIR_LABELS = {
   initial_vs_continuing_claims: "Initial vs. Continuing Claims",
   vix_vs_hy_credit_spread: "VIX vs. HY Credit Spread",
   hy_widening_vix_calm: "HY Widening, VIX Calm",
+  gold_vs_silver: "Gold vs. Silver",
 };
 
 function fmtDivergenceValue(series) {
   if (series.value == null) return "—";
   const value = series.unit === "count" ? series.value.toLocaleString("en-US") : series.value;
+  if (series.unit === "usd") return `$${value}`;
   return `${value}${series.unit === "bps" ? " bps" : series.unit === "index" ? "" : ""}`;
 }
 
@@ -981,7 +989,7 @@ function fmtDivergenceDelta(series) {
   if (series.delta_7d == null) return "";
   const sign = series.delta_7d > 0 ? "+" : "";
   const delta = series.unit === "count" ? series.delta_7d.toLocaleString("en-US") : series.delta_7d;
-  return `<span class="delta-inline">${sign}${delta} / 7d</span>`;
+  return `<span class="delta-inline">${sign}${series.unit === "usd" ? "$" : ""}${delta} / 7d</span>`;
 }
 
 function renderDivergenceFlags(flags) {
@@ -1561,7 +1569,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

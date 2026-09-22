@@ -420,9 +420,13 @@ server.registerTool(
       "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
       "delinquencies, WTI, retail sales, IG credit spread, SOFR, broad dollar index, NFCI " +
       "sub-indices, TIPS real yield, two external recession-probability models, small-cap " +
-      "breadth, gold price (GLD), Bitcoin price, and sector capital-rotation. Informational only — " +
-      "never part of the 6-indicator wave-authorization gate. gold_price is directional context for " +
-      "the existing Type C/Type E sleeve allocation, not a new signal. bitcoin_price is tracked for " +
+      "breadth, gold price (GLD), copper price, Bitcoin price, and sector capital-rotation. " +
+      "Informational only — never part of the 6-indicator wave-authorization gate. gold_price is " +
+      "directional context for the existing Type C/Type E sleeve allocation, not a new signal. " +
+      "copper_price_usd_per_ton is an informational leading-indicator cross-check for the Type B " +
+      "(Recession) crash-type diagnosis — not one of that diagnosis's hard trigger criteria " +
+      "(unemployment/Sahm/CPI), which stay unchanged; monthly cadence (IMF-sourced), not daily. " +
+      "bitcoin_price is tracked for " +
       "awareness only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) " +
       "— never treat it as confirming or contradicting the crash thesis. sector_rotation gives real " +
       "creation/redemption flow (not a price proxy) for the 11 sector SPDRs + SPY + GLD, but only " +
@@ -440,7 +444,7 @@ server.registerTool(
       "cross-checks only, never validation of your own estimate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -465,6 +469,7 @@ server.registerTool(
         getLatestDataPoint("NFCICREDIT"),
         getLatestDataPoint("DFII10"),
         getLatestDataPoint("RECPROUSM156N"),
+        getLatestDataPoint("PCOPPUSDM"),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("GLD"),
@@ -603,6 +608,10 @@ server.registerTool(
       },
       recession_probability_ny_fed_12mo_pct: nyFedRecessionProb,
       small_cap_breadth: smallCapBreadth,
+      copper_price_usd_per_ton: copper && {
+        ...copper,
+        signal: "\"Dr. Copper\" -- a classic leading growth/recession-cycle indicator. Informational cross-check for the Type B (Recession) crash-type diagnosis (crash-check-rules.md Stage 1), NOT one of that diagnosis's hard trigger criteria (unemployment/Sahm/CPI, unchanged) and never part of the 6-indicator wave-authorization gate. Monthly cadence (IMF-sourced via FRED) -- a single month's move means little, read the trend.",
+      },
       gold_price: goldPrice,
       bitcoin_price: bitcoinPrice,
       sector_rotation: {

@@ -32,12 +32,14 @@ export interface DivergenceFlag {
 }
 
 export async function computeDivergences(): Promise<DivergenceFlag[]> {
-  const [ig, hy, initialClaims, continuingClaims, vix] = await Promise.all([
+  const [ig, hy, initialClaims, continuingClaims, vix, gold, silver] = await Promise.all([
     computeSeriesDelta7d("BAMLC0A0CM"),
     computeSeriesDelta7d("BAMLH0A0HYM2"),
     computeSeriesDelta7d("ICSA"),
     computeSeriesDelta7d("CCSA"),
     computeSeriesDelta7d("VIXCLS"),
+    computeSeriesDelta7d("GLD"),
+    computeSeriesDelta7d("SLV"),
   ]);
 
   const flags: DivergenceFlag[] = [];
@@ -110,6 +112,43 @@ export async function computeDivergences(): Promise<DivergenceFlag[]> {
       series_a: { label: "HY Credit Spread", value: hy.value, unit: "bps", delta_7d: hy.delta_7d },
       series_b: { label: "VIX", value: vix.value, unit: "index", delta_7d: vix.delta_7d },
     });
+  }
+
+  // Gold vs. silver, added 2026-09-22. Unlike the pairs above (bps/pts
+  // deltas directly comparable within a pair), gold's and silver's price
+  // levels differ too much for a raw $ delta to mean anything side by
+  // side, so this pair compares 7-day PERCENT change instead. Silver
+  // normally has meaningfully higher beta than gold (smaller/thinner
+  // market, larger industrial-demand component) — gold outperforming
+  // silver by a wide margin over 7 days is the classic flight-to-safety
+  // read: investors favoring the purer monetary/store-of-value metal over
+  // the more industrially/growth-linked one. This is a delta-based read on
+  // short-term relative performance, not an absolute gold/silver RATIO
+  // level analysis (the more commonly-cited version of this signal, which
+  // would need historical percentile bands this system doesn't compute
+  // yet) — same "first cut, not backtested" caveat as every threshold
+  // above. Silver (SLV) is tracked only as this pair's input, deliberately
+  // not exposed as its own standalone contextual indicator (see massive.ts)
+  // — it has no tied decision the way gold's Type C/E sleeve allocation
+  // does, so a bare price line would just be noise.
+  if (gold.value !== null && gold.delta_7d !== null && silver.value !== null && silver.delta_7d !== null) {
+    const goldPast = gold.value - gold.delta_7d;
+    const silverPast = silver.value - silver.delta_7d;
+    const goldPct7d = goldPast !== 0 ? Math.round(((gold.delta_7d / goldPast) * 100) * 10) / 10 : null;
+    const silverPct7d = silverPast !== 0 ? Math.round(((silver.delta_7d / silverPast) * 100) * 10) / 10 : null;
+    if (goldPct7d !== null && silverPct7d !== null) {
+      const spread = Math.round((goldPct7d - silverPct7d) * 10) / 10;
+      const diverging = spread >= 3;
+      flags.push({
+        pair: "gold_vs_silver",
+        diverging,
+        detail: diverging
+          ? `Gold moved ${goldPct7d}% over 7d vs. silver's ${silverPct7d}% — a ${spread}pt gap. Silver normally has higher beta than gold; gold outperforming by this much is a classic flight-to-safety read (favoring the purer monetary metal over the more industrially-linked one), not proof of anything on its own.`
+          : `No meaningful gold/silver split — gold (${goldPct7d}%/7d) and silver (${silverPct7d}%/7d) are moving together or silver isn't lagging enough to represent a flight-to-safety divergence.`,
+        series_a: { label: "Gold (GLD)", value: gold.value, unit: "usd", delta_7d: gold.delta_7d },
+        series_b: { label: "Silver (SLV)", value: silver.value, unit: "usd", delta_7d: silver.delta_7d },
+      });
+    }
   }
 
   return flags;

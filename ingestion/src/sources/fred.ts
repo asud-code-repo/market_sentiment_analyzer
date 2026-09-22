@@ -29,6 +29,15 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "DCOILWTICO", unit: "usd" },     // WTI crude oil, $/barrel — automates the existing
                                           // "Brent/WTI above $100 = stagflation accelerant" line
                                           // in crash-check-rules.md's Recovery/Complacency bands.
+  { id: "PCOPPUSDM", unit: "usd_per_ton" }, // Global price of copper (IMF-sourced, hosted on FRED),
+                                          // monthly. "Dr. Copper" — a classic leading growth/
+                                          // recession-cycle indicator, tracked as an informational
+                                          // cross-check for the Type B (Recession) crash-type
+                                          // diagnosis (crash-check-rules.md Stage 1), not a new
+                                          // hard trigger criterion for it. No confirmed free-flow
+                                          // (SSGA-style NAV-history) source exists for copper ETFs
+                                          // (CPER is USCF-issued, not SSGA) — price-only, same
+                                          // treatment as WTI oil above.
   { id: "RSAFS", unit: "usd_millions" }, // Advance retail sales, all stores — closest free proxy
                                           // to "consumer/credit-card spending"; FRED has no public
                                           // real-time card-swipe series, this is reported monthly.
