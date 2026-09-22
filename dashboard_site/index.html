@@ -342,9 +342,14 @@
   <div id="report-view"><p class="loading">Loading…</p></div>
 
   <div class="card" id="section-context">
-    <p class="eyebrow">Contextual Indicators — informational, not wave-gating</p>
-    <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
-    <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Contextual Indicators — informational, not wave-gating</p>
+      <button class="collapse-toggle" id="context-toggle" aria-expanded="false">Show</button>
+    </div>
+    <div id="context-body" hidden>
+      <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
+      <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+    </div>
   </div>
 
   <div class="card" id="section-bondyields">
@@ -1957,18 +1962,17 @@ if (isStandalonePwa) {
   refreshBtn.addEventListener("click", () => location.reload());
 }
 
-// Collapsible 6-Indicator History card -- defaults collapsed, remembers
-// state per-viewer in localStorage. Safe to run before main()'s data
-// fetch: renderLineChart's SVGs use a fixed viewBox (900x140), not a
-// DOM-measured width, so charts render correctly into a hidden container
-// -- no need to defer chart rendering until the section is expanded.
-// Wrapped in try/catch since localStorage can throw in some contexts
-// (private browsing, blocked site data) -- falls back to always-collapsed
-// rather than breaking the page.
-(function setupCollapsibleIndicatorHistory() {
-  const STORAGE_KEY = "indicatorHistoryExpanded";
-  const toggle = document.getElementById("indicator-history-toggle");
-  const body = document.getElementById("indicator-history-body");
+// Collapsible cards -- default collapsed, remember state per-viewer in
+// localStorage. Safe to run before main()'s data fetch: context-grid is a
+// plain CSS grid (not DOM-measured) and renderLineChart's SVGs use a fixed
+// viewBox (900x140), so both render correctly into a hidden container --
+// no need to defer either until the section is expanded. Wrapped in
+// try/catch since localStorage can throw in some contexts (private
+// browsing, blocked site data) -- falls back to always-collapsed rather
+// than breaking the page.
+function setupCollapsible(storageKey, toggleId, bodyId) {
+  const toggle = document.getElementById(toggleId);
+  const body = document.getElementById(bodyId);
 
   function setExpanded(expanded) {
     body.hidden = !expanded;
@@ -1978,7 +1982,7 @@ if (isStandalonePwa) {
 
   let initiallyExpanded = false;
   try {
-    initiallyExpanded = localStorage.getItem(STORAGE_KEY) === "true";
+    initiallyExpanded = localStorage.getItem(storageKey) === "true";
   } catch (err) {
     // Ignore -- defaults to collapsed.
   }
@@ -1988,12 +1992,14 @@ if (isStandalonePwa) {
     const nowExpanded = body.hidden;
     setExpanded(nowExpanded);
     try {
-      localStorage.setItem(STORAGE_KEY, String(nowExpanded));
+      localStorage.setItem(storageKey, String(nowExpanded));
     } catch (err) {
       // Ignore -- this visit's toggle still works, just won't persist.
     }
   });
-})();
+}
+setupCollapsible("indicatorHistoryExpanded", "indicator-history-toggle", "indicator-history-body");
+setupCollapsible("contextIndicatorsExpanded", "context-toggle", "context-body");
 
 async function main() {
   try {
