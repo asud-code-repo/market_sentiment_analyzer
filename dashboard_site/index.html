@@ -651,7 +651,7 @@ const CONTEXT_INFO = {
   stockBondCorrelation: {
     label: "Stock-Bond Correlation (180d)",
     format: (v) => v.toFixed(2),
-    signal: (v) => (v >= -0.1 ? "Near zero or positive — the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or broken down, the 2022-style regime-shift signature: both risk assets selling off together." : "Still meaningfully negative — stocks and bonds behaving normally, no regime-shift signal here."),
+    signal: (v) => (v >= -0.1 ? "Near zero or positive — the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or broken down: both assets are moving in the same direction day to day (not necessarily both down — could be both up), which removes the risk-offsetting benefit investors normally count on. The well-known 2022 case was a joint selloff, but the sign alone doesn't say which direction this instance is." : "Still meaningfully negative — stocks and bonds behaving normally, no regime-shift signal here."),
     notable: (v) => v >= -0.1,
   },
 };

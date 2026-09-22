@@ -704,7 +704,7 @@ server.registerTool(
         },
         stock_bond_correlation: stockBondCorrelation && {
           ...stockBondCorrelation,
-          signal: `${stockBondCorrelation.window_calendar_days}-day rolling correlation between SPY's daily % change and a bond-price proxy (negated DGS10 daily change) is ${stockBondCorrelation.correlation}. ${stockBondCorrelation.correlation >= -0.1 ? "Near zero or positive -- the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or has broken down, the 2022-style regime-shift signature: both risk assets selling off together." : "Still meaningfully negative -- stocks and bonds are behaving like they normally do, no regime-shift signal here."} ${stockBondCorrelation.typical_historical_note}`,
+          signal: `${stockBondCorrelation.window_calendar_days}-day rolling correlation between SPY's daily % change and a bond-price proxy (negated DGS10 daily change) is ${stockBondCorrelation.correlation}. ${stockBondCorrelation.correlation >= -0.1 ? "Near zero or positive -- the classic 60/40 diversification benefit (stocks and bonds normally move oppositely) is weak or has broken down: both assets are moving in the SAME direction day to day (not necessarily both down -- could be both up), which removes the risk-offsetting benefit investors normally count on. The well-known 2022 case of this was a joint selloff, but the sign alone doesn't say which direction this instance is." : "Still meaningfully negative -- stocks and bonds are behaving like they normally do, no regime-shift signal here."} ${stockBondCorrelation.typical_historical_note}`,
         },
       },
       gold_price: goldPrice,
