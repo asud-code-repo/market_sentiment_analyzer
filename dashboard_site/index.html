@@ -324,7 +324,7 @@
 
   <div class="card" id="section-bondyields">
     <p class="eyebrow">Bond Yields &amp; Fiscal Snapshot — informational, not wave-gating</p>
-    <p class="context-note">Monthly snapshots (value as of each month's start, carried forward from the most recent prior observation) plus today's actual reading — same relationships PineTree Macro's Ritesh Jain highlights when discussing "fiscal dominance" (debt-to-GDP and rate levels overriding the usual yield-vs-equity relationship), tracked automatically instead of by hand-picked news events. Broad Dollar Index is the Fed's 26-currency basket (DTWEXBGS) — directionally the same read as ICE's DXY, not numerically identical. Federal Debt/GDP is quarterly and lags by design (no faster free source exists).</p>
+    <p class="context-note">Monthly snapshots (value as of each month's start, carried forward from the most recent prior observation) plus today's actual reading — the relationships behind a "fiscal dominance" read (debt-to-GDP and rate levels overriding the usual yield-vs-equity relationship), tracked automatically instead of by hand-picked news events. Broad Dollar Index is the Fed's 26-currency basket (DTWEXBGS) — directionally the same read as ICE's DXY, not numerically identical. Federal Debt/GDP is quarterly and lags by design (no faster free source exists).</p>
     <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
   </div>
 
@@ -680,12 +680,12 @@ function renderContextIndicators(latest) {
     .join("");
 }
 
-// Bond Yields & Fiscal Snapshot — mirrors the relationships PineTree Macro's
-// Ritesh Jain shows in his "fiscal dominance" hand-curated yield-curve
-// tables (2Y/10Y/30Y + Fed Funds + dollar index + gold + debt-to-GDP, side
-// by side across dates), but generated from this system's own live data on
-// fixed monthly anchors rather than hand-picked FOMC/news-event dates — no
-// event metadata exists here to label rows by news the way that table does.
+// Bond Yields & Fiscal Snapshot — the relationships a "fiscal dominance"
+// hand-curated yield-curve table typically shows (2Y/10Y/30Y + Fed Funds +
+// dollar index + gold + debt-to-GDP, side by side across dates), generated
+// from this system's own live data on fixed monthly anchors rather than
+// hand-picked FOMC/news-event dates — no event metadata exists here to
+// label rows by news the way a manually-built table would.
 const BOND_YIELD_SNAPSHOT_SERIES = [
   { id: "DGS2", label: "2Y Yield", format: (v) => `${v.toFixed(2)}%` },
   { id: "DGS10", label: "10Y Yield", format: (v) => `${v.toFixed(2)}%` },
@@ -2081,12 +2081,18 @@ async function main() {
 
     // Delegated once on the container -- renderSectionNav() replaces the
     // chips' innerHTML on every selectIndex() call, which would drop any
-    // listener attached to an individual chip.
+    // listener attached to an individual chip. Also updates the URL hash
+    // (pushState, not a native location.hash jump -- that would fire its
+    // own instant scroll on top of the smooth one below) so a section is
+    // bookmarkable/shareable, not just reachable by clicking the chip in
+    // the moment.
     document.getElementById("section-nav").addEventListener("click", (e) => {
       const chip = e.target.closest(".section-nav-chip");
       if (!chip) return;
       const target = document.getElementById(chip.dataset.target);
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (!target) return;
+      history.pushState(null, "", `#${chip.dataset.target}`);
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
     const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
@@ -2152,6 +2158,15 @@ async function main() {
   } catch (err) {
     document.getElementById("error-container").innerHTML = `<div class="error-banner">Failed to load data: ${err.message}</div>`;
   }
+}
+
+// Section divs are static HTML already present at this point (only their
+// content loads async via main() below), so a bookmarked/shared link with
+// a #section-... hash can jump straight there without waiting on any
+// fetch. Instant, not smooth (this is a fresh page load, not a click).
+if (location.hash) {
+  const target = document.querySelector(location.hash);
+  if (target) target.scrollIntoView({ block: "start" });
 }
 
 main();

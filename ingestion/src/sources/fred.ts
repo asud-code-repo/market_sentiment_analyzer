@@ -138,10 +138,10 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // fills that gap — confirmed real and free on FRED before adding.
   { id: "JTSHIR", unit: "percent" }, // Hires: Total Nonfarm (JOLTS) — monthly.
 
-  // 2026-09-22 addition — "fiscal dominance" viewpoint (Ritesh Jain/PineTree
-  // Macro): the thesis is that government borrowing/spending, not Fed policy,
-  // is now the dominant force on markets, and that debt-to-GDP direction
-  // matters more than any single rate level. Neither the policy-rate anchor
+  // 2026-09-22 addition — "fiscal dominance" viewpoint: the thesis is that
+  // government borrowing/spending, not Fed policy, is now the dominant
+  // force on markets, and that debt-to-GDP direction matters more than any
+  // single rate level. Neither the policy-rate anchor
   // nor the debt-load series itself was tracked anywhere before this — every
   // yield series above (DGS2/10/30, DGS3MO) is a market-priced rate, not the
   // Fed's own target/effective rate, and no series here spoke to the debt
