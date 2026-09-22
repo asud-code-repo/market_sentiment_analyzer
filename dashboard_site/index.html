@@ -255,6 +255,15 @@
   .chart-line { fill: none; stroke: var(--line-color); stroke-width: 2px; }
   .chart-grid-line { stroke: var(--grid); stroke-width: 1px; }
   .chart-shade { fill: var(--wave-shade); }
+  /* Threshold gate zones (VIX/HY/drawdown/10Y/Sahm charts only) -- same
+     background tints as the indicator cards' own good/warning/critical
+     states, at a lower opacity since the shaded wave-active overlay above
+     and the line itself both need to stay readable on top. */
+  .chart-band { opacity: 0.55; }
+  .chart-band.band-good { fill: var(--good-bg); }
+  .chart-band.band-warning { fill: var(--warning-bg); }
+  .chart-band.band-critical { fill: var(--critical-bg); }
+  .chart-band-line { stroke: var(--text-muted); stroke-width: 1px; stroke-dasharray: 2 2; opacity: 0.6; }
   .chart-crosshair { stroke: var(--text-muted); stroke-width: 1px; display: none; }
   .chart-dot { fill: var(--line-color); stroke: var(--surface-1); stroke-width: 2px; display: none; }
   .chart-tooltip {
@@ -1763,7 +1772,18 @@ function selectIndex(i) {
  * hairline gridlines, hover crosshair+tooltip, direct end-label, table-view
  * toggle. One series needs no legend — the title names it.
  */
-function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
+// bands (optional): { thresholds: [greenAmber, amberRed], domainMin, domainMax }
+// -- draws the RED/AMBER/GREEN gate zones behind the line using this same
+// dashboard's own indicator-card colors (--good-bg/--warning-bg/--critical-bg),
+// so "how close to RED" reads visually instead of requiring the reader to
+// hold crash-check-rules.md's numeric thresholds in their head. domainMin/
+// domainMax extend the y-axis to show useful threshold context even when
+// the actual data never gets close (e.g. VIX sitting at 14 all year still
+// shows how far below the 20/35 gates that is) -- capped at a fixed,
+// sane ceiling per indicator rather than an unbounded RED zone, since RED
+// has no upper bound (">35") and showing all the way to a historic spike
+// would flatten the normal range into unreadable noise.
+function renderLineChart(containerId, { title, allPoints, unit, formatValue, bands }) {
   const container = document.getElementById(containerId);
   const ranges = { "1M": 30, "3M": 90, "1Y": 365, All: Infinity };
   let currentRange = "All";
@@ -1780,14 +1800,16 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
     }
 
     const values = valid.map((p) => p.value);
-    const minV = Math.min(...values), maxV = Math.max(...values);
+    const rawMinV = Math.min(...values), rawMaxV = Math.max(...values);
+    const minV = bands && bands.domainMin != null ? Math.min(rawMinV, bands.domainMin) : rawMinV;
+    const maxV = bands && bands.domainMax != null ? Math.max(rawMaxV, bands.domainMax) : rawMaxV;
     const span = maxV - minV || 1;
     const x = (i) => padL + (i / Math.max(valid.length - 1, 1)) * (width - padL - padR);
     const y = (v) => padT + (1 - (v - minV) / span) * (height - padT - padB);
 
     const pathD = valid.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
     const last = valid[valid.length - 1];
-    const gridY = [minV, (minV + maxV) / 2, maxV];
+    const gridY = [rawMinV, (rawMinV + rawMaxV) / 2, rawMaxV];
 
     const shadeRects = [];
     let shadeStart = null;
@@ -1800,6 +1822,31 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
     });
     if (shadeStart !== null) shadeRects.push([shadeStart, valid.length - 1]);
 
+    // Threshold bands + boundary labels, clipped to [minV, maxV] since a
+    // threshold can fall outside the domain on a range where data never
+    // approaches it (e.g. 1M view sitting entirely in GREEN).
+    let bandZones = "";
+    if (bands) {
+      const [greenAmber, amberRed] = bands.thresholds;
+      const zones = [
+        { from: minV, to: greenAmber, cls: "band-good" },
+        { from: greenAmber, to: amberRed, cls: "band-warning" },
+        { from: amberRed, to: maxV, cls: "band-critical" },
+      ];
+      bandZones = zones
+        .filter((z) => z.to > z.from)
+        .map((z) => {
+          const zFrom = Math.max(z.from, minV), zTo = Math.min(z.to, maxV);
+          return `<rect class="chart-band ${z.cls}" x="${padL}" y="${y(zTo).toFixed(1)}" width="${width - padL - padR}" height="${(y(zFrom) - y(zTo)).toFixed(1)}" />`;
+        })
+        .join("");
+      bandZones += [greenAmber, amberRed]
+        .filter((t) => t > minV && t < maxV)
+        .map((t) => `<line class="chart-band-line" x1="${padL}" x2="${width - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" />
+          <text class="axis-label" x="${width - padR + 5}" y="${(y(t) + 3).toFixed(1)}">${t}</text>`)
+        .join("");
+    }
+
     const id = containerId + "-svg";
     const tooltipId = containerId + "-tooltip";
     const tableId = containerId + "-table";
@@ -1808,6 +1855,7 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue }) {
     container.querySelector(".chart-body").innerHTML = `
       <div class="chart-wrap">
         <svg class="chart-svg" id="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          ${bandZones}
           ${shadeRects.map(([s, e]) => `<rect class="chart-shade" x="${x(s).toFixed(1)}" y="${padT}" width="${(x(e) - x(s) + 4).toFixed(1)}" height="${height - padT - padB}" />`).join("")}
           ${gridY.map((v) => `<line class="chart-grid-line" x1="${padL}" x2="${width - padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" />`).join("")}
           <path class="chart-line" d="${pathD}" />
@@ -2235,12 +2283,16 @@ async function main() {
         fetchSeriesHistory("SP500"),
       ]);
 
-      renderLineChart("chart-vix", { title: "VIX", unit: "", formatValue: (v) => v, allPoints: toChartPoints(vixHistory) });
+      // bands' thresholds/domain caps mirror crash-check-rules.md's
+      // 6-Indicator Panel table exactly -- if that table's numbers ever
+      // change, these must be updated to match (same "mirrors the rules
+      // doc" duplication convention as this file's other MCP-mirrored logic).
+      renderLineChart("chart-vix", { title: "VIX", unit: "", formatValue: (v) => v, allPoints: toChartPoints(vixHistory), bands: { thresholds: [20, 35], domainMax: 45 } });
       // BAMLH0A0HYM2 is FRED percent (e.g. 2.67) — x100 to bps, matching
       // rule_engine/src/classify.ts's hySpreadBps = hySpread.value * 100.
-      renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: toChartPoints(hySpreadHistory, (v) => Math.round(v * 100)) });
-      renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: toChartPoints(treasuryHistory) });
-      renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: toChartPoints(sahmHistory) });
+      renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: toChartPoints(hySpreadHistory, (v) => Math.round(v * 100)), bands: { thresholds: [350, 500], domainMax: 600 } });
+      renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: toChartPoints(treasuryHistory), bands: { thresholds: [4.3, 5.0], domainMax: 5.5 } });
+      renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: toChartPoints(sahmHistory), bands: { thresholds: [0.3, 0.5], domainMax: 0.7 } });
 
       // Drawdown isn't a raw FRED series — compute a running max-to-date
       // over the SP500 level history and derive drawdown per point, matching
@@ -2255,7 +2307,7 @@ async function main() {
           waveActive: !!waveActiveByDate[r.observation_date],
         };
       });
-      renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: drawdownPoints });
+      renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: drawdownPoints, bands: { thresholds: [10, 20], domainMax: 25, domainMin: 0 } });
     } catch (err) {
       document.getElementById("error-container").innerHTML += `<div class="error-banner">Failed to load historical trend charts: ${err.message}</div>`;
     }
