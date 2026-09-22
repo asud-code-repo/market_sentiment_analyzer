@@ -788,7 +788,8 @@ persisted value, never recompute independently. Thresholds are a first cut,
 not backtested/calibrated — same caveat as everything else in this document
 marked as a starting point rather than a validated model. Each pair uses a
 7-day delta (most recent value vs. the most recent observation on or before
-7 calendar days prior, not a strict trading-day offset).
+7 calendar days prior, not a strict trading-day offset) **except the foreign-
+holdings pair below, which uses 90 days** — see its own note.
 
 | Pair | Diverging condition | `diverging: true` means |
 |---|---|---|
@@ -797,6 +798,18 @@ marked as a starting point rather than a validated model. Each pair uses a
 | VIX vs. HY credit spread | VIX rose ≥3pts/7d while HY moved ≤5bps/7d | **Reassuring** — equity-specific noise, not confirmed credit stress |
 | HY widening vs. VIX calm | HY widened ≥5bps/7d while VIX moved ≤3pts/7d | Concerning — credit stress surfacing before equity vol does (credit often leads equity) |
 | Gold vs. silver | Gold's 7d % change exceeds silver's by ≥3 percentage points | Gold outperforming silver by this much is a classic flight-to-safety read (investors favoring the purer monetary metal over the more industrially/growth-linked one) — not proof of anything on its own |
+| Foreign official holdings vs. 10yr yield | Foreign *official* Treasury holdings fell ≥$50B/90d while the 10yr yield rose ≥0.15pts/90d | Concerning — official-sector (central bank/government) selling alongside rising yields, the "who's still buying the bonds" fiscal-stress signal — not proof of a debt crisis on its own |
+
+**Foreign official holdings vs. 10yr yield (added 2026-09-22)** uses a
+90-calendar-day window, not 7 — `TIC_FOREIGN_OFFICIAL_HOLDINGS` is monthly
+with a ~2-month publication lag, so a 7-day window would show zero movement
+almost every day regardless of the real trend. Both series are anchored to
+TIC's own latest (lagged) observation date, not "today" — comparing DGS10's
+real-time move against TIC's stale reading would silently compare two
+different time windows. Uses *official* holdings specifically (central
+banks/governments), not total foreign holdings — official-sector selling is
+the genuine fiscal-stress signal; private-investor reallocation is a
+different, much noisier thing the total figure would conflate it with.
 
 The last pair before gold-vs-silver is the reverse direction of the third —
 added 2026-08-16, previously the more concerning "credit moves first"
@@ -818,14 +831,22 @@ contextual indicator, since it has no tied decision the way gold's Type
 C/E sleeve allocation does; a bare silver price line would just be noise.
 
 **Known data limitation**: `BAMLH0A0HYM2`/`BAMLC0A0CM` (the two credit-spread
-series feeding 3 of these 4 pairs) only have real history back to
+series feeding 3 of these 5 pairs) only have real history back to
 2023-07-11/2023-07-17 in this system, not the 1996 inception commonly cited
 for these FRED series — confirmed via live query and backfill logs, not an
 ingestion bug. This meaningfully limits how far back any future calibration
 of these thresholds can be checked.
 
-Deliberately deferred, not started: rolling-correlation infrastructure, and
-a regime-dependent 10yr-Treasury-vs-equities pair (its intended meaning
+**Rolling-correlation infrastructure**, previously listed here as
+deliberately deferred/not started, was built 2026-09-22 — see
+`mcp_server/src/lib/regimeIndicators.ts`'s `computeRollingCorrelation()`,
+used by the gold-vs-real-yield and stock-bond correlation checks (Fiscal
+Dominance Regime Checklist and Macro Regime Signals sections above). It
+lives in `mcp_server`, not here in `rule_engine/divergence.ts` — computed
+fresh on every `get_context_indicators` read rather than persisted to
+`crash_checks.divergence_flags` daily, same treatment as `yield_curve_2s10s`
+and the NY Fed recession-probability field. Still deliberately deferred: a
+regime-dependent 10yr-Treasury-vs-equities pair (its intended meaning
 genuinely differs by macro regime, so it needs the regime concept from the
 future hazard-model work to mean anything, not a naive non-regime-aware
 version now).
@@ -1067,7 +1088,7 @@ judgment" is the entire spec). This section exists specifically to close
 that gap for the *public, daily* version — the private one is unchanged.
 
 **Like `crash_probability_pct` above, this is discretionary LLM judgment,
-not a calibrated model** — the difference is 4 of the 6 axes are anchored
+not a calibrated model** — the difference is 5 of the 6 axes are anchored
 to real series already tracked in this system, not free-form:
 
 - **`policy_fed`** — anchor to `fed_pivot_signal` (NONE/PAUSE/CUT) and
@@ -1086,21 +1107,35 @@ to real series already tracked in this system, not free-form:
   available proxy. Same caveat as `tips_real_yield_10y_pct` above: this is
   the real-yield leg only — no free earnings-yield/CAPE series exists on
   FRED, so this axis alone cannot represent a full valuation read.
-- **`geopolitical`** and **`earnings`** — **no free anchoring data exists
-  for either** (real, standing gaps, same category as the missing
-  global-PMI/CAPE series already documented elsewhere in this file). These
-  two stay genuinely judgment-based, banded only by narrative severity
-  (0-25 no material tension/earnings concern ... 76-100 crisis-level
-  escalation/broad earnings collapse) — same tier as `crash_type`/
-  `warsh_classification`, already-accepted judgment fields in this system.
+- **`geopolitical`** — anchor to `geopolitical_risk_index` (GPR,
+  Caldara-Iacoviello — see "Macro Regime Signals" above), added 2026-09-22.
+  Previously "no free anchoring data exists" — no longer true now that GPR
+  is tracked. Bands set from this system's own real backfilled history
+  (500 monthly observations, 1985-present; the index is normalized so its
+  long-run average sits near 100), not guessed: 0-25: GPR below its
+  historical median (~90 in this system's own data). 26-50: 90-130
+  (moderately elevated — where a typical reading, including this system's
+  own most recent one, tends to sit). 51-75: 130-200 (genuinely elevated —
+  above the historical ~90th percentile). 76-100: >200 (crisis-level — this
+  system's real historical data puts 9/11, the 1991 Gulf War, the 2003 Iraq
+  invasion, and the 2022 Russia-Ukraine invasion all above this line, along
+  with a 2026-03 spike higher than 2022's). Read alongside actual news/Fed-
+  communication research (step 6) — GPR is a real anchor, not a substitute
+  for judgment about what's *currently* happening.
+- **`earnings`** — **no free anchoring data exists** (a real, standing gap,
+  same category as the missing global-PMI/CAPE series documented elsewhere
+  in this file). Stays genuinely judgment-based, banded only by narrative
+  severity (0-25 no material earnings concern ... 76-100 broad earnings
+  collapse) — same tier as `crash_type`/`warsh_classification`,
+  already-accepted judgment fields in this system.
 
 **Non-goals**: does not feed `crash_probability_pct` (which is now derived
 from the scenario distribution only — see the Crash-Probability Scoring
 Methodology section above), does not score into the 3-of-6 wave-
 authorization gate, is not validated or back-tested. A reader should not
-treat all six axes as equally grounded
-— `geopolitical`/`earnings` carry materially less anchoring than the other
-four, and the dashboard card says so explicitly.
+treat all six axes as equally grounded — `earnings` alone now carries
+materially less anchoring than the other five, and the dashboard card says
+so explicitly.
 
 ---
 

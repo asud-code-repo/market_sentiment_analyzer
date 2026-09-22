@@ -636,7 +636,8 @@ const CONTEXT_INFO = {
   threefytp10: {
     label: "10yr Term Premium",
     format: (v) => `${v.toFixed(2)}%`,
-    signal: () => "Kim-Wright (2005) three-factor model — NOT the NY Fed's own ACM model (not published as a clean downloadable series); a comparable, actively-updated, FRED-hosted academic alternative. Rising = investors demanding more compensation to hold long-dated debt.",
+    signal: (v) => `Kim-Wright (2005) three-factor model — NOT the NY Fed's own ACM model (not published as a clean downloadable series); a comparable, actively-updated, FRED-hosted academic alternative. Rising = investors demanding more compensation to hold long-dated debt.${v > 1.5 ? " Above 1.5% — genuinely elevated against this system's own full backfilled history (median ~0.74%, 1990-present)." : ""}`,
+    notable: (v) => v > 1.5,
   },
   ticForeignHoldings: {
     label: "Foreign Treasury Holdings (Total / Official)",
@@ -646,7 +647,8 @@ const CONTEXT_INFO = {
   gprIndex: {
     label: "Geopolitical Risk Index",
     format: (v) => v.toFixed(1),
-    signal: () => "Caldara & Iacoviello (Federal Reserve Board) — a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Elevated/spiking = heightened geopolitical tension.",
+    signal: (v) => `Caldara & Iacoviello (Federal Reserve Board) — a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Elevated/spiking = heightened geopolitical tension.${v > 150 ? " Above 150 — genuinely elevated (this system's own full backfilled history puts this above its ~90th percentile)." : ""}`,
+    notable: (v) => v > 150,
   },
   stockBondCorrelation: {
     label: "Stock-Bond Correlation (180d)",
@@ -1424,20 +1426,29 @@ const DIVERGENCE_PAIR_LABELS = {
   vix_vs_hy_credit_spread: "VIX vs. HY Credit Spread",
   hy_widening_vix_calm: "HY Widening, VIX Calm",
   gold_vs_silver: "Gold vs. Silver",
+  foreign_official_holdings_vs_10y_yield: "Foreign Official Holdings vs. 10Y Yield",
 };
 
 function fmtDivergenceValue(series) {
   if (series.value == null) return "—";
   const value = series.unit === "count" ? series.value.toLocaleString("en-US") : series.value;
   if (series.unit === "usd") return `$${value}`;
+  if (series.unit === "usd_billions") return `$${value}B`;
+  if (series.unit === "percent") return `${value}%`;
   return `${value}${series.unit === "bps" ? " bps" : series.unit === "index" ? "" : ""}`;
 }
 
-function fmtDivergenceDelta(series) {
+// windowDays: the `delta_7d` field is reused as a generic "delta over this
+// pair's own window" across every pair for schema consistency (see
+// rule_engine/src/divergence.ts's own comment on the foreign-holdings
+// pair) -- everything is 7d except that one pair, which is 90d. Defaults
+// to 7 so every existing call site (which doesn't pass this) is unchanged.
+function fmtDivergenceDelta(series, windowDays = 7) {
   if (series.delta_7d == null) return "";
   const sign = series.delta_7d > 0 ? "+" : "";
   const delta = series.unit === "count" ? series.delta_7d.toLocaleString("en-US") : series.delta_7d;
-  return `<span class="delta-inline">${sign}${series.unit === "usd" ? "$" : ""}${delta} / 7d</span>`;
+  const prefix = series.unit === "usd" || series.unit === "usd_billions" ? "$" : "";
+  return `<span class="delta-inline">${sign}${prefix}${delta} / ${windowDays}d</span>`;
 }
 
 function renderDivergenceFlags(flags) {
@@ -1452,6 +1463,7 @@ function renderDivergenceFlags(flags) {
           const isReassuringPair = f.pair === "vix_vs_hy_credit_spread";
           const pillCls = f.diverging ? (isReassuringPair ? "good" : "warning") : "muted";
           const pillText = f.diverging ? (isReassuringPair ? "Decoupled (reassuring)" : "Diverging") : "No flagged divergence";
+          const windowDays = f.pair === "foreign_official_holdings_vs_10y_yield" ? 90 : 7;
           return `
           <div class="divergence-item">
             <div class="divergence-head">
@@ -1461,11 +1473,11 @@ function renderDivergenceFlags(flags) {
             <div class="divergence-series">
               <div class="divergence-series-item">
                 <div class="label">${f.series_a.label}</div>
-                <div class="value">${fmtDivergenceValue(f.series_a)} ${fmtDivergenceDelta(f.series_a)}</div>
+                <div class="value">${fmtDivergenceValue(f.series_a)} ${fmtDivergenceDelta(f.series_a, windowDays)}</div>
               </div>
               <div class="divergence-series-item">
                 <div class="label">${f.series_b.label}</div>
-                <div class="value">${fmtDivergenceValue(f.series_b)} ${fmtDivergenceDelta(f.series_b)}</div>
+                <div class="value">${fmtDivergenceValue(f.series_b)} ${fmtDivergenceDelta(f.series_b, windowDays)}</div>
               </div>
             </div>
             <div class="desc">${f.detail}</div>
@@ -1567,10 +1579,11 @@ function renderRiskRadar(row, priorFullReport) {
     <p class="eyebrow" style="margin-top:16px;">Risk Radar — current vs. prior report</p>
     <p class="caveat" style="margin: 0 0 10px;">
       Discretionary LLM estimate, same tier as the crash-probability estimate above — not a
-      calibrated model, never gates. Policy/Fed, Inflation, and Labor Market anchor to real series
-      already tracked in this system; Valuation partially does (real-yield leg only). Geopolitical
-      and Earnings have no free anchoring data and stay narrative judgment only — see
-      crash-check-rules.md's "Risk Radar Scoring Methodology."
+      calibrated model, never gates. Policy/Fed, Inflation, Labor Market, and Geopolitical (via the
+      Geopolitical Risk Index, added 2026-09-22) anchor to real series already tracked in this
+      system; Valuation partially does (real-yield leg only). Earnings alone has no free anchoring
+      data and stays narrative judgment only — see crash-check-rules.md's "Risk Radar Scoring
+      Methodology."
     </p>
     <div class="radar-wrap">
       <svg class="radar-svg" viewBox="0 0 300 300">

@@ -322,9 +322,10 @@ server.registerTool(
       "or a beat/miss), just don't worry about the status enum lagging behind it. `risk_radar` " +
       "(geopolitical/policy_fed/inflation/valuation/labor_market/" +
       "earnings, each 0-100) is required every run — see crash-check-rules.md's 'Risk Radar Scoring " +
-      "Methodology' for the per-axis banded rubric (4 of the 6 axes anchor to real series already " +
-      "tracked in this system; geopolitical/earnings stay narrative-only, no free anchoring data " +
-      "exists for either). Discretionary like the scenario distribution -- never gates, never validated. " +
+      "Methodology' for the per-axis banded rubric (5 of the 6 axes anchor to real series already " +
+      "tracked in this system, including geopolitical now -- see geopolitical_risk_index in " +
+      "get_context_indicators's macro_regime_signals, added 2026-09-22; only earnings stays " +
+      "narrative-only, no free anchoring data exists for it). Discretionary like the scenario distribution -- never gates, never validated. " +
       "crash_probability_pct/low/high are NOT inputs to this tool (changed 2026-09-22) -- they are " +
       "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
       "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
@@ -700,7 +701,7 @@ server.registerTool(
         },
         geopolitical_risk_index: gprIndex && {
           ...gprIndex,
-          signal: "Caldara & Iacoviello (Federal Reserve Board) -- a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Elevated/spiking = heightened geopolitical tension; read alongside (not as a substitute for) actual news/Fed-communication research in step 6.",
+          signal: `Caldara & Iacoviello (Federal Reserve Board) -- a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Read alongside (not as a substitute for) actual news/Fed-communication research in step 6. See crash-check-rules.md's Risk Radar Scoring Methodology for the banded rubric this now anchors the geopolitical axis to.${gprIndex.value > 150 ? " Above 150 -- genuinely elevated against this system's own full backfilled history (above its ~90th percentile)." : ""}`,
         },
         stock_bond_correlation: stockBondCorrelation && {
           ...stockBondCorrelation,

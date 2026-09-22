@@ -1,4 +1,5 @@
-import { computeSeriesDelta7d } from "./lib/seriesDelta.js";
+import { computeSeriesDelta7d, getValueOnOrBefore, subtractDays } from "./lib/seriesDelta.js";
+import { getLatestDataPoint } from "./lib/supabase.js";
 
 /**
  * Deterministic divergence detection between two normally-correlated
@@ -147,6 +148,47 @@ export async function computeDivergences(): Promise<DivergenceFlag[]> {
           : `No meaningful gold/silver split — gold (${goldPct7d}%/7d) and silver (${silverPct7d}%/7d) are moving together or silver isn't lagging enough to represent a flight-to-safety divergence.`,
         series_a: { label: "Gold (GLD)", value: gold.value, unit: "usd", delta_7d: gold.delta_7d },
         series_b: { label: "Silver (SLV)", value: silver.value, unit: "usd", delta_7d: silver.delta_7d },
+      });
+    }
+  }
+
+  // Foreign official Treasury holdings vs. 10yr yield, added 2026-09-22 —
+  // the "who's still buying the bonds" question from the fiscal-dominance
+  // discussion. UNLIKE every pair above, this uses a 90-CALENDAR-DAY
+  // window, not 7 (the `delta_7d` field name is reused for schema
+  // consistency across every pair, but holds a 90-day delta here — see
+  // this pair's own detail text, which always states the window
+  // explicitly): TIC_FOREIGN_OFFICIAL_HOLDINGS is monthly with a ~2-month
+  // publication lag, so a 7-day window would show zero movement almost
+  // every single day regardless of the real trend. Both series are
+  // anchored to TIC's own latest (lagged) observation date, not "today" --
+  // comparing DGS10's real-time move against TIC's stale reading would
+  // silently compare two different time windows and produce a meaningless
+  // number. Foreign *official* (not total) holdings specifically, since
+  // official-sector selling (central banks/governments) is the genuine
+  // fiscal-stress signal — private investor reallocation is a different,
+  // much noisier thing.
+  const ticOfficialLatest = await getLatestDataPoint("TIC_FOREIGN_OFFICIAL_HOLDINGS");
+  if (ticOfficialLatest) {
+    const anchorDate = ticOfficialLatest.observation_date;
+    const pastDate = subtractDays(anchorDate, 90);
+    const [ticPast, dgs10AtAnchor, dgs10Past] = await Promise.all([
+      getValueOnOrBefore("TIC_FOREIGN_OFFICIAL_HOLDINGS", pastDate),
+      getValueOnOrBefore("DGS10", anchorDate),
+      getValueOnOrBefore("DGS10", pastDate),
+    ]);
+    if (ticPast !== null && dgs10AtAnchor !== null && dgs10Past !== null) {
+      const ticDelta90d = Math.round((ticOfficialLatest.value - ticPast) * 10) / 10;
+      const dgs10Delta90d = Math.round((dgs10AtAnchor - dgs10Past) * 100) / 100;
+      const diverging = ticDelta90d <= -50 && dgs10Delta90d >= 0.15;
+      flags.push({
+        pair: "foreign_official_holdings_vs_10y_yield",
+        diverging,
+        detail: diverging
+          ? `Foreign official Treasury holdings fell $${Math.abs(ticDelta90d)}B over the 90 days ending ${anchorDate} while the 10yr yield rose ${dgs10Delta90d}pts over that same window — official-sector selling alongside rising yields is the "who's still buying the bonds" fiscal-stress signal, not proof of a debt crisis on its own (one 90-day window, first cut, not backtested).`
+          : `No meaningful divergence — foreign official holdings (${ticDelta90d >= 0 ? "+" : ""}$${ticDelta90d}B/90d) and the 10yr yield (${dgs10Delta90d >= 0 ? "+" : ""}${dgs10Delta90d}pts/90d) aren't showing the "official selling + rising yields" pattern over the window ending ${anchorDate}.`,
+        series_a: { label: "Foreign Official Treasury Holdings", value: ticOfficialLatest.value, unit: "usd_billions", delta_7d: ticDelta90d },
+        series_b: { label: "10yr Treasury Yield", value: dgs10AtAnchor, unit: "percent", delta_7d: dgs10Delta90d },
       });
     }
   }
