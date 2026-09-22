@@ -109,13 +109,29 @@ export interface NetInterestBurdenResult {
   net_interest_usd_billions: number;
   gdp_usd_billions: number;
   net_interest_pct_gdp: number;
+  revenue_usd_billions: number | null;
+  net_interest_pct_revenue: number | null;
   as_of: string;
 }
 
+/**
+ * Two cuts of the same net-interest burden, not two separate checks --
+ * added 2026-09-22 (external review) after verifying FGRECPT (BEA's
+ * broader "Federal government current receipts" total: tax + social-
+ * insurance + other) is the correct revenue denominator, not the narrower
+ * W006RC1Q027SBEA ("current TAX receipts" only), which would understate
+ * revenue by excluding social-insurance contributions and so overstate the
+ * burden. pct_revenue is closer to the actual debt-sustainability question
+ * ("can the government service this from its own income") than pct_gdp,
+ * and is the more commonly-cited cut in practice. revenue fields are
+ * nullable independent of the GDP fields -- a gap in FGRECPT shouldn't
+ * null out the pct_gdp reading this check already had.
+ */
 export async function computeNetInterestBurden(): Promise<NetInterestBurdenResult | null> {
-  const [netInterest, gdp] = await Promise.all([
+  const [netInterest, gdp, revenue] = await Promise.all([
     getLatestDataPoint("A091RC1Q027SBEA"),
     getLatestDataPoint("GDP"),
+    getLatestDataPoint("FGRECPT"),
   ]);
   if (!netInterest || !gdp || gdp.value === 0) return null;
 
@@ -123,6 +139,8 @@ export async function computeNetInterestBurden(): Promise<NetInterestBurdenResul
     net_interest_usd_billions: Math.round(netInterest.value * 10) / 10,
     gdp_usd_billions: Math.round(gdp.value * 10) / 10,
     net_interest_pct_gdp: Math.round((netInterest.value / gdp.value) * 10000) / 100,
+    revenue_usd_billions: revenue ? Math.round(revenue.value * 10) / 10 : null,
+    net_interest_pct_revenue: revenue && revenue.value !== 0 ? Math.round((netInterest.value / revenue.value) * 10000) / 100 : null,
     as_of: netInterest.observation_date,
   };
 }

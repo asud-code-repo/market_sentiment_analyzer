@@ -928,7 +928,7 @@ async function renderFiscalDominanceChecklist() {
       const rows = await fetchFromSupabase(`data_points?select=value&series_id=eq.${encodeURIComponent(seriesId)}&order=observation_date.desc&limit=1`);
       return rows[0]?.value ?? null;
     };
-    const [dff, unrate, nrou, cpiLatest, fyfsd, netInterest, gdp] = await Promise.all([
+    const [dff, unrate, nrou, cpiLatest, fyfsd, netInterest, gdp, revenue] = await Promise.all([
       fetchLatest("DFF"),
       fetchLatest("UNRATE"),
       fetchLatest("NROU"),
@@ -936,6 +936,7 @@ async function renderFiscalDominanceChecklist() {
       fetchLatest("FYFSD"),
       fetchLatest("A091RC1Q027SBEA"),
       fetchLatest("GDP"),
+      fetchLatest("FGRECPT"),
     ]);
 
     const cards = [];
@@ -978,14 +979,21 @@ async function renderFiscalDominanceChecklist() {
       });
     }
 
-    // 3. Net interest as % of GDP -- both series are $billions SAAR, same
-    // units/cadence, a clean direct ratio.
+    // 3. Net interest as % of GDP and % of total federal revenue (FGRECPT,
+    // BEA's broader "current receipts" total -- tax + social-insurance +
+    // other, not the narrower tax-only series, which would understate the
+    // denominator and overstate the burden). Same $billions SAAR
+    // convention as netInterest/gdp, clean direct ratios both ways. The
+    // revenue share is closer to the actual debt-sustainability question
+    // ("can the government service this from its own income") than the
+    // GDP share -- added 2026-09-22 after external review.
     if (netInterest != null && gdp) {
-      const pct = (netInterest / gdp) * 100;
+      const pctGdp = (netInterest / gdp) * 100;
+      const pctRevenue = revenue != null && revenue !== 0 ? (netInterest / revenue) * 100 : null;
       cards.push({
-        label: "Net Interest (% of GDP)",
-        value: `${pct.toFixed(2)}%`,
-        detail: "Rising here means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget — watch the trend over several quarters, not one reading.",
+        label: "Net Interest (% GDP / % Revenue)",
+        value: pctRevenue != null ? `${pctGdp.toFixed(2)}% / ${pctRevenue.toFixed(2)}%` : `${pctGdp.toFixed(2)}%`,
+        detail: `Rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget — watch the trend over several quarters, not one reading. ${pctRevenue != null ? "The revenue share is the more commonly-cited, more mechanistically direct cut." : ""}`,
       });
     }
 

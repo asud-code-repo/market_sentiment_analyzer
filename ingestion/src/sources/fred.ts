@@ -185,6 +185,23 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // net-interest-as-%-of-GDP. Same units/cadence as
                                           // A091RC1Q027SBEA, so this is a clean direct ratio,
                                           // unlike the FYFSD pairing above.
+
+  // 2026-09-22 addition — external review (Grok) of the Fiscal Dominance
+  // Regime Checklist suggested net interest as % of REVENUE, not just %
+  // of GDP — the more commonly-cited cut (closer to "can the government
+  // afford this from its own income," nearer the actual debt-sustainability
+  // question) and one this system didn't have yet. Verified before adding:
+  // W006RC1Q027SBEA ("Federal government current TAX receipts") was the
+  // first candidate checked and rejected — it excludes social-insurance
+  // contributions (~$2.2T/quarter), which would understate the true
+  // denominator and overstate the burden relative to how this ratio is
+  // normally reported. FGRECPT is BEA's broader "Federal government
+  // current receipts" total (NIPA), same quarterly-SAAR $billions
+  // convention as A091RC1Q027SBEA/GDP above, so this is a clean direct
+  // ratio too.
+  { id: "FGRECPT", unit: "usd_billions_saar" }, // Federal Government Current Receipts (BEA
+                                          // NIPA, total revenue — tax + social-insurance +
+                                          // other), quarterly SAAR.
 ];
 
 interface FredObservation {

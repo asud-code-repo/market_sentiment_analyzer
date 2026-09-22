@@ -659,7 +659,7 @@ server.registerTool(
         },
         net_interest_pct_gdp: netInterestBurden && {
           ...netInterestBurden,
-          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP as of ${netInterestBurden.as_of}. Rising here means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget -- watch the trend over several quarters, not one reading.`,
+          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP${netInterestBurden.net_interest_pct_revenue != null ? ` and ${netInterestBurden.net_interest_pct_revenue}% of total federal revenue` : ""} as of ${netInterestBurden.as_of}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget -- watch the trend over several quarters, not one reading.`,
         },
         gold_real_yield_correlation: goldRealYieldCorrelation && {
           ...goldRealYieldCorrelation,
