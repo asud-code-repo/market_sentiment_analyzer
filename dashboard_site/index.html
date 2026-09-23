@@ -341,6 +341,39 @@
 
   <div id="report-view"><p class="loading">Loading…</p></div>
 
+  <div class="card" id="section-bondyields">
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Yield Curve Shape — informational, not wave-gating</p>
+      <button class="collapse-toggle" id="bondyields-toggle" aria-expanded="true">Hide</button>
+    </div>
+    <div id="bondyields-body">
+      <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually below and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
+      <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <div class="card" id="section-fiscaldominance">
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Fiscal Dominance Regime Checklist — informational, not wave-gating</p>
+      <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
+    </div>
+    <div id="fiscaldominance-body">
+      <p class="context-note">4 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 3 of the 4 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
+      <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <div class="card" id="section-sector">
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Sector Capital Rotation — informational, not wave-gating</p>
+      <button class="collapse-toggle" id="sector-toggle" aria-expanded="true">Hide</button>
+    </div>
+    <div id="sector-body">
+      <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return.</p>
+      <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
   <div class="card" id="section-context">
     <div class="collapsible-head">
       <p class="eyebrow" style="margin: 0;">Contextual Indicators — informational, not wave-gating</p>
@@ -352,28 +385,15 @@
     </div>
   </div>
 
-  <div class="card" id="section-bondyields">
-    <p class="eyebrow">Yield Curve Shape — informational, not wave-gating</p>
-    <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually above and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
-    <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
-  </div>
-
-  <div class="card" id="section-fiscaldominance">
-    <p class="eyebrow">Fiscal Dominance Regime Checklist — informational, not wave-gating</p>
-    <p class="context-note">4 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked above). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 3 of the 4 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
-    <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
-  </div>
-
-  <div class="card" id="section-sector">
-    <p class="eyebrow">Sector Capital Rotation — informational, not wave-gating</p>
-    <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return.</p>
-    <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
-  </div>
-
   <div class="card" id="section-charts">
-    <p class="eyebrow">Crash Probability — History</p>
-    <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
-    <div id="chart-crash-probability"></div>
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Crash Probability — History</p>
+      <button class="collapse-toggle" id="charts-toggle" aria-expanded="true">Hide</button>
+    </div>
+    <div id="charts-body">
+      <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
+      <div id="chart-crash-probability"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -1454,7 +1474,6 @@ function fmtDivergenceDelta(series, windowDays = 7) {
 function renderDivergenceFlags(flags) {
   if (!Array.isArray(flags) || flags.length === 0) return "";
   return `
-    <p class="eyebrow" style="margin-top:16px;">Signal Relationships</p>
     <div class="divergence-list">
       ${flags
         .map((f) => {
@@ -1513,18 +1532,15 @@ function renderHazardModel(row) {
   // fall back to the prior unavailable-only wording.
   if (row.hazard_10pct_status === "ALREADY_BREACHED") {
     return `
-      <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
       <p class="loading">Not scored this run — the S&amp;P is already ${row.sp_drawdown_pct != null ? Number(row.sp_drawdown_pct).toFixed(1) + "%" : ""} below its ATH, past the model's 10% threshold. This model forecasts a FUTURE breach conditional on not already being past it, so it doesn't apply during an existing correction.</p>
     `;
   }
   if (row.hazard_10pct_band == null) {
     return `
-      <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
       <p class="loading">Unavailable this run (a required input series was temporarily missing) — not a reading of zero.</p>
     `;
   }
   return `
-    <p class="eyebrow" style="margin-top:16px;">Statistical Hazard Model — 10% Drawdown</p>
     <div class="indicator notable">
       <div class="notable-tag">● Rule-engine computed, calibrated — not the discretionary estimate above</div>
       <div class="value"><span class="pill ${HAZARD_BAND_PILL[row.hazard_10pct_band] || "muted"}">${HAZARD_BAND_LABELS[row.hazard_10pct_band] || row.hazard_10pct_band}</span></div>
@@ -1576,7 +1592,6 @@ function renderRiskRadar(row, priorFullReport) {
   if (!row.risk_radar) return "";
   const priorRadar = priorFullReport?.risk_radar ?? null;
   return `
-    <p class="eyebrow" style="margin-top:16px;">Risk Radar — current vs. prior report</p>
     <p class="caveat" style="margin: 0 0 10px;">
       Discretionary LLM estimate, same tier as the crash-probability estimate above — not a
       calibrated model, never gates. Policy/Fed, Inflation, Labor Market, and Geopolitical (via the
@@ -1632,6 +1647,62 @@ function fmtDate(iso) {
 /** Renders the full rich report view for one row, diffing against the prior
  * chronological row for the delta log — same visual language as
  * reference_docs/rules/dashboard-template.html, driven by real stored data. */
+// Collapsible sections INSIDE report-view -- different mechanism from
+// setupCollapsible() above, which binds one addEventListener per static
+// element at page load. report-view's whole innerHTML is replaced by
+// renderReport() on every date-navigation click, which would orphan any
+// per-element listener the moment the user changes dates. Uses event
+// delegation instead (bound once, below, to the never-replaced
+// #report-view container itself) plus reading stored state at RENDER
+// time (dynamicSectionExpanded) rather than applying it after the fact.
+// Defaults to expanded for every section -- adding the buttons shouldn't
+// itself hide report content nobody asked to hide.
+const DYNAMIC_SECTION_STORAGE_PREFIX = "reportSection_";
+
+function dynamicSectionExpanded(id) {
+  try {
+    const stored = localStorage.getItem(DYNAMIC_SECTION_STORAGE_PREFIX + id);
+    if (stored !== null) return stored === "true";
+  } catch (err) {
+    // Ignore -- falls back to the default below.
+  }
+  return true;
+}
+
+function collapsibleSection(id, title, innerHtml) {
+  const expanded = dynamicSectionExpanded(id);
+  return `
+    <div id="${id}" style="margin-top:16px;">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">${title}</p>
+        <button class="collapse-toggle" data-section-id="${id}" aria-expanded="${expanded}">${expanded ? "Hide" : "Show"}</button>
+      </div>
+      <div id="${id}-body"${expanded ? "" : " hidden"}>${innerHtml}</div>
+    </div>
+  `;
+}
+
+// Bound once (module load), not per-render -- see collapsibleSection's own
+// comment above for why. Toggles the clicked section's body directly
+// rather than re-calling renderReport(), so this never needs to touch the
+// row/priorFullReport/priorAnyRow closure state renderReport itself uses.
+document.getElementById("report-view").addEventListener("click", (e) => {
+  const toggle = e.target.closest(".collapse-toggle[data-section-id]");
+  if (!toggle) return;
+  const id = toggle.dataset.sectionId;
+  const body = document.getElementById(id + "-body");
+  if (!body) return;
+  const nowExpanded = body.hidden; // currently hidden => this click expands it
+  body.hidden = !nowExpanded;
+  toggle.textContent = nowExpanded ? "Hide" : "Show";
+  toggle.setAttribute("aria-expanded", String(nowExpanded));
+  try {
+    localStorage.setItem(DYNAMIC_SECTION_STORAGE_PREFIX + id, String(nowExpanded));
+  } catch (err) {
+    // Ignore -- this click still works, just won't persist.
+  }
+});
+
 function renderReport(row, priorFullReport, priorAnyRow) {
   const el = document.getElementById("report-view");
   if (!row) {
@@ -1698,7 +1769,6 @@ function renderReport(row, priorFullReport, priorAnyRow) {
     const triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]");
     if (triggers.length > 0) {
       triggerSection = `
-        <p class="eyebrow" style="margin-top:16px;">Trigger Status</p>
         <div class="trigger-list">
           ${triggers
             .map(
@@ -1715,8 +1785,8 @@ function renderReport(row, priorFullReport, priorAnyRow) {
   } catch (e) { /* malformed trigger_status, skip section */ }
 
   const notesSection = row.notes
-    ? `<p class="eyebrow" style="margin-top:16px;">Narrative</p><div class="notes-text">${row.notes.replace(/</g, "&lt;")}</div>`
-    : `<p class="loading" style="margin-top:16px;">No narrative for this entry — this was an automated daily indicator refresh, not a full chat-triggered report.</p>`;
+    ? `<div class="notes-text">${row.notes.replace(/</g, "&lt;")}</div>`
+    : `<p class="loading">No narrative for this entry — this was an automated daily indicator refresh, not a full chat-triggered report.</p>`;
 
   const confirmedRedCount = row.confirmed_red_count ?? 0;
   const pendingRedCount = Math.max(0, (row.red_count ?? 0) - confirmedRedCount);
@@ -1731,26 +1801,47 @@ function renderReport(row, priorFullReport, priorAnyRow) {
   const wavePillClass = !waveActive ? "muted" : row.wave_authorized ? "critical" : "warning";
   const wavePillText = !waveActive ? "NONE" : `${waveActive} — ${row.wave_authorized ? "authorized" : "observed, not authorized"}`;
 
+  // Each conditional section only wraps in collapsibleSection() when it
+  // actually has content -- an empty collapsible (header, nothing
+  // underneath) would be worse than no section at all. Hazard and
+  // Indicators moved ahead of the others (hazard now before indicators,
+  // per request) -- Probability/Scenario/delta-log stay combined under one
+  // toggle since they're one logical unit (same reasoning
+  // computeSectionNavItems below already applied: one nav chip for both).
+  const probabilityHtml = probSection + scenarioSection + renderDeltaLog(row.delta_log);
+  const probabilitySection = probabilityHtml
+    ? collapsibleSection("section-probability", "Crash Probability &amp; Scenario", probabilityHtml)
+    : "";
+  const hazardSection = collapsibleSection("section-hazard", "Statistical Hazard Model — 10% Drawdown", renderHazardModel(row));
+  const indicatorsHtml = `
+    <div class="grid-3">
+      ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
+      ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps, getConfirmation(row, "hy_spread"))}
+      ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct, getConfirmation(row, "sp_drawdown"))}
+      ${renderIndicatorCard("treasury10y", row.treasury_10y_pct, row.treasury_10y_color, priorAnyRow?.treasury_10y_pct, getConfirmation(row, "treasury_10y"))}
+      ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, getConfirmation(row, "sahm_rule"))}
+      ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
+    </div>
+  `;
+  const indicatorsSection = collapsibleSection("section-indicators", "6-Indicator Panel", indicatorsHtml);
+  const radarHtml = renderRiskRadar(row, priorFullReport);
+  const radarSection = radarHtml ? collapsibleSection("section-radar", "Risk Radar (current vs. prior report)", radarHtml) : "";
+  const signalsHtml = renderDivergenceFlags(row.divergence_flags);
+  const signalsSection = signalsHtml ? collapsibleSection("section-signals", "Signal Relationships", signalsHtml) : "";
+  const triggersSection = triggerSection ? collapsibleSection("section-triggers", "Trigger Status", triggerSection) : "";
+  const notesSectionWrapped = collapsibleSection("section-notes", "Narrative", notesSection);
+
   el.innerHTML = `
     ${banner}
     <div class="card">
       <p class="eyebrow">${fmtDate(row.run_at)} — <span class="pill ${confirmedRedCount >= 3 ? 'critical' : confirmedRedCount > 0 || pendingRedCount > 0 ? 'warning' : 'good'}">${redPillText}</span> <span class="pill ${wavePillClass}">${wavePillText}</span></p>
-      <div id="section-probability">${probSection}</div>
-      <div id="section-scenario">${scenarioSection}</div>
-      ${renderDeltaLog(row.delta_log)}
-      <div class="grid-3" id="section-indicators" style="margin-top:16px;">
-        ${renderIndicatorCard("vix", row.vix_value, row.vix_color, priorAnyRow?.vix_value, getConfirmation(row, "vix"))}
-        ${renderIndicatorCard("hySpread", row.hy_spread_bps, row.hy_spread_color, priorAnyRow?.hy_spread_bps, getConfirmation(row, "hy_spread"))}
-        ${renderIndicatorCard("drawdown", row.sp_drawdown_pct, row.sp_drawdown_color, priorAnyRow?.sp_drawdown_pct, getConfirmation(row, "sp_drawdown"))}
-        ${renderIndicatorCard("treasury10y", row.treasury_10y_pct, row.treasury_10y_color, priorAnyRow?.treasury_10y_pct, getConfirmation(row, "treasury_10y"))}
-        ${renderIndicatorCard("sahm", row.sahm_rule_value, row.sahm_rule_color, priorAnyRow?.sahm_rule_value, getConfirmation(row, "sahm_rule"))}
-        ${renderIndicatorCard("fedPivot", row.fed_pivot_signal, row.fed_pivot_color, priorAnyRow?.fed_pivot_signal, getConfirmation(row, null))}
-      </div>
-      <div id="section-radar">${renderRiskRadar(row, priorFullReport)}</div>
-      <div id="section-signals">${renderDivergenceFlags(row.divergence_flags)}</div>
-      <div id="section-hazard">${renderHazardModel(row)}</div>
-      <div id="section-triggers">${triggerSection}</div>
-      <div id="section-notes">${notesSection}</div>
+      ${probabilitySection}
+      ${hazardSection}
+      ${indicatorsSection}
+      ${radarSection}
+      ${signalsSection}
+      ${triggersSection}
+      ${notesSectionWrapped}
     </div>
   `;
 }
@@ -1775,15 +1866,19 @@ function computeSectionNavItems(row) {
   const items = [];
   // One chip for both -- scenario sits immediately below probability in the
   // same card (same LLM synthesis output, see the caveat text on each), so
-  // a separate jump target for each was redundant. Falls back to whichever
-  // of the two actually has content, in case they ever diverge.
+  // a separate jump target for each was redundant. Both now share one
+  // combined wrapper id (section-probability) regardless of which has
+  // content -- see renderReport's own collapsibleSection() call.
   if (row.crash_probability_pct != null || row.scenario_bull_pct != null) {
-    items.push({ id: row.crash_probability_pct != null ? "section-probability" : "section-scenario", label: "Probability" });
+    items.push({ id: "section-probability", label: "Probability" });
   }
+  // Order matches the page's actual visual order (hazard moved ahead of
+  // indicators) -- a nav chip list in a different order than what it
+  // scrolls to would be a confusing mismatch.
+  items.push({ id: "section-hazard", label: "Hazard" });
   items.push({ id: "section-indicators", label: "Indicators" });
   if (row.risk_radar) items.push({ id: "section-radar", label: "Radar" });
   if (Array.isArray(row.divergence_flags) && row.divergence_flags.length > 0) items.push({ id: "section-signals", label: "Signals" });
-  items.push({ id: "section-hazard", label: "Hazard" });
   let hasTriggers = false;
   try {
     const triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]");
@@ -1791,12 +1886,12 @@ function computeSectionNavItems(row) {
   } catch (e) { /* malformed trigger_status -- treat as none, same as renderReport does */ }
   if (hasTriggers) items.push({ id: "section-triggers", label: "Triggers" });
   items.push({ id: "section-notes", label: "Notes" });
-  // Static cards below report-view, always present -- three separate cards,
-  // not one, so each gets its own chip rather than one lumping them together.
-  items.push({ id: "section-context", label: "Context" });
+  // Static cards below report-view, always present, in the page's actual
+  // visual order (Yields, Regime, Sector, Context, Charts).
   items.push({ id: "section-bondyields", label: "Yields" });
   items.push({ id: "section-fiscaldominance", label: "Regime" });
   items.push({ id: "section-sector", label: "Sector" });
+  items.push({ id: "section-context", label: "Context" });
   items.push({ id: "section-charts", label: "Charts" });
   return items;
 }
@@ -2009,15 +2104,17 @@ if (isStandalonePwa) {
   refreshBtn.addEventListener("click", () => location.reload());
 }
 
-// Collapsible cards -- default collapsed, remember state per-viewer in
-// localStorage. Safe to run before main()'s data fetch: context-grid is a
-// plain CSS grid (not DOM-measured) and renderLineChart's SVGs use a fixed
-// viewBox (900x140), so both render correctly into a hidden container --
-// no need to defer either until the section is expanded. Wrapped in
-// try/catch since localStorage can throw in some contexts (private
-// browsing, blocked site data) -- falls back to always-collapsed rather
-// than breaking the page.
-function setupCollapsible(storageKey, toggleId, bodyId) {
+// Collapsible cards -- remembers state per-viewer in localStorage, default
+// state per-call (indicatorHistory/context default COLLAPSED, unchanged
+// from before; the 4 new calls below default EXPANDED so adding the
+// buttons doesn't itself change what's visible on first load). Safe to run
+// before main()'s data fetch: context-grid is a plain CSS grid (not
+// DOM-measured) and renderLineChart's SVGs use a fixed viewBox (900x140),
+// so both render correctly into a hidden container -- no need to defer
+// either until the section is expanded. Wrapped in try/catch since
+// localStorage can throw in some contexts (private browsing, blocked site
+// data) -- falls back to the given default rather than breaking the page.
+function setupCollapsible(storageKey, toggleId, bodyId, defaultExpanded = false) {
   const toggle = document.getElementById(toggleId);
   const body = document.getElementById(bodyId);
 
@@ -2027,11 +2124,12 @@ function setupCollapsible(storageKey, toggleId, bodyId) {
     toggle.setAttribute("aria-expanded", String(expanded));
   }
 
-  let initiallyExpanded = false;
+  let initiallyExpanded = defaultExpanded;
   try {
-    initiallyExpanded = localStorage.getItem(storageKey) === "true";
+    const stored = localStorage.getItem(storageKey);
+    if (stored !== null) initiallyExpanded = stored === "true";
   } catch (err) {
-    // Ignore -- defaults to collapsed.
+    // Ignore -- falls back to defaultExpanded.
   }
   setExpanded(initiallyExpanded);
 
@@ -2047,6 +2145,10 @@ function setupCollapsible(storageKey, toggleId, bodyId) {
 }
 setupCollapsible("indicatorHistoryExpanded", "indicator-history-toggle", "indicator-history-body");
 setupCollapsible("contextIndicatorsExpanded", "context-toggle", "context-body");
+setupCollapsible("bondYieldsExpanded", "bondyields-toggle", "bondyields-body", true);
+setupCollapsible("fiscalDominanceExpanded", "fiscaldominance-toggle", "fiscaldominance-body", true);
+setupCollapsible("sectorRotationExpanded", "sector-toggle", "sector-body", true);
+setupCollapsible("crashProbChartExpanded", "charts-toggle", "charts-body", true);
 
 async function main() {
   try {
