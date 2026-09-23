@@ -463,10 +463,13 @@ server.registerTool(
       "monthly), and stock_bond_correlation (SPY vs. a DGS10-derived bond-price proxy, 180-day " +
       "rolling -- the classic 60/40 diversification signal; a break from its usual negative " +
       "correlation is the 2022-style regime-shift signature). Same rule as fiscal_dominance_" +
-      "checklist: report each on its own, never synthesize into one score.",
+      "checklist: report each on its own, never synthesize into one score. Also (added 2026-09-23): " +
+      "net_liquidity (Fed balance sheet − TGA − reverse repo, a proxy), and two Tier 2 relative-return " +
+      "breadth pairs alongside small_cap_breadth: equal_weight_breadth (RSP vs SPY) and " +
+      "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -495,6 +498,7 @@ server.registerTool(
         getLatestDataPoint("DFF"),
         getLatestDataPoint("GFDEGDQ188S"),
         getLatestDataPoint("WALCL"),
+        getLatestDataPoint("WTREGEN"),
         getLatestDataPoint("THREEFYTP10"),
         getLatestDataPoint("TIC_FOREIGN_HOLDINGS_TOTAL"),
         getLatestDataPoint("TIC_FOREIGN_OFFICIAL_HOLDINGS"),
@@ -506,6 +510,8 @@ server.registerTool(
         computeStockBondCorrelation(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
+        computeSeriesDelta("RSP"),
+        computeSeriesDelta("KRE"),
         computeSeriesDelta("GLD"),
         computeSeriesDelta("X:BTCUSD"),
         computeSectorRotation(),
@@ -544,6 +550,65 @@ server.registerTool(
               "stress signal before it shows up in large-cap earnings. Informational only, Tier 2 " +
               "— never part of the 3-of-6 wave-authorization gate. Threshold/magnitude is a first " +
               "cut, not backtested — read directionally, not as a hard flag.",
+          }
+        : null;
+
+    // Two more relative-return-vs-SPY pairs, added 2026-09-23 (external
+    // review): same mechanism and same Tier 2 / informational-only status as
+    // smallCapBreadth above.
+    const relativeSpread = (delta: typeof rspDelta) => {
+      const pct = pctChange(delta.latest_value, delta.delta_7d);
+      if (pct === null || spyPct7d === null) return null;
+      return { spread: round2(pct - spyPct7d), pct: round2(pct), as_of: delta.latest_date };
+    };
+    const rspSpread = relativeSpread(rspDelta);
+    const equalWeightBreadth = rspSpread
+      ? {
+          spread_7d_pct: rspSpread.spread,
+          rsp_pct_change_7d: rspSpread.pct,
+          spy_pct_change_7d: round2(spyPct7d!),
+          as_of: rspSpread.as_of,
+          signal:
+            "Equal-weight S&P 500 (RSP) vs cap-weight (SPY) relative 7-day return. Negative = the " +
+            "average stock is lagging the mega-cap-driven index (narrow leadership) — an index at " +
+            "highs can mask weak underlying participation. Informational only, Tier 2, never part of " +
+            "the 3-of-6 wave-authorization gate. First-cut, not backtested — read directionally.",
+        }
+      : null;
+    const kreSpread = relativeSpread(kreDelta);
+    const regionalBankStress = kreSpread
+      ? {
+          spread_7d_pct: kreSpread.spread,
+          kre_pct_change_7d: kreSpread.pct,
+          spy_pct_change_7d: round2(spyPct7d!),
+          as_of: kreSpread.as_of,
+          signal:
+            "Regional banks (KRE) vs S&P 500 (SPY) relative 7-day return. Sharply negative = " +
+            "credit-sector-specific stress (the 2023 SVB episode showed here first) — read alongside " +
+            "nfci_credit_subindex and bank_lending_standards_tightening_pct. Informational only, " +
+            "Tier 2, never part of the wave-authorization gate. First-cut, not backtested.",
+        }
+      : null;
+
+    // Net liquidity = Fed balance sheet − Treasury General Account − reverse
+    // repo. WALCL/WTREGEN are millions of dollars, RRPONTSYD is billions.
+    // Components are weekly/daily and may be as-of different dates; each is
+    // reported so the mismatch is visible.
+    const netLiquidity =
+      walcl && wtregen && rrpontsyd
+        ? {
+            value_usd_millions: Math.round(walcl.value - wtregen.value - rrpontsyd.value * 1000),
+            components: {
+              fed_balance_sheet_usd_millions: { value: walcl.value, as_of: walcl.observation_date },
+              treasury_general_account_usd_millions: { value: wtregen.value, as_of: wtregen.observation_date },
+              reverse_repo_usd_millions: { value: rrpontsyd.value * 1000, as_of: rrpontsyd.observation_date },
+            },
+            signal:
+              "Net liquidity = Fed balance sheet − Treasury General Account − overnight reverse repo, " +
+              "a widely-used proxy for reserves available to the financial system. Falling = liquidity " +
+              "draining (QT, or TGA rebuild after debt-ceiling resolution); rising = liquidity " +
+              "injection. Read the multi-month trend, not a single week. A proxy, not an official " +
+              "Fed series, and not validated as a predictor — context only, alongside NFCI/STLFSI4.",
           }
         : null;
 
@@ -642,6 +707,9 @@ server.registerTool(
       },
       recession_probability_ny_fed_12mo_pct: nyFedRecessionProb,
       small_cap_breadth: smallCapBreadth,
+      equal_weight_breadth: equalWeightBreadth,
+      regional_bank_stress: regionalBankStress,
+      net_liquidity: netLiquidity,
       copper_price_usd_per_ton: copper && {
         ...copper,
         signal: "\"Dr. Copper\" -- a classic leading growth/recession-cycle indicator. Informational cross-check for the Type B (Recession) crash-type diagnosis (crash-check-rules.md Stage 1), NOT one of that diagnosis's hard trigger criteria (unemployment/Sahm/CPI, unchanged) and never part of the 6-indicator wave-authorization gate. Monthly cadence (IMF-sourced via FRED) -- a single month's move means little, read the trend.",

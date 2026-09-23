@@ -38,8 +38,12 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
-- **Market-internals / breadth proxy via relative ETF performance — partially
-  built.** Small-cap vs. large-cap (Russell 2000 via IWM vs. S&P 500 via SPY)
+- **Market-internals / breadth proxy via relative ETF performance — built
+  2026-09-23 (code done; needs backfill + live check).** RSP/SPY and KRE/SPY
+  added alongside IWM/SPY (`BREADTH_TICKERS`, `get_context_indicators`,
+  dashboard). Also added net liquidity (WALCL − WTREGEN − RRPONTSYD) via new
+  `WTREGEN` FRED series. New tickers/series need `npm run backfill` before the
+  cards populate. Original note follows. Small-cap vs. large-cap (Russell 2000 via IWM vs. S&P 500 via SPY)
   shipped 2026-08-27 as a `get_context_indicators`/dashboard contextual
   reading, tracked independently of the BrokerageLink watchlist so a
   Portfolio Opportunity Review's full-replacement sync can't delete it. Two

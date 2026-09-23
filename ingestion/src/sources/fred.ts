@@ -213,6 +213,10 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "WALCL", unit: "usd_millions" },  // Fed's consolidated balance sheet (H.4.1 release),
                                           // weekly. The QE/QT-size series this system had no
                                           // proxy for at all before this.
+  // 2026-09-23 addition — external review: net liquidity = WALCL − TGA − RRP
+  // (WALCL and RRPONTSYD already ingested above). WTREGEN is the Treasury
+  // General Account at the Fed, weekly, same millions-of-dollars unit as WALCL.
+  { id: "WTREGEN", unit: "usd_millions" },
   { id: "THREEFYTP10", unit: "percent" }, // 10yr term premium — Kim-Wright (2005) three-factor
                                           // model, hosted directly on FRED, daily. NOT the NY
                                           // Fed's own ACM model (Adrian-Crump-Moench), which

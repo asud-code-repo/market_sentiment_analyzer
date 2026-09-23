@@ -20,7 +20,11 @@ const BACKFILL_YEARS = 2; // matches Massive's advertised free-tier historical d
 // write_watchlist's full-replacement sync (syncWatchlistTickers deletes any
 // symbol not in its caller-supplied list every Portfolio Opportunity Review),
 // so these can't be silently wiped out by that path.
-const BREADTH_TICKERS = ["IWM", "SPY"];
+//
+// RSP (equal-weight S&P) and KRE (regional banks) added 2026-09-23 — same
+// relative-return-spread-vs-SPY pattern as IWM: RSP catches narrow-leadership
+// risk, KRE catches credit-sector-specific stress (2023 regional-bank crisis).
+const BREADTH_TICKERS = ["IWM", "SPY", "RSP", "KRE"];
 
 // Tracked for the gold contextual indicator (get_context_indicators) —
 // gold already has a real allocation in the Type C/Type E crash-type

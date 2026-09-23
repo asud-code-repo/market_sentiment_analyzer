@@ -638,6 +638,23 @@ const CONTEXT_INFO = {
     signal: (v) => (v < 0 ? "Small-caps underperforming — early domestic-credit-stress signal, not backtested" : "Small-caps keeping pace or outperforming"),
     notable: (v) => v < 0,
   },
+  equalWeightBreadth: {
+    label: "Equal-Weight vs Cap-Weight (RSP vs SPY)",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}pp / 7d`,
+    signal: (v) => (v < 0 ? "Average stock lagging the mega-cap-driven index — narrow leadership, not backtested" : "Average stock keeping pace or outperforming"),
+    notable: (v) => v < 0,
+  },
+  regionalBankStress: {
+    label: "Regional Banks vs S&P (KRE vs SPY)",
+    format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}pp / 7d`,
+    signal: (v) => (v < 0 ? "Regional banks underperforming — credit-sector-specific stress signal (SVB 2023 showed here first), not backtested" : "Regional banks keeping pace or outperforming"),
+    notable: (v) => v < 0,
+  },
+  netLiquidity: {
+    label: "Net Liquidity (Fed BS − TGA − RRP)",
+    format: (v) => `$${(v / 1e6).toFixed(2)}T`,
+    signal: () => "Fed balance sheet minus Treasury General Account minus reverse repo — a widely-used proxy for reserves available to the system, not an official Fed series. Falling = liquidity draining; read the multi-month trend, not one week.",
+  },
   gold: {
     label: "Gold (GLD)",
     format: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}% / 7d`,
@@ -732,6 +749,12 @@ function renderContextIndicators(latest) {
     recprousm156n: latest.RECPROUSM156N,
     nyFedRecessionProb: nyFedProb,
     smallCapBreadth: latest.SMALL_CAP_BREADTH_SPREAD_7D,
+    equalWeightBreadth: latest.EQUAL_WEIGHT_BREADTH_SPREAD_7D,
+    regionalBankStress: latest.REGIONAL_BANK_SPREAD_7D,
+    netLiquidity:
+      latest.WALCL != null && latest.WTREGEN != null && latest.RRPONTSYD != null
+        ? latest.WALCL - latest.WTREGEN - latest.RRPONTSYD * 1000
+        : null,
     gold: latest.GOLD_PCT_CHANGE_7D,
     bitcoin: latest.BITCOIN_PCT_CHANGE_7D,
     walcl: latest.WALCL,
@@ -2176,7 +2199,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "WTREGEN", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough
@@ -2255,6 +2278,26 @@ async function main() {
         if (bitcoinPct7d != null) latestBySeriesId.BITCOIN_PCT_CHANGE_7D = Math.round(bitcoinPct7d * 100) / 100;
       } catch (err) {
         // Isolated: no BTC history yet shouldn't take down anything else.
+      }
+
+      // RSP and KRE vs SPY 7-day spreads, added 2026-09-23 (external review)
+      // — same computation as the IWM/SPY spread above, via the shared
+      // single-ticker helper. Isolated so missing history (pre-backfill)
+      // can't block anything else.
+      try {
+        const spyPct = await fetchPctChange7d("SPY");
+        if (spyPct != null) {
+          for (const [ticker, key] of [["RSP", "EQUAL_WEIGHT_BREADTH_SPREAD_7D"], ["KRE", "REGIONAL_BANK_SPREAD_7D"]]) {
+            try {
+              const pct = await fetchPctChange7d(ticker);
+              if (pct != null) latestBySeriesId[key] = Math.round((pct - spyPct) * 100) / 100;
+            } catch (err) {
+              // Isolated per ticker.
+            }
+          }
+        }
+      } catch (err) {
+        // Isolated: no SPY history shouldn't take down anything else.
       }
 
       // Stock-bond correlation, added 2026-09-22 (external review) --
