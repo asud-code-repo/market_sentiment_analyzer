@@ -67,12 +67,14 @@ function previousWeekday(dateStr: string): string {
 
 /**
  * A daily-cadence series (VIX, HY spread, S&P, 10Y) is stale if its
- * observation predates the previous weekday. FRED publishes these with a
- * one-business-day lag (today's VIX/HY/10Y close appears the next morning),
- * so requiring today's date meant the 2pm ET scheduled run could never pass
- * this check on any weekday (found 2026-09-23, the run aborted "stale" with
- * a healthy ingest). One business day of lag is the source's normal
- * behavior; two is a genuinely missed update. Holidays aren't modeled, so a
+ * observation predates two weekdays back. FRED publishes these with a
+ * one-to-two-business-day lag that differs by series: HY spread/S&P post the
+ * next morning, but VIX and the Treasury yields can still be two business
+ * days behind at the 2pm ET scheduled run (verified against FRED's own
+ * public CSV 2026-09-24, not just our database — the ingest was healthy both
+ * days the run aborted "stale"). Requiring today's date (or even yesterday's)
+ * made the scheduled run unable to pass on some weekdays. Three or more
+ * business days behind is a genuinely missed update. Holidays aren't modeled, so a
  * post-holiday day may still flag conservatively. A monthly series
  * (Sahm Rule, sourced from BLS employment data) is dated to the 1st of the
  * observed month and released alongside the following month's BLS jobs
@@ -86,7 +88,7 @@ function previousWeekday(dateStr: string): string {
  */
 function isSeriesFresh(cadence: "daily" | "monthly", observationDate: string, now: Date): boolean {
   if (cadence === "daily") {
-    return observationDate >= previousWeekday(mostRecentWeekday(easternDateString(now)));
+    return observationDate >= previousWeekday(previousWeekday(mostRecentWeekday(easternDateString(now))));
   }
   return daysBetween(observationDate, easternDateString(now)) <= 62;
 }
