@@ -56,9 +56,24 @@ const daysBetween = (fromDateStr: string, toDateStr: string): number => {
   return Math.round((to - from) / 86_400_000);
 };
 
+/** The weekday strictly before the given YYYY-MM-DD date (Monday -> prior Friday). */
+function previousWeekday(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  do {
+    d.setUTCDate(d.getUTCDate() - 1);
+  } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * A daily-cadence series (VIX, HY spread, S&P, 10Y) is stale if its
- * observation predates the most recent expected weekday. A monthly series
+ * observation predates the previous weekday. FRED publishes these with a
+ * one-business-day lag (today's VIX/HY/10Y close appears the next morning),
+ * so requiring today's date meant the 2pm ET scheduled run could never pass
+ * this check on any weekday (found 2026-09-23, the run aborted "stale" with
+ * a healthy ingest). One business day of lag is the source's normal
+ * behavior; two is a genuinely missed update. Holidays aren't modeled, so a
+ * post-holiday day may still flag conservatively. A monthly series
  * (Sahm Rule, sourced from BLS employment data) is dated to the 1st of the
  * observed month and released alongside the following month's BLS jobs
  * report (~first Friday of month M+2) — e.g. the August reading
@@ -71,7 +86,7 @@ const daysBetween = (fromDateStr: string, toDateStr: string): number => {
  */
 function isSeriesFresh(cadence: "daily" | "monthly", observationDate: string, now: Date): boolean {
   if (cadence === "daily") {
-    return observationDate >= mostRecentWeekday(easternDateString(now));
+    return observationDate >= previousWeekday(mostRecentWeekday(easternDateString(now)));
   }
   return daysBetween(observationDate, easternDateString(now)) <= 62;
 }
