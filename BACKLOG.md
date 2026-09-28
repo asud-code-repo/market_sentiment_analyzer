@@ -38,6 +38,20 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **VIX source moved FRED -> Yahoo (2026-09-28).** FRED's own VIXCLS was
+  found stuck 4+ business days behind (verified against FRED's public CSV
+  directly, not just our DB) while ingestion was healthy every day — a
+  genuine upstream CBOE/FRED publication gap. New `ingestion/src/sources/
+  yahoo.ts` pulls the same CBOE VIX value from Yahoo's unofficial chart API
+  same-day (cross-checked exact match against FRED's last-good reading),
+  still written under the "VIXCLS" series_id so nothing downstream changed.
+  Wired as `required: true` in ingest.ts (VIX is one of the 6 gating
+  indicators). Unofficial/undocumented endpoint, same free-tier tradeoff as
+  Massive/SSGA/CBOE/GPR/TIC — could change shape or start rate-limiting
+  without notice. Backfilled full history (9,254 daily obs, 1990-present) via
+  explicit period1/period2 params (range=max/5y shorthand silently bucketed
+  old history down to a sparser cadence, verified live).
+
 - **Market-internals / breadth proxy via relative ETF performance — built
   2026-09-23 (code done; needs backfill + live check).** RSP/SPY and KRE/SPY
   added alongside IWM/SPY (`BREADTH_TICKERS`, `get_context_indicators`,

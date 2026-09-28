@@ -1,6 +1,7 @@
 import { writeDataPoints, getLatestValue, type DataPoint } from "./lib/supabase.js";
 import { checkPlausibility } from "./lib/plausibility.js";
 import { fetchFred } from "./sources/fred.js";
+import { fetchYahoo } from "./sources/yahoo.js";
 import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
@@ -32,6 +33,11 @@ async function runSource(
 async function main() {
   const results = await Promise.all([
     runSource("FRED", true, fetchFred),
+    // Required, not best-effort like CBOE/Massive below: VIX is one of the 6
+    // gating indicators, so a broken feed should fail the run loudly (same
+    // tier as FRED/EIA), not silently degrade. See sources/yahoo.ts for why
+    // this replaced FRED's own VIXCLS.
+    runSource("Yahoo", true, fetchYahoo),
     runSource("EIA", true, fetchEia),
     // CBOE is best-effort, not required: it's supplementary sentiment data,
     // not one of the 6 canonical crash indicators, and its only known public

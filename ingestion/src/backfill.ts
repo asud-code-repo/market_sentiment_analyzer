@@ -1,5 +1,6 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
+import { fetchYahooBackfill } from "./sources/yahoo.js";
 import { fetchMassiveBackfill } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
@@ -17,6 +18,10 @@ async function main() {
   console.log("Backfilling FRED series (5yr)...");
   const fredPoints = await fetchFredBackfill();
   console.log(`FRED backfill: ${fredPoints.length} total observations.`);
+
+  console.log("Backfilling VIX (full history via Yahoo)...");
+  const yahooPoints = await fetchYahooBackfill();
+  console.log(`Yahoo backfill: ${yahooPoints.length} total observations.`);
 
   console.log("Backfilling watchlist ticker prices (2yr via Massive)...");
   const tickerPoints = await fetchMassiveBackfill();
@@ -50,7 +55,7 @@ async function main() {
     console.error(`TIC backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
   }
 
-  const allPoints = [...fredPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints];
+  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
   await writeDataPoints(allPoints);
   console.log("Backfill complete.");

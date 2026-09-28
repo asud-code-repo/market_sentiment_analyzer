@@ -5,7 +5,10 @@ import type { DataPoint } from "../lib/supabase.js";
 // (Stage 2 bullet) plus VIXCLS, which is the natural free source for the VIX
 // reading used in the indicator panel (indicator #1).
 const FRED_SERIES: { id: string; unit: string }[] = [
-  { id: "VIXCLS", unit: "index" },       // CBOE Volatility Index
+  // VIXCLS moved to sources/yahoo.ts 2026-09-28 — FRED's own VIXCLS was
+  // found stuck 4+ business days behind (verified against FRED's public CSV
+  // directly), a genuine upstream publication gap. Still written under the
+  // "VIXCLS" series_id there, so nothing downstream changed.
   { id: "BAMLH0A0HYM2", unit: "percent" }, // ICE BofA US High Yield OAS — FRED reports this in
                                           // percent (e.g. 2.90 = 290bps); the rule engine converts
                                           // to bps to match the indicator band units.
