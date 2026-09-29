@@ -206,6 +206,20 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // NIPA, total revenue — tax + social-insurance +
                                           // other), quarterly SAAR.
 
+  // 2026-09-28 addition — prompted by an external research note ("Austerity
+  // Is a Sound Bite. Inflation Is the Plan.") arguing that above a certain
+  // government-spending-share-of-GDP threshold, belt-tightening becomes
+  // structurally unable to close a deficit (cutting spending shrinks the
+  // tax base it's measured against). That's a genuinely different question
+  // from federal_debt_pct_gdp (a debt STOCK) -- this is spending as a FLOW
+  // share of the economy, the fifth Fiscal Dominance Regime Checklist check.
+  { id: "FGEXPND", unit: "usd_billions_saar" }, // Federal Government Current Expenditures (BEA
+                                          // NIPA), quarterly SAAR — same units/cadence as GDP
+                                          // above, a clean direct ratio. FEDERAL ONLY, not
+                                          // "general government" (all levels) -- see
+                                          // regimeIndicators.ts's computeGovtSpendingShare for
+                                          // why that matters.
+
   // 2026-09-22 additions — external review (Grok), the "macro regime
   // detection" suggestions. Two of six checked out as real free FRED
   // series; MOVE index and CDS spreads were investigated and rejected (no

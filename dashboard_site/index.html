@@ -358,7 +358,7 @@
       <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
     </div>
     <div id="fiscaldominance-body">
-      <p class="context-note">4 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 3 of the 4 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
+      <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
       <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
     </div>
   </div>
@@ -983,7 +983,7 @@ function drawYieldCurveChart(wrap, snapshots) {
 // the Supabase-REST-vs-supabase-js boundary, same convention as this file's
 // other MCP-mirrored logic: erf(), estrellaMishkinRecessionProbability(),
 // adjustForSplits()). See that file's own doc comments for the full
-// methodology on each of the 4 checks -- not repeated here.
+// methodology on each of the 5 checks -- not repeated here.
 function pearsonCorrelation(xs, ys) {
   const n = xs.length;
   if (n < 2 || ys.length !== n) return null;
@@ -1012,7 +1012,7 @@ async function renderFiscalDominanceChecklist() {
       const rows = await fetchFromSupabase(`data_points?select=value&series_id=eq.${encodeURIComponent(seriesId)}&order=observation_date.desc&limit=1`);
       return rows[0]?.value ?? null;
     };
-    const [dff, unrate, nrou, cpiLatest, fyfsd, netInterest, gdp, revenue] = await Promise.all([
+    const [dff, unrate, nrou, cpiLatest, fyfsd, netInterest, gdp, revenue, govtSpending] = await Promise.all([
       fetchLatest("DFF"),
       fetchLatest("UNRATE"),
       fetchLatest("NROU"),
@@ -1021,6 +1021,7 @@ async function renderFiscalDominanceChecklist() {
       fetchLatest("A091RC1Q027SBEA"),
       fetchLatest("GDP"),
       fetchLatest("FGRECPT"),
+      fetchLatest("FGEXPND"),
     ]);
 
     const cards = [];
@@ -1113,6 +1114,23 @@ async function renderFiscalDominanceChecklist() {
             : "Still meaningfully negative — gold is behaving like it normally does relative to real yields, no decoupling signal here. Not backtested/calibrated — a first cut.",
         });
       }
+    }
+
+    // 5. Federal government spending as % of GDP (FGEXPND/GDP) -- a FLOW
+    // share of the economy, a different question from federal_debt_pct_gdp's
+    // debt STOCK. Added 2026-09-28, prompted by an external research note
+    // arguing belt-tightening becomes structurally difficult past a certain
+    // spending-share threshold. Deliberately not banded -- the note's own
+    // <30%/30-40%/50%+ thresholds are for GENERAL government (all levels),
+    // not this federal-only figure, and rescaling them without validation
+    // would manufacture a precision this system doesn't have.
+    if (govtSpending != null && gdp) {
+      const pctGdp = (govtSpending / gdp) * 100;
+      cards.push({
+        label: "Govt Spending (% GDP)",
+        value: `${pctGdp.toFixed(1)}%`,
+        detail: "FEDERAL spending only, not general government (all levels) -- reads structurally lower than an international 'general government' figure. No validated threshold band applies here (an external note's <30%/30-40%/50%+ 'belt-tightening becomes difficult/near-impossible' bands are for that broader, unavailable-for-free measure). Watch the multi-year trend and rate of change, not a single level.",
+      });
     }
 
     if (cards.length === 0) {

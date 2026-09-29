@@ -38,6 +38,21 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Fiscal Dominance Regime Checklist: 5th check added (2026-09-28), govt
+  spending as % of GDP.** Prompted by an external research note ("Austerity
+  Is a Sound Bite. Inflation Is the Plan.," Vasuki Research) arguing
+  belt-tightening becomes structurally difficult past a spending-share
+  threshold — a FLOW question, different from `federal_debt_pct_gdp`'s debt
+  STOCK. New `FGEXPND` FRED series (federal spending, quarterly SAAR) ÷
+  `GDP`. `computeGovtSpendingShare()` in `regimeIndicators.ts`, wired into
+  `get_context_indicators` and the dashboard's Fiscal Dominance card.
+  Deliberately **not banded** against the source note's own `<30%`/`30-40%`/
+  `~50%+` thresholds — those are for *general government* (federal + state +
+  local), no clean free version of which exists on FRED; `FGEXPND` is
+  federal-only and reads structurally lower, so rescaling those bands would
+  manufacture unvalidated precision. Needs a backfill run before the card
+  populates.
+
 - **VIX source moved FRED -> Yahoo (2026-09-28).** FRED's own VIXCLS was
   found stuck 4+ business days behind (verified against FRED's public CSV
   directly, not just our DB) while ingestion was healthy every day — a

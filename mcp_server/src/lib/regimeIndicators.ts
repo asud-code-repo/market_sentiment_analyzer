@@ -145,6 +145,53 @@ export async function computeNetInterestBurden(): Promise<NetInterestBurdenResul
   };
 }
 
+export interface GovtSpendingShareResult {
+  govt_spending_usd_billions: number;
+  gdp_usd_billions: number;
+  govt_spending_pct_gdp: number;
+  as_of: string;
+  caveat: string;
+}
+
+/**
+ * Added 2026-09-28, prompted by an external research note ("Austerity Is a
+ * Sound Bite. Inflation Is the Plan.") arguing that above a certain
+ * government-spending-share-of-GDP threshold, cutting spending shrinks the
+ * tax base it's measured against faster than it closes the deficit --
+ * belt-tightening becomes structurally difficult, then near-impossible.
+ * That's a different question from federal_debt_pct_gdp above (a debt
+ * STOCK) -- this is spending as a FLOW share of the economy, closer to
+ * what actually determines whether a cut is mechanically survivable.
+ *
+ * Deliberately NOT banded against the source note's own threshold framework
+ * (<30% easy / 30-40% difficult / ~50%+ near-impossible) -- those bands are
+ * for GENERAL government (federal + state + local combined, the note's own
+ * Exhibit 4), explicitly labeled the author's own view, not an established
+ * empirical finding. FGEXPND is FEDERAL ONLY (no free clean "general
+ * government, all levels, % of GDP" series was found on FRED -- the obvious
+ * series IDs don't resolve), so it reads structurally lower than those
+ * bands assume; rescaling them without real validation would manufacture a
+ * precision this system doesn't have. Report the number and its own
+ * multi-year trend instead, same discipline already applied to
+ * federal_debt_pct_gdp ("level alone isn't a signal; watch the trend").
+ */
+export async function computeGovtSpendingShare(): Promise<GovtSpendingShareResult | null> {
+  const [govtSpending, gdp] = await Promise.all([
+    getLatestDataPoint("FGEXPND"),
+    getLatestDataPoint("GDP"),
+  ]);
+  if (!govtSpending || !gdp || gdp.value === 0) return null;
+
+  return {
+    govt_spending_usd_billions: Math.round(govtSpending.value * 10) / 10,
+    gdp_usd_billions: Math.round(gdp.value * 10) / 10,
+    govt_spending_pct_gdp: Math.round((govtSpending.value / gdp.value) * 10000) / 100,
+    as_of: govtSpending.observation_date,
+    caveat:
+      "FGEXPND is FEDERAL government spending only -- it excludes state/local spending, so it reads meaningfully lower than a 'general government, all levels' figure (the more commonly-cited version internationally, and the basis for any external threshold framework like <30%/30-40%/50%+ 'belt-tightening becomes difficult/near-impossible' bands). No clean free 'general government, all levels' series was found on FRED. Watch the multi-year trend and rate of change, not a single level -- no validated threshold band applies to this federal-only figure.",
+  };
+}
+
 export interface GoldRealYieldCorrelationResult {
   correlation: number;
   window_calendar_days: number;

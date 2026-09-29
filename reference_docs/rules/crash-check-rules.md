@@ -701,7 +701,7 @@ authority runs deficits without adjusting to stabilize debt (an "active"
 fiscal policy), which *constrains* the central bank's ability to set rates
 purely on inflation grounds (a "passive," accommodative monetary policy).
 Level alone (e.g. `federal_debt_pct_gdp` above) cannot answer whether that
-constraint actually exists — these four checks test the constraint more
+constraint actually exists — these five checks test the constraint more
 directly, each with real free data, computed identically in
 `mcp_server/src/lib/regimeIndicators.ts` and duplicated client-side in
 `dashboard_site/index.html`'s `renderFiscalDominanceChecklist()` (same
@@ -710,8 +710,8 @@ duplication convention as every other MCP-mirrored formula in that file).
 **Deliberately not a single score.** Exactly like crash-type diagnosis, this
 is presented as separate checks with their own caveats, never averaged or
 reduced to one "fiscal dominance: yes/no" verdict — doing so would
-manufacture a precision none of these four checks individually supports.
-This is also a **structural, slow-moving** classification (3 of the 4 inputs
+manufacture a precision none of these five checks individually supports.
+This is also a **structural, slow-moving** classification (4 of the 5 inputs
 update quarterly or slower) — reassess roughly quarterly in narrative, not
 as a daily flag.
 
@@ -721,6 +721,7 @@ as a daily flag.
 | Primary balance | `FYFSD` (OMB annual total budget balance) + `A091RC1Q027SBEA` (BEA net interest, quarterly SAAR) → `primary_balance = total_balance + net_interest` | Is the government running a deficit even *excluding* interest payments — the textbook "active fiscal policy" (non-Ricardian) signature: the fiscal authority isn't adjusting spending/taxes to stabilize debt on its own | `FYFSD` is annual cash-basis (OMB); `A091RC1Q027SBEA` is quarterly accrual-basis (BEA NIPA) — different period and accounting convention, combined as a structural approximation, not a precisely reconciled dollar figure |
 | Net interest as % of GDP and % of federal revenue | `A091RC1Q027SBEA` ÷ `GDP`, and `A091RC1Q027SBEA` ÷ `FGRECPT` (all $billions, quarterly SAAR — same units/cadence, clean direct ratios unlike the primary-balance pairing above). `FGRECPT` (BEA's broader "Federal government current receipts" total — tax + social-insurance + other) added 2026-09-22 after external review; `W006RC1Q027SBEA` ("current TAX receipts" only) was checked first and rejected — it excludes social-insurance contributions (~$2.2T/quarter), which would understate the denominator and overstate the burden | Whether debt service is becoming a rising, increasingly hard-to-reverse constraint on the budget — the mechanical channel through which debt actually limits how high the Fed can push rates. The revenue share is the more commonly-cited, more mechanistically direct cut (closer to "can the government service this from its own income," nearer the actual debt-sustainability question) than the GDP share | Watch the multi-quarter trend, not one reading |
 | Gold ↔ real-yield correlation | 180-calendar-day rolling Pearson correlation of gold's (`GLD`) daily % change vs. 10yr TIPS real yield's (`DFII10`) daily level change | Whether gold's normal inverse relationship with real yields (higher real yields = opportunity-cost headwind for a non-yielding asset) has broken down — the market-based "debasement hedge" tell, since gold rising *despite* rising real yields is harder to explain any other way | Correlation of day-over-day *changes*, not raw levels (a levels-based correlation over 180 days would mostly just reflect that both series trend). Not backtested/calibrated — a first cut, same tier as every divergence flag in this system. This is also the "rolling-correlation infrastructure" the architecture doc previously listed as deliberately deferred — built now because it's the most direct real-data test of this thesis's most distinctive claim |
+| Government spending, % of GDP | `FGEXPND` (BEA NIPA, Federal Government Current Expenditures, quarterly SAAR) ÷ `GDP` | Spending as a FLOW share of the economy — a different question from `federal_debt_pct_gdp`'s debt STOCK. Prompted by an external research note ("Austerity Is a Sound Bite. Inflation Is the Plan.," Vasuki Research, Sep 2026) arguing that above a certain spending-share threshold, cutting spending shrinks the tax base it's measured against faster than it closes the deficit — belt-tightening becomes structurally difficult, then near-impossible | Added 2026-09-28. **FEDERAL ONLY** — no clean free "general government, all levels" series exists on FRED (the obvious series IDs don't resolve), so this reads structurally lower than an international general-government figure. Deliberately **not banded**: the source note's own `<30%` easy / `30–40%` difficult / `~50%+` near-impossible thresholds are explicitly labeled its author's own view, computed for general government (all levels) — rescaling them to this federal-only figure without real validation would manufacture a precision this system doesn't have. Watch the multi-year trend and rate of change, not a single level |
 
 Exposed via `get_context_indicators`'s `fiscal_dominance_checklist` field
 (mcp_server) and a "Fiscal Dominance Regime Checklist" card on

@@ -13,7 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGoldRealYieldCorrelation, computeStockBondCorrelation } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation } from "./lib/regimeIndicators.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -446,12 +446,16 @@ server.registerTool(
       "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
       "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22. " +
       "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
-      "same name for the full methodology) is 4 real-data checks for whether Fed policy is " +
+      "same name for the full methodology) is 5 real-data checks for whether Fed policy is " +
       "actually CONSTRAINED by the debt burden, not just whether debt/rates are high: a Taylor " +
       "Rule gap (is the Fed's actual rate below what inflation/employment alone would justify), " +
       "primary balance (is the government running a deficit even excluding interest payments), " +
-      "net-interest burden as % of GDP, and gold's rolling correlation with real yields (has the " +
-      "normal inverse relationship broken down, the debasement-hedge tell). None of these are a " +
+      "net-interest burden as % of GDP, gold's rolling correlation with real yields (has the " +
+      "normal inverse relationship broken down, the debasement-hedge tell), and (added 2026-09-28, " +
+      "prompted by an external research note) govt_spending_pct_gdp -- federal spending as a FLOW " +
+      "share of GDP (FGEXPND/GDP), a different question from federal_debt_pct_gdp's debt STOCK. " +
+      "FEDERAL ONLY, not general government (all levels) -- no validated threshold band applies; " +
+      "report the number and its multi-year trend, not a fixed cutoff. None of these are a " +
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
       "narrative roughly at the cadence these series actually update (quarterly for 3 of the 4), " +
@@ -469,7 +473,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -506,6 +510,7 @@ server.registerTool(
         computeTaylorRuleGap(),
         computePrimaryBalance(),
         computeNetInterestBurden(),
+        computeGovtSpendingShare(),
         computeGoldRealYieldCorrelation(),
         computeStockBondCorrelation(),
         computeSeriesDelta("IWM"),
@@ -722,7 +727,7 @@ server.registerTool(
         ...debtToGdp,
         signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
       },
-      // 4 real-data checks for whether Fed policy is actually CONSTRAINED by
+      // 5 real-data checks for whether Fed policy is actually CONSTRAINED by
       // the debt burden (the Leeper fiscal/monetary regime framework's
       // actual definition of fiscal dominance), not just whether debt/rates
       // happen to be high. See crash-check-rules.md's "Fiscal Dominance
@@ -744,6 +749,10 @@ server.registerTool(
         gold_real_yield_correlation: goldRealYieldCorrelation && {
           ...goldRealYieldCorrelation,
           signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
+        },
+        govt_spending_pct_gdp: govtSpendingShare && {
+          ...govtSpendingShare,
+          signal: `Federal government spending is ${govtSpendingShare.govt_spending_pct_gdp}% of GDP as of ${govtSpendingShare.as_of}. ${govtSpendingShare.caveat}`,
         },
         interpretation:
           "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",
