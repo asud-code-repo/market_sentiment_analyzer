@@ -85,7 +85,7 @@
     <p class="sub">The link may be out of date, or the page may have moved.<br>The dashboard itself is still here.</p>
     <a class="home" href="/">&larr; Back to the dashboard</a>
 
-    <div id="game-panel">
+    <div id="game-panel" class="open">
       <div class="game-card">
         <div class="game-hud">
           <span>Score: <span id="game-score">0</span></span>
@@ -242,11 +242,36 @@
     }
   }
 
+  // Blocky pixel-dino silhouette (head/body/tail/legs as a few filled
+  // rects, same technique the real Chrome dino sprite uses) inside the
+  // existing dino.x/y/w/h hitbox -- collision math above is untouched,
+  // only the visual changed. Legs alternate stride while running on the
+  // ground; frozen mid-air while jumping. "pageBg" punches a small
+  // background-colored square into the head as an eye.
+  function drawDino(x, y, w, h, running, ink, pageBg) {
+    ctx.fillStyle = ink;
+    var stride = running ? Math.floor(distance / 70) % 2 : 0;
+    ctx.fillRect(x, y + 6, w - 6, h - 14); // body
+    ctx.fillRect(x + w - 12, y, 12, 12); // head
+    ctx.fillRect(x - 4, y + 10, 5, 6); // tail
+    if (stride === 0) {
+      ctx.fillRect(x + 3, y + h - 8, 4, 8);
+      ctx.fillRect(x + w - 10, y + h - 8, 4, 6);
+    } else {
+      ctx.fillRect(x + 3, y + h - 8, 4, 6);
+      ctx.fillRect(x + w - 10, y + h - 8, 4, 8);
+    }
+    ctx.fillStyle = pageBg;
+    ctx.fillRect(x + w - 6, y + 3, 2, 2); // eye punch
+    ctx.fillStyle = ink;
+  }
+
   function draw() {
     ctx.clearRect(0, 0, W, H);
     var cs = getComputedStyle(document.body);
     var ink = cs.getPropertyValue("--text-primary").trim() || "#0b0b0b";
     var muted = cs.getPropertyValue("--text-muted").trim() || "#898781";
+    var pageBg = cs.getPropertyValue("--page").trim() || "#f9f9f7";
 
     ctx.strokeStyle = muted;
     ctx.lineWidth = 1;
@@ -255,9 +280,9 @@
     ctx.lineTo(W, GROUND_Y + 0.5);
     ctx.stroke();
 
-    ctx.fillStyle = ink;
-    ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+    drawDino(dino.x, dino.y, dino.w, dino.h, dino.onGround && started, ink, pageBg);
 
+    ctx.fillStyle = ink;
     for (var i = 0; i < obstacles.length; i++) {
       var o = obstacles[i];
       ctx.fillRect(o.x, GROUND_Y - o.h, o.w, o.h);
@@ -298,7 +323,15 @@
   canvas.addEventListener("pointerdown", jump);
   document.addEventListener("keydown", onKey);
 
-  draw();
+  // The 404 page ships this panel already open (class="open" in the HTML)
+  // so the game is there immediately on landing, no click-the-icon step
+  // required -- reset() (not a bare draw()) so the ground/dino render in
+  // their proper starting position right away, ready for the first jump.
+  if (panel.classList.contains("open")) {
+    reset();
+  } else {
+    draw();
+  }
 })();
 </script>
 </body>
