@@ -436,7 +436,7 @@
         <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
       </div>
       <div id="fiscaldominance-body">
-        <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
+        <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). Each card shows its own prior-period comparison — read the direction, not one reading. None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
         <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
       </div>
     </div>
@@ -1304,7 +1304,7 @@ function drawYieldCurveChart(wrap, snapshots) {
 }
 
 // Fiscal Dominance Regime Checklist -- mirrors mcp_server/src/lib/
-// regimeIndicators.ts's 4 functions exactly (duplicated, not shared across
+// regimeIndicators.ts's 5 checklist functions exactly (duplicated, not shared across
 // the Supabase-REST-vs-supabase-js boundary, same convention as this file's
 // other MCP-mirrored logic: erf(), estrellaMishkinRecessionProbability(),
 // adjustForSplits()). See that file's own doc comments for the full
@@ -1333,20 +1333,61 @@ function pearsonCorrelation(xs, ys) {
 async function renderFiscalDominanceChecklist() {
   const wrap = document.getElementById("fiscaldominance-wrap");
   try {
-    const fetchLatest = async (seriesId) => {
-      const rows = await fetchFromSupabase(`data_points?select=value&series_id=eq.${encodeURIComponent(seriesId)}&order=observation_date.desc&limit=1`);
-      return rows[0]?.value ?? null;
+    const dayShift = (dateStr, days) => {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() - days);
+      return d.toISOString().slice(0, 10);
     };
-    const [dff, unrate, nrou, cpiLatest, fyfsd, netInterest, gdp, revenue, govtSpending] = await Promise.all([
-      fetchLatest("DFF"),
-      fetchLatest("UNRATE"),
-      fetchLatest("NROU"),
-      fetchLatest("CPIAUCSL"),
-      fetchLatest("FYFSD"),
-      fetchLatest("A091RC1Q027SBEA"),
-      fetchLatest("GDP"),
-      fetchLatest("FGRECPT"),
-      fetchLatest("FGEXPND"),
+    const quarterShift = (dateStr, n) => {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() - 3 * n);
+      return d.toISOString().slice(0, 10);
+    };
+    const fetchRecent = (seriesId, count) =>
+      fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${encodeURIComponent(seriesId)}&order=observation_date.desc&limit=${count}`);
+    const fetchOnOrBefore = async (seriesId, date) => {
+      const rows = await fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${encodeURIComponent(seriesId)}&observation_date=lte.${date}&order=observation_date.desc&limit=1`);
+      return rows[0] ?? null;
+    };
+    // Inner join on observation_date, newest first -- ratios divide
+    // same-period values, never one series' latest by another's.
+    const joinByDate = (...series) => {
+      const maps = series.slice(1).map((s) => new Map(s.map((r) => [r.observation_date, r.value])));
+      return series[0]
+        .map((r) => ({ date: r.observation_date, values: [r.value, ...maps.map((m) => m.get(r.observation_date))] }))
+        .filter((r) => r.values.every((v) => v != null));
+    };
+    const inflationYoyAsOf = async (seriesId, asOf) => {
+      const latest = await fetchOnOrBefore(seriesId, asOf);
+      if (!latest) return null;
+      const yearAgo = await fetchOnOrBefore(seriesId, dayShift(latest.observation_date, 365));
+      if (!yearAgo || yearAgo.value === 0) return null;
+      return ((latest.value - yearAgo.value) / yearAgo.value) * 100;
+    };
+    const taylorInputsAsOf = async (asOf) => {
+      const [dff, unrate, nrou, corePce, cpi] = await Promise.all([
+        fetchOnOrBefore("DFF", asOf),
+        fetchOnOrBefore("UNRATE", asOf),
+        fetchOnOrBefore("NROU", asOf),
+        inflationYoyAsOf("PCEPILFE", asOf),
+        inflationYoyAsOf("CPIAUCSL", asOf),
+      ]);
+      if (!dff || !unrate || !nrou) return null;
+      return { fedFunds: dff.value, unemploymentGap: unrate.value - nrou.value, corePce, cpi };
+    };
+    const taylorRate = (inflationYoy, unemploymentGap) => 1 + 1.5 * inflationYoy - unemploymentGap;
+    const signed = (n, digits) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
+
+    const [dffLatestRows, fyfsd, fyoint, fyfr, fygdp, nipaInterest, gdp, nipaReceipts, govtSpending] = await Promise.all([
+      fetchRecent("DFF", 1),
+      fetchRecent("FYFSD", 6),
+      fetchRecent("FYOINT", 6),
+      fetchRecent("FYFR", 6),
+      fetchRecent("FYGDP", 6),
+      fetchRecent("A091RC1Q027SBEA", 4),
+      fetchRecent("GDP", 21),
+      fetchRecent("FGRECPT", 4),
+      fetchRecent("FGEXPND", 21),
     ]);
 
     const cards = [];
@@ -1354,70 +1395,83 @@ async function renderFiscalDominanceChecklist() {
     // 1. Taylor Rule gap -- i = 1 + 1.5*inflation_yoy - (UNRATE - NROU),
     // the algebraic reduction of i = r* + pi + 0.5(pi-pi*) + 0.5*output_gap
     // with r*=pi*=2 and output_gap approximated via Okun's Law (coef. 2).
-    if (dff != null && unrate != null && nrou != null && cpiLatest != null) {
-      const oneYearAgo = new Date();
-      oneYearAgo.setUTCDate(oneYearAgo.getUTCDate() - 365);
-      const cpiPastRows = await fetchFromSupabase(
-        `data_points?select=value&series_id=eq.CPIAUCSL&observation_date=lte.${oneYearAgo.toISOString().slice(0, 10)}&order=observation_date.desc&limit=1`,
-      );
-      const cpiPast = cpiPastRows[0]?.value;
-      if (cpiPast != null && cpiPast !== 0) {
-        const inflationYoy = ((cpiLatest - cpiPast) / cpiPast) * 100;
-        const unemploymentGap = unrate - nrou;
-        const taylorRate = 1 + 1.5 * inflationYoy - unemploymentGap;
-        const gap = dff - taylorRate;
+    // pi = core PCE (the Fed's target measure); headline CPI shown for
+    // comparison, and used only if PCEPILFE has no data yet.
+    const dffAsOf = dffLatestRows[0]?.observation_date;
+    if (dffAsOf) {
+      const [now, yearAgo] = await Promise.all([taylorInputsAsOf(dffAsOf), taylorInputsAsOf(dayShift(dffAsOf, 365))]);
+      const usingCorePce = now?.corePce != null;
+      const inflation = now ? (usingCorePce ? now.corePce : now.cpi) : null;
+      if (now && inflation != null) {
+        const implied = taylorRate(inflation, now.unemploymentGap);
+        const gap = now.fedFunds - implied;
+        const yearAgoInflation = yearAgo ? (usingCorePce ? yearAgo.corePce : yearAgo.cpi) : null;
+        const yearAgoGap = yearAgo && yearAgoInflation != null ? yearAgo.fedFunds - taylorRate(yearAgoInflation, yearAgo.unemploymentGap) : null;
+        const cpiGap = usingCorePce && now.cpi != null ? now.fedFunds - taylorRate(now.cpi, now.unemploymentGap) : null;
         cards.push({
-          label: "Taylor Rule Gap",
-          value: `${gap >= 0 ? "+" : ""}${gap.toFixed(2)}pts`,
-          detail: `Actual Fed funds ${dff.toFixed(2)}% vs. formula-implied ${taylorRate.toFixed(2)}%. ${gap < 0 ? "Policy looser than the formula prescribes — one candidate fiscal-dominance signal, not proof alone." : "At or above the formula's rate — no signal from this check."}`,
+          label: `Taylor Rule Gap (${usingCorePce ? "core PCE" : "headline CPI"})`,
+          value: `${signed(gap, 2)}pts`,
+          trend: yearAgoGap != null ? `${signed(yearAgoGap, 2)}pts a year earlier` : null,
+          detail: `Actual Fed funds ${now.fedFunds.toFixed(2)}% vs. formula-implied ${implied.toFixed(2)}%. ${gap < 0 ? "Policy looser than the formula prescribes — one candidate fiscal-dominance signal, not proof alone." : "At or above the formula's rate — no signal from this check."}${cpiGap != null ? ` On headline CPI it would read ${signed(cpiGap, 2)}pts — CPI runs above the Fed's core-PCE target measure, so that overstates looseness.` : ""}${usingCorePce ? "" : " Core PCE has no data yet (run the backfill) — CPI reads looser than the core-PCE version will."}`,
         });
       }
     }
 
-    // 2. Primary balance = total_balance + net_interest (FYFSD is $millions
-    // annual cash-basis; A091RC1Q027SBEA is $billions quarterly SAAR NIPA
-    // accrual-basis -- a structural approximation, not a precise reconciliation).
-    if (fyfsd != null && netInterest != null) {
-      const totalBalanceB = fyfsd / 1000;
-      const primaryBalanceB = totalBalanceB + netInterest;
+    // 2 & 3 use OMB fiscal-year actuals, all the same fiscal year: FYFSD
+    // (total balance) + FYOINT (NET interest) = primary balance; FYOINT /
+    // FYGDP and / FYFR = net-interest burden. FYFSD/FYOINT/FYFR are
+    // $millions, FYGDP is $billions.
+    const fiscalYears = joinByDate(fyfsd, fyoint, fyfr, fygdp).map(({ date, values: [deficit, interest, receipts, fyGdp] }) => ({
+      fy: date.slice(0, 4),
+      primaryB: (deficit + interest) / 1000,
+      interestB: interest / 1000,
+      receiptsB: receipts / 1000,
+      gdpB: fyGdp,
+    }));
+
+    // 2. Primary balance (deficit excluding interest), with prior FY.
+    if (fiscalYears.length > 0) {
+      const [latest, prior] = fiscalYears;
+      const pctGdp = (r) => (r.primaryB / r.gdpB) * 100;
       cards.push({
-        label: "Primary Balance (ex-interest)",
-        value: `${primaryBalanceB >= 0 ? "+" : "-"}$${Math.abs(primaryBalanceB).toFixed(0)}B`,
-        detail: primaryBalanceB < 0
+        label: `Primary Balance, FY${latest.fy} (ex-interest)`,
+        value: `${latest.primaryB >= 0 ? "+" : "-"}$${Math.abs(latest.primaryB).toFixed(0)}B (${signed(pctGdp(latest), 1)}% GDP)`,
+        trend: prior ? `FY${prior.fy}: ${prior.primaryB >= 0 ? "+" : "-"}$${Math.abs(prior.primaryB).toFixed(0)}B (${signed(pctGdp(prior), 1)}% GDP)` : null,
+        detail: `${latest.primaryB < 0
           ? "A primary DEFICIT even excluding interest payments — the textbook 'active fiscal policy' signature (spending/taxes not adjusting to stabilize debt on their own)."
-          : "A primary surplus/balance — any deficit is being driven by interest costs, not ongoing spending/tax decisions. Weaker fiscal-dominance evidence.",
+          : "A primary surplus/balance — any deficit is being driven by interest costs, not ongoing spending/tax decisions. Weaker fiscal-dominance evidence."} OMB fiscal-year actuals — annual, so this lags up to a year.`,
       });
     }
 
-    // 3. Net interest as % of GDP and % of total federal revenue (FGRECPT,
-    // BEA's broader "current receipts" total -- tax + social-insurance +
-    // other, not the narrower tax-only series, which would understate the
-    // denominator and overstate the burden). Same $billions SAAR
-    // convention as netInterest/gdp, clean direct ratios both ways. The
-    // revenue share is closer to the actual debt-sustainability question
-    // ("can the government service this from its own income") than the
-    // GDP share -- added 2026-09-22 after external review.
-    if (netInterest != null && gdp) {
-      const pctGdp = (netInterest / gdp) * 100;
-      const pctRevenue = revenue != null && revenue !== 0 ? (netInterest / revenue) * 100 : null;
+    // 3. Net interest as % of GDP and % of federal receipts (OMB NET
+    // interest), with prior FY and 5 FYs earlier. BEA's quarterly
+    // A091RC1Q027SBEA is GROSS interest (incl. imputed pension interest),
+    // so it's shown only as the timelier direction-of-travel read.
+    if (fiscalYears.length > 0) {
+      const [latest, prior] = fiscalYears;
+      const fiveBack = fiscalYears[5];
+      const fmt = (r) => `${((r.interestB / r.gdpB) * 100).toFixed(2)}% / ${((r.interestB / r.receiptsB) * 100).toFixed(2)}%`;
+      const trendParts = [prior && `FY${prior.fy}: ${fmt(prior)}`, fiveBack && `FY${fiveBack.fy}: ${fmt(fiveBack)}`].filter(Boolean);
+      const [nipa] = joinByDate(nipaInterest, gdp, nipaReceipts);
       cards.push({
-        label: "Net Interest (% GDP / % Revenue)",
-        value: pctRevenue != null ? `${pctGdp.toFixed(2)}% / ${pctRevenue.toFixed(2)}%` : `${pctGdp.toFixed(2)}%`,
-        detail: `Rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget — watch the trend over several quarters, not one reading. ${pctRevenue != null ? "The revenue share is the more commonly-cited, more mechanistically direct cut." : ""}`,
+        label: `Net Interest, FY${latest.fy} (% GDP / % Receipts)`,
+        value: fmt(latest),
+        trend: trendParts.length ? trendParts.join(" · ") : null,
+        detail: `Rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. The receipts share is the more commonly-cited, more mechanistically direct cut. OMB net interest (FYOINT), annual.${nipa ? ` Timelier quarterly read (BEA gross interest payments, ${nipa.date}): ${((nipa.values[0] / nipa.values[1]) * 100).toFixed(2)}% / ${((nipa.values[0] / nipa.values[2]) * 100).toFixed(2)}% — gross, so it reads higher; use for direction, not level.` : ""}`,
       });
     }
 
     // 4. Gold vs. 10yr TIPS real yield, 180-day rolling correlation of DAY-
     // OVER-DAY changes (not raw levels -- a levels correlation over 180
-    // days would mostly just reflect that both series trend).
-    const cutoff = new Date();
-    cutoff.setUTCDate(cutoff.getUTCDate() - 180);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const [goldHistory, realYieldHistory] = await Promise.all([
-      fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.GLD&observation_date=gte.${cutoffStr}&order=observation_date.asc`),
-      fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.DFII10&observation_date=gte.${cutoffStr}&order=observation_date.asc`),
-    ]);
-    if (goldHistory.length >= 10 && realYieldHistory.length >= 10) {
+    // days would mostly just reflect that both series trend), plus the
+    // preceding non-overlapping 180-day window for trend.
+    const goldCorrelation = async (windowEnd) => {
+      const cutoffStr = dayShift(windowEnd, 180);
+      const [goldHistory, realYieldHistory] = await Promise.all([
+        fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.GLD&observation_date=gte.${cutoffStr}&observation_date=lte.${windowEnd}&order=observation_date.asc`),
+        fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.DFII10&observation_date=gte.${cutoffStr}&observation_date=lte.${windowEnd}&order=observation_date.asc`),
+      ]);
+      if (goldHistory.length < 10 || realYieldHistory.length < 10) return null;
       const realYieldByDate = new Map(realYieldHistory.map((r) => [r.observation_date, r.value]));
       const goldChanges = [], realYieldChanges = [];
       for (let i = 1; i < goldHistory.length; i++) {
@@ -1429,16 +1483,19 @@ async function renderFiscalDominanceChecklist() {
         goldChanges.push((goldHistory[i].value - prevGold) / prevGold);
         realYieldChanges.push(currYield - prevYield);
       }
-      const correlation = pearsonCorrelation(goldChanges, realYieldChanges);
-      if (correlation !== null) {
-        cards.push({
-          label: "Gold ↔ Real Yield Correlation (180d)",
-          value: correlation.toFixed(2),
-          detail: correlation >= -0.1
-            ? "Near zero or positive — the usual inverse relationship (higher real yields = headwind for gold) is weak or broken down. The more distinctive debasement-hedge signature. Not backtested/calibrated — a first cut."
-            : "Still meaningfully negative — gold is behaving like it normally does relative to real yields, no decoupling signal here. Not backtested/calibrated — a first cut.",
-        });
-      }
+      return pearsonCorrelation(goldChanges, realYieldChanges);
+    };
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const [correlation, priorCorrelation] = await Promise.all([goldCorrelation(todayStr), goldCorrelation(dayShift(todayStr, 180))]);
+    if (correlation !== null) {
+      cards.push({
+        label: "Gold ↔ Real Yield Correlation (180d)",
+        value: correlation.toFixed(2),
+        trend: priorCorrelation !== null ? `${priorCorrelation.toFixed(2)} in the prior 180 days` : null,
+        detail: correlation >= -0.1
+          ? "Near zero or positive — the usual inverse relationship (higher real yields = headwind for gold) is weak or broken down. The more distinctive debasement-hedge signature. Not backtested/calibrated — a first cut."
+          : "Still meaningfully negative — gold is behaving like it normally does relative to real yields, no decoupling signal here. Not backtested/calibrated — a first cut.",
+      });
     }
 
     // 5. Federal government spending as % of GDP (FGEXPND/GDP) -- a FLOW
@@ -1448,12 +1505,18 @@ async function renderFiscalDominanceChecklist() {
     // spending-share threshold. Deliberately not banded -- the note's own
     // <30%/30-40%/50%+ thresholds are for GENERAL government (all levels),
     // not this federal-only figure, and rescaling them without validation
-    // would manufacture a precision this system doesn't have.
-    if (govtSpending != null && gdp) {
-      const pctGdp = (govtSpending / gdp) * 100;
+    // would manufacture a precision this system doesn't have. Trend: same
+    // quarter 1yr and 5yrs earlier.
+    const spendingRows = joinByDate(govtSpending, gdp).filter((r) => r.values[1] !== 0);
+    if (spendingRows.length > 0) {
+      const pct = (r) => (r.values[0] / r.values[1]) * 100;
+      const latest = spendingRows[0];
+      const back = (n) => spendingRows.find((r) => r.date === quarterShift(latest.date, n));
+      const trendParts = [[back(4), "1yr"], [back(20), "5yr"]].filter(([r]) => r).map(([r, label]) => `${pct(r).toFixed(1)}% ${label} earlier`);
       cards.push({
         label: "Govt Spending (% GDP)",
-        value: `${pctGdp.toFixed(1)}%`,
+        value: `${pct(latest).toFixed(1)}%`,
+        trend: trendParts.length ? trendParts.join(" · ") : null,
         detail: "FEDERAL spending only, not general government (all levels) -- reads structurally lower than an international 'general government' figure. No validated threshold band applies here (an external note's <30%/30-40%/50%+ 'belt-tightening becomes difficult/near-impossible' bands are for that broader, unavailable-for-free measure). Watch the multi-year trend and rate of change, not a single level.",
       });
     }
@@ -1471,6 +1534,7 @@ async function renderFiscalDominanceChecklist() {
           <div class="indicator neutral">
             <div class="label">${c.label}</div>
             <div class="value">${c.value}</div>
+            ${c.trend ? `<div class="signal"><strong>Trend:</strong> ${c.trend}</div>` : ""}
             <div class="signal">${c.detail}</div>
           </div>
         `,

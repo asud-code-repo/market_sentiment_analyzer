@@ -28,6 +28,10 @@ function json(data: unknown) {
 // Deliberately loose (`any`) rather than generic over the handler's real
 // input/output types — it's a transparent side-channel, not part of the
 // zod-validated request/response contract each tool already has.
+function signed(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}`;
+}
+
 function withLogging(name: string, handler: (...args: any[]) => Promise<any>) {
   return async (...args: any[]) => {
     const result = await handler(...args);
@@ -451,14 +455,18 @@ server.registerTool(
       "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
       "same name for the full methodology) is 5 real-data checks for whether Fed policy is " +
       "actually CONSTRAINED by the debt burden, not just whether debt/rates are high: a Taylor " +
-      "Rule gap (is the Fed's actual rate below what inflation/employment alone would justify), " +
-      "primary balance (is the government running a deficit even excluding interest payments), " +
-      "net-interest burden as % of GDP, gold's rolling correlation with real yields (has the " +
+      "Rule gap on core PCE (is the Fed's actual rate below what inflation/employment alone would justify; " +
+      "the headline-CPI version is returned alongside for comparison), " +
+      "primary balance (is the government running a deficit even excluding interest payments, " +
+      "OMB fiscal-year FYFSD + FYOINT), net-interest burden as % of GDP and of receipts (OMB " +
+      "fiscal-year NET interest; the quarterly BEA figure is returned separately as nipa_gross_* " +
+      "-- gross, reads higher, use for direction only), gold's rolling correlation with real yields (has the " +
       "normal inverse relationship broken down, the debasement-hedge tell), and (added 2026-09-28, " +
       "prompted by an external research note) govt_spending_pct_gdp -- federal spending as a FLOW " +
       "share of GDP (FGEXPND/GDP), a different question from federal_debt_pct_gdp's debt STOCK. " +
       "FEDERAL ONLY, not general government (all levels) -- no validated threshold band applies; " +
-      "report the number and its multi-year trend, not a fixed cutoff. None of these are a " +
+      "report the number and its multi-year trend, not a fixed cutoff. Each check also carries its " +
+      "own prior-period comparison (a year/fiscal year/window earlier) -- read the direction, not one reading. None of these are a " +
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
       "narrative roughly at the cadence these series actually update (quarterly for 3 of the 4), " +
@@ -740,23 +748,23 @@ server.registerTool(
       fiscal_dominance_checklist: {
         taylor_rule_gap: taylorRuleGap && {
           ...taylorRuleGap,
-          signal: `Actual Fed funds ${taylorRuleGap.actual_fed_funds_pct}% vs. Taylor-rule-implied ${taylorRuleGap.taylor_implied_rate_pct}% (gap ${taylorRuleGap.gap_pct >= 0 ? "+" : ""}${taylorRuleGap.gap_pct}pts). ${taylorRuleGap.gap_pct < 0 ? "Policy is running LOOSER than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself (a genuinely dovish Fed for ordinary reasons looks identical here)." : "Policy is running at or above what the formula prescribes -- no gap-based fiscal-dominance signal from this check."}`,
+          signal: `Actual Fed funds ${taylorRuleGap.actual_fed_funds_pct}% vs. Taylor-rule-implied ${taylorRuleGap.taylor_implied_rate_pct}% on ${taylorRuleGap.inflation_measure === "core_pce" ? "core PCE" : "headline CPI"} (gap ${signed(taylorRuleGap.gap_pct)}pts${taylorRuleGap.gap_one_year_ago_pct != null ? `; ${signed(taylorRuleGap.gap_one_year_ago_pct)}pts a year earlier` : ""}). ${taylorRuleGap.gap_pct < 0 ? "Policy is running LOOSER than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself (a genuinely dovish Fed for ordinary reasons looks identical here)." : "Policy is running at or above what the formula prescribes -- no gap-based fiscal-dominance signal from this check."}${taylorRuleGap.inflation_measure === "core_pce" && taylorRuleGap.headline_cpi_gap_pct != null ? ` On headline CPI instead the gap would be ${signed(taylorRuleGap.headline_cpi_gap_pct)}pts -- core PCE is the Fed's own target measure, so treat that as the upper bound on looseness, not the headline read.` : ""}`,
         },
         primary_balance: primaryBalance && {
           ...primaryBalance,
-          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B for FY ${primaryBalance.fiscal_year_as_of.slice(0, 4)}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."}`,
+          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B (${primaryBalance.primary_balance_pct_gdp}% of GDP) for FY ${primaryBalance.fiscal_year}${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp != null ? `, vs. ${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp}% of GDP the prior fiscal year` : ""}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."} ${primaryBalance.caveat}`,
         },
         net_interest_pct_gdp: netInterestBurden && {
           ...netInterestBurden,
-          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP${netInterestBurden.net_interest_pct_revenue != null ? ` and ${netInterestBurden.net_interest_pct_revenue}% of total federal revenue` : ""} as of ${netInterestBurden.as_of}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget -- watch the trend over several quarters, not one reading.`,
+          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP and ${netInterestBurden.net_interest_pct_revenue}% of federal receipts for FY ${netInterestBurden.fiscal_year}${netInterestBurden.prior_fiscal_year_pct_gdp != null ? ` (prior FY: ${netInterestBurden.prior_fiscal_year_pct_gdp}% / ${netInterestBurden.prior_fiscal_year_pct_revenue}%` + (netInterestBurden.five_years_earlier_pct_gdp != null ? `; FY ${netInterestBurden.five_years_earlier_fiscal_year}: ${netInterestBurden.five_years_earlier_pct_gdp}% / ${netInterestBurden.five_years_earlier_pct_revenue}%)` : ")") : ""}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. ${netInterestBurden.caveat}`,
         },
         gold_real_yield_correlation: goldRealYieldCorrelation && {
           ...goldRealYieldCorrelation,
-          signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
+          signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}${goldRealYieldCorrelation.prior_window_correlation != null ? ` (prior ${goldRealYieldCorrelation.window_calendar_days}-day window: ${goldRealYieldCorrelation.prior_window_correlation})` : ""}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
         },
         govt_spending_pct_gdp: govtSpendingShare && {
           ...govtSpendingShare,
-          signal: `Federal government spending is ${govtSpendingShare.govt_spending_pct_gdp}% of GDP as of ${govtSpendingShare.as_of}. ${govtSpendingShare.caveat}`,
+          signal: `Federal government spending is ${govtSpendingShare.govt_spending_pct_gdp}% of GDP as of ${govtSpendingShare.as_of}${govtSpendingShare.one_year_earlier_pct_gdp != null ? ` (1yr earlier: ${govtSpendingShare.one_year_earlier_pct_gdp}%` + (govtSpendingShare.five_years_earlier_pct_gdp != null ? `; 5yr earlier: ${govtSpendingShare.five_years_earlier_pct_gdp}%)` : ")") : ""}. ${govtSpendingShare.caveat}`,
         },
         interpretation:
           "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",

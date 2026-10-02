@@ -38,6 +38,22 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Fiscal Dominance Regime Checklist: measurement fixes + trends
+  (2026-10-02).** External review of the card. (1) Net interest moved to
+  OMB fiscal-year NET interest (`FYOINT` ÷ `FYGDP` / ÷ `FYFR`) — the old
+  `A091RC1Q027SBEA` is BEA *gross* interest payments (incl. imputed pension
+  interest), reading ~3.9%/21% vs. ~3.2%/18.5% net; kept as a secondary
+  quarterly `nipa_gross_*` direction read. (2) Primary balance is now
+  `FYFSD` + `FYOINT` for the same fiscal year (was latest-quarter gross
+  interest + prior FY deficit, understating the primary deficit by
+  ~$300B). (3) Taylor Rule gap uses core PCE (`PCEPILFE`); the headline-CPI
+  version is returned alongside (it overstated looseness). (4) Every check
+  now shows a prior-period comparison. New FRED series `FYOINT`, `FYFR`,
+  `FYGDP`, `PCEPILFE` — **needs a backfill run** for the trend
+  comparisons; until then the Taylor gap falls back to CPI (labeled) and
+  the two fiscal-year cards appear after the first daily ingest without
+  trends.
+
 - **Fiscal Dominance Regime Checklist: 5th check added (2026-09-28), govt
   spending as % of GDP.** Prompted by an external research note ("Austerity
   Is a Sound Bite. Inflation Is the Plan.," Vasuki Research) arguing

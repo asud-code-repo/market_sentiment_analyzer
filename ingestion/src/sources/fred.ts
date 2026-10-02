@@ -177,17 +177,34 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // projected path years into the future already).
   { id: "A091RC1Q027SBEA", unit: "usd_billions_saar" }, // Federal government interest payments
                                           // (BEA NIPA, quarterly, seasonally-adjusted annual
-                                          // rate) — the net-interest burden, both for
-                                          // interest/GDP directly and as the interest leg of
-                                          // primary-balance = total-balance + interest.
+                                          // rate). GROSS, not net interest — includes imputed
+                                          // interest on federal pension liabilities, so it reads
+                                          // well above the CBO/OMB net figure. Since 2026-10-02
+                                          // only the timelier secondary "direction" read; the
+                                          // checklist's headline uses FYOINT below.
   { id: "FYFSD", unit: "usd_millions" }, // Federal Surplus or Deficit, annual (OMB, fiscal
-                                          // year basis) — total budget balance; combined with
-                                          // A091RC1Q027SBEA above to back out the primary
-                                          // balance (deficit excluding interest payments).
+                                          // year basis) — total budget balance; + FYOINT (same
+                                          // fiscal year) = primary balance.
   { id: "GDP", unit: "usd_billions_saar" }, // Nominal GDP, quarterly SAAR — denominator for
-                                          // net-interest-as-%-of-GDP. Same units/cadence as
-                                          // A091RC1Q027SBEA, so this is a clean direct ratio,
-                                          // unlike the FYFSD pairing above.
+                                          // the quarterly NIPA ratios (A091RC1Q027SBEA,
+                                          // FGEXPND), same units/cadence.
+
+  // 2026-10-02 additions — external review of the Fiscal Dominance card found
+  // A091RC1Q027SBEA above is gross (not net) interest and that pairing it
+  // with FYFSD mixed a latest-quarter annualized figure with the prior full
+  // fiscal year. These three are OMB's own fiscal-year actuals, so primary
+  // balance and net interest % of GDP/receipts are all same-year,
+  // same-convention ratios (the basis CBO/Treasury report on).
+  { id: "FYOINT", unit: "usd_millions" }, // Federal Outlays: Interest (OMB, fiscal year) — NET
+                                          // interest (budget function 900).
+  { id: "FYFR", unit: "usd_millions" },  // Federal Receipts (OMB, fiscal year).
+  { id: "FYGDP", unit: "usd_billions" }, // GDP on a fiscal-year basis (OMB) — denominator for
+                                          // the fiscal-year ratios above.
+  { id: "PCEPILFE", unit: "index" },     // Core PCE price index (ex food & energy), monthly —
+                                          // the Fed's own target measure, used as the Taylor
+                                          // Rule gap's inflation input instead of headline CPI
+                                          // (2026-10-02; CPI runs higher and overstated how
+                                          // loose policy looked).
 
   // 2026-09-22 addition — external review (Grok) of the Fiscal Dominance
   // Regime Checklist suggested net interest as % of REVENUE, not just %
