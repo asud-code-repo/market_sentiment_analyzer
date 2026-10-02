@@ -218,6 +218,12 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "T5YIFR", unit: "percent" },     // 5-Year, 5-Year Forward Inflation Expectation
                                           // Rate — long-end expectations, cleaner than
                                           // T10YIE (strips out the next 5 years).
+  // 2026-10-02 round 2 -- Fed absorption checks (see regimeIndicators.ts).
+  { id: "TREAST", unit: "usd_millions" }, // Fed holdings of Treasury securities (H.4.1),
+                                          // weekly Wednesday level — Fed share of marketable
+                                          // debt and QT pace. WALCL above is the whole
+                                          // balance sheet, not Treasuries alone.
+  { id: "M2SL", unit: "usd_billions" },  // M2 money stock, monthly SA — M2/GDP.
   { id: "PCEPILFE", unit: "index" },     // Core PCE price index (ex food & energy), monthly —
                                           // the Fed's own target measure, used as the Taylor
                                           // Rule gap's inflation input instead of headline CPI

@@ -767,3 +767,188 @@ export async function computeInflationTermPremium(): Promise<InflationTermPremiu
       "both_rising = each up at least 10bp over 3 months (an uncalibrated judgment threshold). 5y5y forward strips out the next five years, so it reads long-run inflation credibility rather than near-term prints. Term premium is the Kim-Wright model estimate (not the NY Fed's ACM). Either moving alone has ordinary explanations; the joint move is the fiscal-risk fingerprint.",
   };
 }
+
+const AUCTION_TENORS = ["2Y", "5Y", "10Y", "30Y"] as const;
+const AUCTION_LOOKBACK = 6;
+
+export interface AuctionTenorResult {
+  tenor: (typeof AUCTION_TENORS)[number];
+  auction_date: string;
+  bid_to_cover: number;
+  dealer_pct: number | null;
+  indirect_pct: number | null;
+  prior_avg_bid_to_cover: number | null;
+  prior_avg_dealer_pct: number | null;
+  prior_avg_indirect_pct: number | null;
+  weaker_than_recent: boolean | null;
+}
+
+export interface AuctionDemandResult {
+  tenors: AuctionTenorResult[];
+  avg_dealer_pct_latest: number | null;
+  avg_dealer_pct_prior: number | null;
+  weaker_than_recent_count: number;
+  caveat: string;
+}
+
+/**
+ * Treasury auction demand -- added 2026-10-02 (external review, round 2).
+ * Latest original-issue 2y/5y/10y/30y nominal coupon auction (see
+ * ingestion's treasury.ts) vs. the average of that tenor's previous
+ * AUCTION_LOOKBACK auctions. weaker_than_recent = higher dealer take-down
+ * AND lower bid-to-cover than that average -- the two together, not either
+ * alone, and no fixed threshold (none is calibrated). Single auctions are
+ * noisy; persistence across tenors and months is the signal.
+ */
+export async function computeAuctionDemand(): Promise<AuctionDemandResult | null> {
+  const n = AUCTION_LOOKBACK + 1;
+  const perTenor = await Promise.all(
+    AUCTION_TENORS.map(async (tenor) => {
+      const [btc, dealer, indirect] = await Promise.all([
+        getRecentPoints(`AUCTION_${tenor}_BID_TO_COVER`, n),
+        getRecentPoints(`AUCTION_${tenor}_DEALER_PCT`, n),
+        getRecentPoints(`AUCTION_${tenor}_INDIRECT_PCT`, n),
+      ]);
+      if (btc.length === 0) return null;
+      const valueOn = (pts: Point[], date: string) => pts.find((p) => p.date === date)?.value ?? null;
+      const priorAvg = (pts: Point[]) => {
+        const prior = pts.filter((p) => p.date < btc[0].date).slice(0, AUCTION_LOOKBACK);
+        return prior.length > 0 ? prior.reduce((a, p) => a + p.value, 0) / prior.length : null;
+      };
+      const latestDealer = valueOn(dealer, btc[0].date);
+      const avgBtc = priorAvg(btc);
+      const avgDealer = priorAvg(dealer);
+      const result: AuctionTenorResult = {
+        tenor,
+        auction_date: btc[0].date,
+        bid_to_cover: round2(btc[0].value),
+        dealer_pct: latestDealer !== null ? round1(latestDealer) : null,
+        indirect_pct: valueOn(indirect, btc[0].date) !== null ? round1(valueOn(indirect, btc[0].date)!) : null,
+        prior_avg_bid_to_cover: avgBtc !== null ? round2(avgBtc) : null,
+        prior_avg_dealer_pct: avgDealer !== null ? round1(avgDealer) : null,
+        prior_avg_indirect_pct: priorAvg(indirect) !== null ? round1(priorAvg(indirect)!) : null,
+        weaker_than_recent: latestDealer !== null && avgBtc !== null && avgDealer !== null ? latestDealer > avgDealer && btc[0].value < avgBtc : null,
+      };
+      return result;
+    }),
+  );
+  const tenors = perTenor.filter((t): t is AuctionTenorResult => t !== null);
+  if (tenors.length === 0) return null;
+  const mean = (xs: number[]) => (xs.length > 0 ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+
+  return {
+    tenors,
+    avg_dealer_pct_latest: mean(tenors.flatMap((t) => (t.dealer_pct !== null ? [t.dealer_pct] : []))),
+    avg_dealer_pct_prior: mean(tenors.flatMap((t) => (t.prior_avg_dealer_pct !== null ? [t.prior_avg_dealer_pct] : []))),
+    weaker_than_recent_count: tenors.filter((t) => t.weaker_than_recent).length,
+    caveat:
+      `Original-issue nominal coupon auctions only (no reopenings, TIPS or FRNs); dealer and indirect shares are % of competitive accepted. Indirect bidders are the usual foreign-demand proxy but also include domestic funds bidding through dealers. Compared with each tenor's previous ${AUCTION_LOOKBACK} auctions. Tails (yield vs. when-issued) need paid data and aren't shown. Single auctions are noisy -- look for weakness repeating across tenors and months.`,
+  };
+}
+
+export interface FedAbsorptionResult {
+  fed_share_of_marketable_debt: {
+    fed_treasury_holdings_usd_billions: number;
+    marketable_debt_usd_billions: number;
+    fed_share_pct: number;
+    one_year_earlier_pct: number | null;
+    three_years_earlier_pct: number | null;
+    holdings_change_13w_usd_billions_per_month: number | null;
+    prior_13w_usd_billions_per_month: number | null;
+    as_of: string;
+    caveat: string;
+  } | null;
+  m2_to_gdp: {
+    m2_pct_gdp: number;
+    one_year_earlier_pct: number | null;
+    m2_growth_yoy_pct: number | null;
+    nominal_gdp_growth_yoy_pct: number | null;
+    as_of: string;
+    caveat: string;
+  } | null;
+}
+
+/** Average of a monthly series over the three months of a quarter
+ * starting at quarterStart (YYYY-MM-01); null unless all three exist. */
+function quarterAverage(monthly: Point[], quarterStart: string): number | null {
+  const byDate = new Map(monthly.map((p) => [p.date, p.value]));
+  const vals = [0, 1, 2].map((i) => {
+    const d = new Date(`${quarterStart}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + i);
+    return byDate.get(d.toISOString().slice(0, 10));
+  });
+  return vals.every((v) => v !== undefined) ? (vals as number[]).reduce((a, b) => a + b, 0) / 3 : null;
+}
+
+/**
+ * Monetary absorption -- added 2026-10-02 (external review, round 2):
+ * whether the Fed is taking more of the fiscal burden onto its balance
+ * sheet. Fed share = TREAST (weekly) / Treasury's total marketable debt
+ * (MSPD, month-end), on matching dates. QT pace = change in TREAST over 13
+ * weeks, per month (negative = runoff, positive = net buying). M2/GDP =
+ * M2 averaged over GDP's latest quarter / that quarter's GDP (SAAR).
+ */
+export async function computeFedAbsorption(): Promise<FedAbsorptionResult> {
+  const [mspdLatest, treastLatest, m2, gdp] = await Promise.all([
+    getLatestDataPoint("MSPD_TOTAL_MARKETABLE"),
+    getLatestDataPoint("TREAST"),
+    getRecentPoints("M2SL", 30),
+    getRecentPoints("GDP", 9),
+  ]);
+
+  let fed_share_of_marketable_debt: FedAbsorptionResult["fed_share_of_marketable_debt"] = null;
+  if (mspdLatest && treastLatest) {
+    const shareAsOf = async (date: string): Promise<{ share: number; fed: number; debt: number } | null> => {
+      const [debt, fed] = await Promise.all([getPointOnOrBefore("MSPD_TOTAL_MARKETABLE", date), getPointOnOrBefore("TREAST", date)]);
+      if (!debt || !fed || debt.value === 0) return null;
+      return { share: (fed.value / debt.value) * 100, fed: fed.value, debt: debt.value };
+    };
+    const asOf = mspdLatest.observation_date;
+    const [now, y1, y3, tq, tq2] = await Promise.all([
+      shareAsOf(asOf),
+      shareAsOf(subtractDays(asOf, 365)),
+      shareAsOf(subtractDays(asOf, 365 * 3)),
+      getPointOnOrBefore("TREAST", subtractDays(treastLatest.observation_date, 91)),
+      getPointOnOrBefore("TREAST", subtractDays(treastLatest.observation_date, 182)),
+    ]);
+    // TREAST is $ millions; per-month pace in $ billions over ~3 months.
+    const pace = (a: number, b: number) => round1((a - b) / 1000 / 3);
+    if (now) {
+      fed_share_of_marketable_debt = {
+        fed_treasury_holdings_usd_billions: round1(now.fed / 1000),
+        marketable_debt_usd_billions: round1(now.debt / 1000),
+        fed_share_pct: round2(now.share),
+        one_year_earlier_pct: y1 ? round2(y1.share) : null,
+        three_years_earlier_pct: y3 ? round2(y3.share) : null,
+        holdings_change_13w_usd_billions_per_month: tq ? pace(treastLatest.value, tq.value) : null,
+        prior_13w_usd_billions_per_month: tq && tq2 ? pace(tq.value, tq2.value) : null,
+        as_of: asOf,
+        caveat:
+          "Fed Treasury holdings (H.4.1 TREAST, weekly) / total marketable Treasury debt (MSPD, month-end), on matching dates. A rising share -- or the 13-week pace turning from runoff to net buying -- means the Fed is absorbing more of the supply. Purchases can have non-fiscal motives (market functioning, reserve management), so read the share alongside the auction and r - g checks, not alone.",
+      };
+    }
+  }
+
+  let m2_to_gdp: FedAbsorptionResult["m2_to_gdp"] = null;
+  const gdpNow = gdp[0];
+  if (gdpNow && gdpNow.value !== 0) {
+    const m2Q = quarterAverage(m2, gdpNow.date);
+    const gdpYearAgo = gdp.find((p) => p.date === subtractQuarters(gdpNow.date, 4));
+    const m2QYearAgo = quarterAverage(m2, subtractQuarters(gdpNow.date, 4));
+    const m2Latest = m2[0];
+    const m2YearAgo = m2Latest ? m2.find((p) => p.date === subtractQuarters(m2Latest.date, 4)) : undefined;
+    if (m2Q !== null) {
+      m2_to_gdp = {
+        m2_pct_gdp: round1((m2Q / gdpNow.value) * 100),
+        one_year_earlier_pct: m2QYearAgo !== null && gdpYearAgo ? round1((m2QYearAgo / gdpYearAgo.value) * 100) : null,
+        m2_growth_yoy_pct: m2Latest && m2YearAgo ? round2(((m2Latest.value - m2YearAgo.value) / m2YearAgo.value) * 100) : null,
+        nominal_gdp_growth_yoy_pct: gdpYearAgo ? round2(((gdpNow.value - gdpYearAgo.value) / gdpYearAgo.value) * 100) : null,
+        as_of: gdpNow.date,
+        caveat:
+          "M2 averaged over GDP's latest quarter / that quarter's nominal GDP (SAAR). M2 growing faster than nominal GDP for a sustained stretch is the monetary-financing pattern; the ratio also moves with rate-driven shifts between deposits and money funds/T-bills, so it's context, not a verdict on its own.",
+      };
+    }
+  }
+
+  return { fed_share_of_marketable_debt, m2_to_gdp };
+}

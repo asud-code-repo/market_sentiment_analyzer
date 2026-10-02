@@ -5,7 +5,7 @@ import { fetchMassiveBackfill } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
-import { fetchTreasuryAvgRates } from "./sources/treasury.js";
+import { fetchTreasuryAvgRates, fetchTreasuryAuctions, fetchTreasuryMarketableDebt } from "./sources/treasury.js";
 
 // One-time historical backfill for data_points — NOT part of the daily
 // ingestion run (see ingest.ts), which only ever needs the latest reading.
@@ -63,6 +63,20 @@ async function main() {
     console.log(`Treasury avg-rate backfill: ${treasuryPoints.length} total observations.`);
   } catch (err) {
     console.error(`Treasury avg-rate backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+  }
+
+  for (const [label, fn] of [
+    ["Treasury auctions (benchmark coupons, 2015-present)", fetchTreasuryAuctions],
+    ["Treasury total marketable debt (MSPD)", fetchTreasuryMarketableDebt],
+  ] as const) {
+    try {
+      console.log(`Backfilling ${label}...`);
+      const pts = await fn();
+      console.log(`${label}: ${pts.length} total observations.`);
+      treasuryPoints.push(...pts);
+    } catch (err) {
+      console.error(`${label} backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints];
