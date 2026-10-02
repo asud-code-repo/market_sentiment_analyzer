@@ -80,6 +80,18 @@
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
 
+  /* Page-level tab bar -- splits what used to be one long scroll into 3
+     grouped views (Stress Monitor / Smart Money / Macro & Context). Reuses
+     the sector-rotation card's own .view-toggle/.view-btn color convention
+     below, just sized up for a page-level control rather than a sub-card
+     one. Tab switching itself uses the same hidden-attribute + localStorage
+     pattern as setupCollapsible, not a new mechanism. */
+  .tab-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tab-btn { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-muted); cursor: pointer; font-family: inherit; }
+  .tab-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
+  .tab-panel { display: flex; flex-direction: column; gap: 16px; }
+  .tab-panel[hidden] { display: none; } /* author `display:flex` above would otherwise beat the UA stylesheet's [hidden] rule at equal specificity */
+
   /* Date selector bar */
   .date-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
   .date-bar label { font-size: 12px; color: var(--text-muted); }
@@ -337,95 +349,107 @@
 
   <div id="error-container"></div>
 
-  <div class="date-bar">
-    <label for="date-select">Viewing:</label>
-    <select id="date-select"></select>
-    <button class="date-nav-btn" id="prev-btn">&larr; Older</button>
-    <button class="date-nav-btn" id="next-btn">Newer &rarr;</button>
-    <button class="date-nav-btn" id="latest-btn">Jump to latest</button>
+  <div class="tab-bar" id="tab-bar">
+    <button class="tab-btn" data-tab="stressmonitor">Stress Monitor</button>
+    <button class="tab-btn" data-tab="smartmoney">Smart Money</button>
+    <button class="tab-btn" data-tab="macro">Macro &amp; Context</button>
   </div>
 
-  <div id="section-nav" class="section-nav"></div>
+  <div class="tab-panel" id="tab-stressmonitor">
+    <div class="date-bar">
+      <label for="date-select">Viewing:</label>
+      <select id="date-select"></select>
+      <button class="date-nav-btn" id="prev-btn">&larr; Older</button>
+      <button class="date-nav-btn" id="next-btn">Newer &rarr;</button>
+      <button class="date-nav-btn" id="latest-btn">Jump to latest</button>
+    </div>
 
-  <div id="report-view"><p class="loading">Loading…</p></div>
+    <div id="section-nav" class="section-nav"></div>
 
-  <div class="card" id="section-bondyields">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Yield Curve Shape — informational, not wave-gating</p>
-      <button class="collapse-toggle" id="bondyields-toggle" aria-expanded="true">Hide</button>
-    </div>
-    <div id="bondyields-body">
-      <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually below and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
-      <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
-    </div>
-  </div>
+    <div id="report-view"><p class="loading">Loading…</p></div>
 
-  <div class="card" id="section-fiscaldominance">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Fiscal Dominance Regime Checklist — informational, not wave-gating</p>
-      <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
+    <div class="card" id="section-charts">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Crash Probability — History</p>
+        <button class="collapse-toggle" id="charts-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="charts-body">
+        <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
+        <div id="chart-crash-probability"></div>
+      </div>
     </div>
-    <div id="fiscaldominance-body">
-      <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
-      <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
-    </div>
-  </div>
 
-  <div class="card" id="section-sector">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Sector Capital Rotation — informational, not wave-gating</p>
-      <button class="collapse-toggle" id="sector-toggle" aria-expanded="true">Hide</button>
-    </div>
-    <div id="sector-body">
-      <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return. The "Inst. 13F (QoQ)" column is institutional-only positioning from SEC 13F filings (all filers, not a curated list) — quarterly and 45+ days lagged, so it confirms whether institutions backed a move, not whether the move is happening sooner.</p>
-      <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
-    </div>
-  </div>
-
-  <div class="card" id="section-insider">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Insider Activity — informational, not wave-gating</p>
-      <button class="collapse-toggle" id="insider-toggle" aria-expanded="true">Hide</button>
-    </div>
-    <div id="insider-body">
-      <p class="context-note">SEC Form 4 open-market insider buys/sells for the BrokerageLink watchlist, filed within 2 business days of the trade. Filtered to transaction codes P/S only (grants, option exercises, gifts excluded) and to non-10b5-1 trades. Cluster buy = 2+ distinct officers/directors buying in the open market in the trailing 30 days — a single buy or sell is never flagged on its own.</p>
-      <div id="insider-wrap"><p class="loading">Loading…</p></div>
+    <div class="card">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">6-Indicator History</p>
+        <button class="collapse-toggle" id="indicator-history-toggle" aria-expanded="false">Show</button>
+      </div>
+      <div id="indicator-history-body" hidden>
+        <div id="chart-vix"></div>
+        <div id="chart-hy-spread"></div>
+        <div id="chart-drawdown"></div>
+        <div id="chart-10y"></div>
+        <div id="chart-sahm"></div>
+      </div>
     </div>
   </div>
 
-  <div class="card" id="section-context">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Contextual Indicators — informational, not wave-gating</p>
-      <button class="collapse-toggle" id="context-toggle" aria-expanded="false">Show</button>
+  <div class="tab-panel" id="tab-smartmoney" hidden>
+    <div class="card" id="section-sector">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Sector Capital Rotation — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="sector-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="sector-body">
+        <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return. The "Inst. 13F (QoQ)" column is institutional-only positioning from SEC 13F filings (all filers, not a curated list) — quarterly and 45+ days lagged, so it confirms whether institutions backed a move, not whether the move is happening sooner.</p>
+        <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
+      </div>
     </div>
-    <div id="context-body" hidden>
-      <p class="context-note">Latest available reading for each series — not tied to the historical report selected above, since these aren't stored per crash-check run.</p>
-      <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+
+    <div class="card" id="section-insider">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Insider Activity — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="insider-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="insider-body">
+        <p class="context-note">SEC Form 4 open-market insider buys/sells for the BrokerageLink watchlist, filed within 2 business days of the trade. Filtered to transaction codes P/S only (grants, option exercises, gifts excluded) and to non-10b5-1 trades. Cluster buy = 2+ distinct officers/directors buying in the open market in the trailing 30 days — a single buy or sell is never flagged on its own.</p>
+        <div id="insider-wrap"><p class="loading">Loading…</p></div>
+      </div>
     </div>
   </div>
 
-  <div class="card" id="section-charts">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">Crash Probability — History</p>
-      <button class="collapse-toggle" id="charts-toggle" aria-expanded="true">Hide</button>
+  <div class="tab-panel" id="tab-macro" hidden>
+    <div class="card" id="section-bondyields">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Yield Curve Shape — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="bondyields-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="bondyields-body">
+        <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually below and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
+        <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
+      </div>
     </div>
-    <div id="charts-body">
-      <p class="caveat" style="margin: 0 0 10px;">Discretionary LLM estimate over time — not a calibrated statistical forecast.</p>
-      <div id="chart-crash-probability"></div>
-    </div>
-  </div>
 
-  <div class="card">
-    <div class="collapsible-head">
-      <p class="eyebrow" style="margin: 0;">6-Indicator History</p>
-      <button class="collapse-toggle" id="indicator-history-toggle" aria-expanded="false">Show</button>
+    <div class="card" id="section-fiscaldominance">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Fiscal Dominance Regime Checklist — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="fiscaldominance-body">
+        <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
+        <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
+      </div>
     </div>
-    <div id="indicator-history-body" hidden>
-      <div id="chart-vix"></div>
-      <div id="chart-hy-spread"></div>
-      <div id="chart-drawdown"></div>
-      <div id="chart-10y"></div>
-      <div id="chart-sahm"></div>
+
+    <div class="card" id="section-context">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Contextual Indicators — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="context-toggle" aria-expanded="false">Show</button>
+      </div>
+      <div id="context-body" hidden>
+        <p class="context-note">Latest available reading for each series — not tied to the Stress Monitor tab's selected date, since these aren't stored per crash-check run.</p>
+        <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+      </div>
     </div>
   </div>
 </div>
@@ -2263,13 +2287,11 @@ function computeSectionNavItems(row) {
   } catch (e) { /* malformed trigger_status -- treat as none, same as renderReport does */ }
   if (hasTriggers) items.push({ id: "section-triggers", label: "Triggers" });
   items.push({ id: "section-notes", label: "Notes" });
-  // Static cards below report-view, always present, in the page's actual
-  // visual order (Yields, Regime, Sector, Context, Charts).
-  items.push({ id: "section-bondyields", label: "Yields" });
-  items.push({ id: "section-fiscaldominance", label: "Regime" });
-  items.push({ id: "section-sector", label: "Sector" });
-  items.push({ id: "section-insider", label: "Insider" });
-  items.push({ id: "section-context", label: "Context" });
+  // Yields/Regime/Sector/Insider/Context used to get a chip here too, back
+  // when this page was one long scroll -- now that they live in their own
+  // Smart Money/Macro & Context tabs (each short enough not to need an
+  // in-page jump chip), only Charts stays, since it's still part of this
+  // (Stress Monitor) tab's own content.
   items.push({ id: "section-charts", label: "Charts" });
   return items;
 }
@@ -2528,6 +2550,55 @@ setupCollapsible("fiscalDominanceExpanded", "fiscaldominance-toggle", "fiscaldom
 setupCollapsible("sectorRotationExpanded", "sector-toggle", "sector-body", true);
 setupCollapsible("insiderActivityExpanded", "insider-toggle", "insider-body", true);
 setupCollapsible("crashProbChartExpanded", "charts-toggle", "charts-body", true);
+
+// Page-level tab switching -- same hidden-attribute + localStorage
+// pattern as setupCollapsible above, just toggling 3 whole panels instead
+// of one section's body. SECTION_TAB maps a static card's id to the tab
+// it now lives in, for the hash-deep-link handling further below (every
+// id not listed here -- the 7 report-view subsections, plus Charts --
+// lives in "stressmonitor").
+const SECTION_TAB = {
+  "section-bondyields": "macro",
+  "section-fiscaldominance": "macro",
+  "section-context": "macro",
+  "section-sector": "smartmoney",
+  "section-insider": "smartmoney",
+};
+const TAB_IDS = ["stressmonitor", "smartmoney", "macro"];
+const TAB_STORAGE_KEY = "activeTab";
+
+function activateTab(tabId) {
+  if (!TAB_IDS.includes(tabId)) tabId = "stressmonitor";
+  for (const id of TAB_IDS) {
+    document.getElementById(`tab-${id}`).hidden = id !== tabId;
+  }
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabId);
+  });
+  try {
+    localStorage.setItem(TAB_STORAGE_KEY, tabId);
+  } catch (err) {
+    // Ignore -- this visit's switch still works, just won't persist.
+  }
+}
+
+function setupTabs() {
+  document.getElementById("tab-bar").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab-btn");
+    if (!btn) return;
+    activateTab(btn.dataset.tab);
+  });
+
+  let initialTab = "stressmonitor";
+  try {
+    const stored = localStorage.getItem(TAB_STORAGE_KEY);
+    if (stored) initialTab = stored;
+  } catch (err) {
+    // Ignore -- falls back to the default tab.
+  }
+  activateTab(initialTab);
+}
+setupTabs();
 
 async function main() {
   try {
@@ -2989,7 +3060,14 @@ async function main() {
 // content loads async via main() below), so a bookmarked/shared link with
 // a #section-... hash can jump straight there without waiting on any
 // fetch. Instant, not smooth (this is a fresh page load, not a click).
+// Now that Yields/Regime/Sector/Insider/Context live inside hidden tab
+// panels, the target tab must be activated FIRST -- scrollIntoView on a
+// still-hidden element is a no-op -- which also means an explicit link
+// correctly overrides whatever tab setupTabs() already restored from
+// localStorage above.
 if (location.hash) {
+  const targetId = location.hash.slice(1);
+  if (SECTION_TAB[targetId]) activateTab(SECTION_TAB[targetId]);
   const target = document.querySelector(location.hash);
   if (target) target.scrollIntoView({ block: "start" });
 }
