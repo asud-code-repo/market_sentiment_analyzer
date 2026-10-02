@@ -474,8 +474,8 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px; display: flex; flex-direction: column; gap: 8px; align-items: center;
   }
-  .game-hud { display: flex; justify-content: space-between; width: 100%; max-width: 480px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-  #dino-canvas { background: var(--page); border-radius: 6px; max-width: 100%; touch-action: manipulation; }
+  .game-hud { display: flex; justify-content: space-between; width: 100%; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  #dino-canvas { display: block; width: 100%; background: var(--page); border-radius: 6px; touch-action: manipulation; }
   .game-hint { font-size: 11px; color: var(--text-muted); margin: 0; }
 </style>
 <div class="wrap" style="margin-top:0;">
@@ -526,6 +526,25 @@
   var GROUND_Y = H - 24;
   var GRAVITY = 0.0028;
   var JUMP_VELOCITY = -0.78;
+
+  // Canvas now stretches to the card's full width via CSS (#dino-canvas
+  // width:100%), to match every other card's width (previously a fixed
+  // 480px, leaving empty gutters once the card itself was widened). CSS
+  // width alone would just stretch/blur the existing 480px bitmap, so the
+  // drawing buffer's actual resolution (the width= attribute) needs to be
+  // kept in sync with its rendered CSS size. Every game constant below
+  // (GROUND_Y, obstacle spawn x, collision bounds) is already derived from
+  // W/H read at this point, not hardcoded to 480 -- so resizing the buffer
+  // and re-deriving W/GROUND_Y is enough, no other logic needs to change.
+  function resizeCanvasToCard() {
+    var cssWidth = Math.round(canvas.getBoundingClientRect().width);
+    if (cssWidth > 0 && cssWidth !== canvas.width) {
+      canvas.width = cssWidth;
+      W = canvas.width;
+      GROUND_Y = H - 24;
+      dino.y = GROUND_Y - dino.h;
+    }
+  }
 
   var started = false;
   var over = false;
@@ -703,6 +722,7 @@
     var opening = !panel.classList.contains("open");
     panel.classList.toggle("open");
     if (opening) {
+      resizeCanvasToCard(); // panel was display:none until the line above, so layout (and a real width to measure) only exists now
       reset();
     } else if (raf) {
       cancelAnimationFrame(raf);
