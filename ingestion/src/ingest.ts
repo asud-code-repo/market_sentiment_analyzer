@@ -9,6 +9,7 @@ import { fetchMassive } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
+import { fetchAndWriteForm4 } from "./sources/secForm4.js";
 
 interface SourceResult {
   name: string;
@@ -31,6 +32,17 @@ async function runSource(
 }
 
 async function main() {
+  // Started alongside the Promise.all below (not inside it) -- it writes
+  // directly to insider_transactions rather than returning DataPoint[],
+  // since filing-level rows (owner identity, transaction code) don't fit
+  // data_points' one-numeric-value-per-series-per-day shape. Best-effort,
+  // same tier as SSGA/Massive/GPR/TIC: a Form 4 outage shouldn't fail the
+  // daily run.
+  const insiderPromise = fetchAndWriteForm4().catch((err: unknown) => {
+    console.warn(`  SEC Form 4 insider source skipped (not failing the run): ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  });
+
   const results = await Promise.all([
     runSource("FRED", true, fetchFred),
     // Required, not best-effort like CBOE/Massive below: VIX is one of the 6
@@ -63,6 +75,11 @@ async function main() {
     runSource("GPR", false, fetchGpr),
     runSource("TIC", false, fetchTic),
   ]);
+
+  const insiderRowCount = await insiderPromise;
+  if (insiderRowCount > 0) {
+    console.log(`Wrote ${insiderRowCount} insider transaction row(s) from SEC Form 4`);
+  }
 
   const requiredFailures = results.filter((r) => r.error && r.required);
   const optionalFailures = results.filter((r) => r.error && !r.required);

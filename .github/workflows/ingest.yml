@@ -48,6 +48,7 @@ jobs:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           POLYMARKET_SLUGS: ${{ vars.POLYMARKET_SLUGS }}
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+          SEC_EDGAR_CONTACT_EMAIL: ${{ secrets.SEC_EDGAR_CONTACT_EMAIL }}
 
   classify:
     needs: ingest # only runs if ingest's required sources (FRED, EIA) succeeded

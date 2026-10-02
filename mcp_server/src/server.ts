@@ -14,6 +14,7 @@ import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/econ
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
 import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation } from "./lib/regimeIndicators.js";
+import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -429,7 +430,9 @@ server.registerTool(
       "awareness only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) " +
       "— never treat it as confirming or contradicting the crash thesis. sector_rotation gives real " +
       "creation/redemption flow (not a price proxy) for the 11 sector SPDRs + SPY + GLD, but only " +
-      "at the ETF-vehicle level — see its own signal field for the full caveat. " +
+      "at the ETF-vehicle level — see its own signal field for the full caveat. insider_activity " +
+      "gives per-watchlist-ticker SEC Form 4 cluster-buy signals — see its own signal field for the " +
+      "filtering rules. " +
       "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
       "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
@@ -473,7 +476,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -520,6 +523,7 @@ server.registerTool(
         computeSeriesDelta("GLD"),
         computeSeriesDelta("X:BTCUSD"),
         computeSectorRotation(),
+        computeInsiderClusterSignals(),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -803,8 +807,35 @@ server.registerTool(
           "return relative to the market -- a positive absolute return can still be substantial " +
           "underperformance (e.g. +2.9% over 180d while SPY did +15%). flow_pct_of_assets expresses " +
           "flow_estimate_usd as a % of assets at the start of that window, so a $1B flow into a $10B " +
-          "sector and a $1B flow into a $1T one don't read as equally significant. Informational " +
+          "sector and a $1B flow into a $1T one don't read as equally significant. " +
+          "institutional_13f_tilt_pct_qoq (added 2026-10-01) is a DIFFERENT signal, not a " +
+          "duplicate -- it's institutional-ONLY positioning from SEC 13F bulk filings, aggregated " +
+          "across the full universe of 13F filers (not a curated 'top investors' list), vs. this " +
+          "field's ETF-vehicle flow which mixes retail + institutional money. 13F is quarterly and " +
+          "45+ days lagged, refreshed only ~4x/year -- it answers 'did institutions specifically " +
+          "back this move,' never 'is the move happening sooner.' institutional_13f_as_of surfaces " +
+          "exactly how stale that reading is. institutional_vs_etf_flow_agreement compares the " +
+          "SIGN of the 13F QoQ change against the 90d ETF-flow window only (the closest existing " +
+          "window to one quarter, not an exact period match) -- a directional cross-check, not a " +
+          "reconciliation. Coverage is limited to stocks currently held by one of the 11 tracked " +
+          "sector SPDRs (a large/mid-cap universe) -- all fields are null for SPY/GLD and for any " +
+          "sector ticker with fewer than 2 quarters of data yet. Informational " +
           "only, Tier 2 -- never part of the 3-of-6 wave-authorization gate.",
+      },
+      insider_activity: {
+        tickers: insiderActivity,
+        signal:
+          "Per-ticker SEC Form 4 insider activity for the BrokerageLink watchlist, filed within 2 " +
+          "business days of the actual trade (unlike 13F's 45+-day lag). Filtered hard for signal: " +
+          "only open-market transaction codes P/S are stored (grants, option exercises, gifts, tax-" +
+          "withholding excluded), and rows flagged aff10b5One (pre-scheduled 10b5-1 trades) are " +
+          "excluded from cluster_buy_signal entirely. cluster_buy_signal is true only when 2+ " +
+          "DISTINCT officers/directors bought in the open market in the trailing 30 days -- never a " +
+          "single buy, never a raw transaction count (one person buying repeatedly isn't the same " +
+          "signal as several independent insiders buying). total_sell_count_30d is a count only, " +
+          "deliberately with no dollar figure and no bearish framing -- insider selling is dominated " +
+          "by diversification/tax timing and carries far weaker signal than insider buying. " +
+          "Informational only, Tier 2 -- never part of the 3-of-6 wave-authorization gate.",
       },
       divergence_flags: divergenceFlags,
     });

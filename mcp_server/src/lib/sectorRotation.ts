@@ -53,6 +53,24 @@ export interface TickerRotation {
   // % of assets at the start of that window, using data already fetched
   // (no new ingestion needed).
   flow_pct_of_assets: Partial<Record<`${LookbackWindow}d`, number>>;
+  // Added 2026-10-01: institutional-only positioning from SEC 13F bulk
+  // filings (see ingestion/src/sources/sec13f.ts), aggregated across the
+  // FULL universe of 13F filers -- isolates institutional money
+  // specifically, unlike the ETF-flow fields above which mix retail +
+  // institutional. Quarterly, 45+-day lagged -- this answers "did
+  // institutions back this move," not "is the move happening sooner." null
+  // until 2 quarters of data exist (SPY/GLD never populate this -- they
+  // aren't current members of any SPDR holdings file, so there's no
+  // CUSIP-mapped 13F series for them).
+  institutional_13f_tilt_pct_qoq: number | null;
+  institutional_13f_as_of: string | null; // the latest quarter's PERIODOFREPORT -- surfaces staleness explicitly
+  institutional_13f_read: "accumulating" | "distributing" | null;
+  // sign(institutional_13f_tilt_pct_qoq) vs sign(flow_estimate_usd['90d']) --
+  // 90d is the closest existing window to one quarter. "confirmed" = both
+  // institutions (13F) and the ETF vehicle (flow) moved the same direction;
+  // "diverges" = they disagree (e.g. ETF flow positive while institutions
+  // themselves were net sellers that quarter).
+  institutional_vs_etf_flow_agreement: "confirmed" | "diverges" | null;
 }
 
 function classifyRotation(navReturnPct: number, flowUsd: number): RotationRead {
@@ -174,9 +192,22 @@ async function fetchAllDataPoints(seriesIds: string[], cutoff: string): Promise<
  * latest + 4 lookback fetches) would otherwise need. Computed entirely
  * from that one result set.
  */
+// Latest 2 distinct points of a quarterly series, oldest first -- a
+// window-based lookback (like valueOnOrBefore above) doesn't fit a
+// quarterly-cadence series the way it fits daily NAV/shares, since "90
+// days ago" and "the prior quarter's reading" aren't reliably the same
+// point.
+function latestTwoPoints(series: SeriesPoint[]): [SeriesPoint, SeriesPoint] | null {
+  if (series.length < 2) return null;
+  return [series[series.length - 2], series[series.length - 1]];
+}
+
 async function computeSectorRotationRaw(): Promise<TickerRotation[]> {
-  const seriesIds = SECTOR_TICKERS.flatMap(({ ticker }) => [`${ticker}_NAV`, `${ticker}_SHARES_OUT`]);
-  const cutoff = subtractDays(new Date().toISOString().slice(0, 10), 370);
+  const seriesIds = SECTOR_TICKERS.flatMap(({ ticker }) => [`${ticker}_NAV`, `${ticker}_SHARES_OUT`, `${ticker}_13F_VALUE_USD`]);
+  // 13F is quarterly -- 370 days only guarantees ~1 prior reading. A full
+  // year of margin (2 extra quarters) ensures the QoQ comparison below
+  // reliably has 2 real points even right after a fresh quarter lands.
+  const cutoff = subtractDays(new Date().toISOString().slice(0, 10), 730);
 
   const rows = await fetchAllDataPoints(seriesIds, cutoff);
 
@@ -247,6 +278,33 @@ async function computeSectorRotationRaw(): Promise<TickerRotation[]> {
       }
     }
 
+    const institutional13fSeries = bySeriesId.get(`${ticker}_13F_VALUE_USD`) ?? [];
+    const latestTwo13f = latestTwoPoints(institutional13fSeries);
+    let institutional13fTiltPctQoq: number | null = null;
+    let institutional13fAsOf: string | null = null;
+    let institutional13fRead: "accumulating" | "distributing" | null = null;
+    let institutionalVsEtfFlowAgreement: "confirmed" | "diverges" | null = null;
+
+    if (latestTwo13f) {
+      const [prior, latest] = latestTwo13f;
+      institutional13fAsOf = latest.date;
+      if (prior.value !== 0) {
+        institutional13fTiltPctQoq = round(((latest.value - prior.value) / prior.value) * 100);
+        institutional13fRead = institutional13fTiltPctQoq >= 0 ? "accumulating" : "distributing";
+
+        // 90d is the closest existing ETF-flow window to one quarter --
+        // compares sign only (a real reconciliation would need the 90d
+        // window to line up exactly with the 13F quarter's boundaries,
+        // which it doesn't; this is a directional cross-check, not an
+        // exact one).
+        const etfFlow90d = flowEstimate["90d"];
+        if (etfFlow90d !== undefined && etfFlow90d !== 0) {
+          const sameDirection = (institutional13fTiltPctQoq >= 0) === (etfFlow90d >= 0);
+          institutionalVsEtfFlowAgreement = sameDirection ? "confirmed" : "diverges";
+        }
+      }
+    }
+
     return {
       symbol: ticker,
       label,
@@ -256,6 +314,10 @@ async function computeSectorRotationRaw(): Promise<TickerRotation[]> {
       rotation_read: rotationRead,
       flow_pct_of_assets: flowPctOfAssets,
       nav_return_vs_spy_pct: {}, // filled in below -- needs SPY's own return, not available within this single-ticker pass
+      institutional_13f_tilt_pct_qoq: institutional13fTiltPctQoq,
+      institutional_13f_as_of: institutional13fAsOf,
+      institutional_13f_read: institutional13fRead,
+      institutional_vs_etf_flow_agreement: institutionalVsEtfFlowAgreement,
     };
   });
 }

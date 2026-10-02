@@ -7,6 +7,8 @@
   "scripts": {
     "ingest": "tsx src/ingest.ts",
     "backfill": "tsx src/backfill.ts",
+    "sec13f": "tsx src/sec13f-run.ts",
+    "sec13f-backfill": "tsx src/sec13f-run.ts --backfill",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -15,10 +17,13 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.7.0",
+    "yauzl": "^3.2.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
+    "@types/yauzl": "^2.10.3",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   }

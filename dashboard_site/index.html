@@ -182,6 +182,14 @@
   #sector-rotation-wrap td .sub { color: var(--text-muted); font-size: 11px; font-weight: 400; }
   #sector-rotation-wrap .pos { color: var(--good); }
   #sector-rotation-wrap .neg { color: var(--critical); }
+
+  /* Insider activity table -- same shape/convention as sector-rotation-wrap. */
+  #insider-wrap { overflow-x: auto; }
+  #insider-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #insider-wrap th, #insider-wrap td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  #insider-wrap th:first-child, #insider-wrap td:first-child { text-align: left; }
+  #insider-wrap th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  #insider-wrap td.ticker { font-weight: 600; text-align: left; }
   #sector-rotation-wrap .view-toggle { display: flex; gap: 4px; margin-bottom: 10px; }
   #sector-rotation-wrap .view-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
   #sector-rotation-wrap .view-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
@@ -369,8 +377,19 @@
       <button class="collapse-toggle" id="sector-toggle" aria-expanded="true">Hide</button>
     </div>
     <div id="sector-body">
-      <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return.</p>
+      <p class="context-note">11 Select Sector SPDRs + SPY + GLD, from State Street's own free NAV-history data. Flow is a real creation/redemption signal (share-count change × NAV) — not a price proxy — but it's ETF-vehicle-level, not a complete picture of money entering/leaving the underlying sector; investors can get the same exposure through other ETFs. NAV return is price-only, not total return. The "Inst. 13F (QoQ)" column is institutional-only positioning from SEC 13F filings (all filers, not a curated list) — quarterly and 45+ days lagged, so it confirms whether institutions backed a move, not whether the move is happening sooner.</p>
       <div id="sector-rotation-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <div class="card" id="section-insider">
+    <div class="collapsible-head">
+      <p class="eyebrow" style="margin: 0;">Insider Activity — informational, not wave-gating</p>
+      <button class="collapse-toggle" id="insider-toggle" aria-expanded="true">Hide</button>
+    </div>
+    <div id="insider-body">
+      <p class="context-note">SEC Form 4 open-market insider buys/sells for the BrokerageLink watchlist, filed within 2 business days of the trade. Filtered to transaction codes P/S only (grants, option exercises, gifts excluded) and to non-10b5-1 trades. Cluster buy = 2+ distinct officers/directors buying in the open market in the trailing 30 days — a single buy or sell is never flagged on its own.</p>
+      <div id="insider-wrap"><p class="loading">Loading…</p></div>
     </div>
   </div>
 
@@ -1602,6 +1621,7 @@ function renderRotationTable(bySymbol) {
     { key: 90, label: "90d" },
     { key: 180, label: "180d" },
     { key: 365, label: "365d" },
+    { key: "13f", label: "Inst. 13F (QoQ)" },
   ];
   const ROTATION_VIEWS = {
     return: { fmt: fmtRotationPct, of: (d) => d?.navReturn, label: "NAV return" },
@@ -1612,7 +1632,12 @@ function renderRotationTable(bySymbol) {
   const fmt = ROTATION_VIEWS[rotationView].fmt;
   const metricOf = (symbol) => ROTATION_VIEWS[rotationView].of(bySymbol.get(symbol)) ?? {};
 
-  let rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => ({ symbol, label, metrics: metricOf(symbol) }));
+  let rows = SECTOR_ROTATION_TICKERS.map(({ symbol, label }) => ({
+    symbol,
+    label,
+    metrics: metricOf(symbol),
+    institutional13f: bySymbol.get(symbol)?.institutional13f ?? { tiltPctQoq: null, asOf: null, read: null, agreement: null },
+  }));
   if (rotationSort.column !== null) {
     rows = rows.slice().sort((a, b) => {
       const av = a.metrics[rotationSort.column], bv = b.metrics[rotationSort.column];
@@ -1625,12 +1650,27 @@ function renderRotationTable(bySymbol) {
 
   const headerCells = columns
     .map((col) => {
-      if (col.key === "symbol") return `<th>${col.label}</th>`;
+      if (col.key === "symbol" || col.key === "13f") return `<th>${col.label}</th>`;
       const sorted = rotationSort.column === col.key;
       const arrow = sorted ? (rotationSort.dir === "desc" ? "▼" : "▲") : "↕";
       return `<th class="sortable${sorted ? " sorted" : ""}" data-sort-col="${col.key}">${col.label} <span class="sort-arrow">${arrow}</span></th>`;
     })
     .join("");
+
+  // Institutional 13F is a single quarterly QoQ reading, not one of the 4
+  // lookback windows above, so it's rendered as its own fixed column
+  // (not part of the view-toggle/sort mechanism those 4 share) -- shown
+  // regardless of which of the 4 views is currently selected.
+  const fmt13f = (inst) => {
+    if (inst.tiltPctQoq == null) return `<span class="sub">no data</span>`;
+    const cls = inst.tiltPctQoq >= 0 ? "pos" : "neg";
+    const sign = inst.tiltPctQoq >= 0 ? "+" : "";
+    const quarterLabel = inst.asOf ? ` <span class="sub">(${inst.asOf})</span>` : "";
+    const agreementBadge = inst.agreement
+      ? ` <span class="pill ${inst.agreement === "confirmed" ? "good" : "warning"}">${inst.agreement}</span>`
+      : "";
+    return `<span class="${cls}">${sign}${inst.tiltPctQoq.toFixed(1)}%</span>${quarterLabel}${agreementBadge}`;
+  };
 
   const bodyRows = rows
     .map(
@@ -1641,6 +1681,7 @@ function renderRotationTable(bySymbol) {
         <td>${fmt(r.metrics[90])}</td>
         <td>${fmt(r.metrics[180])}</td>
         <td>${fmt(r.metrics[365])}</td>
+        <td>${fmt13f(r.institutional13f)}</td>
       </tr>
     `,
     )
@@ -1772,6 +1813,39 @@ function fmtDivergenceDelta(series, windowDays = 7) {
   const delta = series.unit === "count" ? series.delta_7d.toLocaleString("en-US") : series.delta_7d;
   const prefix = series.unit === "usd" || series.unit === "usd_billions" ? "$" : "";
   return `<span class="delta-inline">${sign}${prefix}${delta} / ${windowDays}d</span>`;
+}
+
+// Mirrors mcp_server/src/lib/insiderCluster.ts's computeInsiderClusterSignals
+// exactly (duplicated, not shared across the Supabase-REST-vs-supabase-js
+// boundary, same convention as every other MCP-mirrored formula on this
+// page). `signals` is an array of {ticker, cluster_buy_signal,
+// distinct_officer_director_buyers_30d, total_buy_usd_30d,
+// total_sell_count_30d, latest_transaction_date}.
+function renderInsiderActivity(signals) {
+  const wrap = document.getElementById("insider-wrap");
+  if (!Array.isArray(signals) || signals.length === 0) {
+    wrap.innerHTML = `<p class="context-note">No watchlist tickers configured.</p>`;
+    return;
+  }
+  const rows = signals.map((s) => {
+    const pillCls = s.cluster_buy_signal ? "good" : "muted";
+    const pillText = s.cluster_buy_signal ? "Cluster buy" : "None";
+    const buyUsd = s.total_buy_usd_30d != null ? `$${Math.round(s.total_buy_usd_30d).toLocaleString("en-US")}` : "—";
+    return `<tr>
+      <td class="ticker">${s.ticker}</td>
+      <td><span class="pill ${pillCls}">${pillText}</span></td>
+      <td>${s.distinct_officer_director_buyers_30d}</td>
+      <td>${buyUsd}</td>
+      <td>${s.total_sell_count_30d}</td>
+      <td>${s.latest_transaction_date ?? "—"}</td>
+    </tr>`;
+  }).join("");
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>Ticker</th><th>Signal (30d)</th><th>Officer/director buyers</th><th>Buy $ (30d)</th><th>Sells (30d)</th><th>Latest filing</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function renderDivergenceFlags(flags) {
@@ -2194,6 +2268,7 @@ function computeSectionNavItems(row) {
   items.push({ id: "section-bondyields", label: "Yields" });
   items.push({ id: "section-fiscaldominance", label: "Regime" });
   items.push({ id: "section-sector", label: "Sector" });
+  items.push({ id: "section-insider", label: "Insider" });
   items.push({ id: "section-context", label: "Context" });
   items.push({ id: "section-charts", label: "Charts" });
   return items;
@@ -2451,6 +2526,7 @@ setupCollapsible("contextIndicatorsExpanded", "context-toggle", "context-body");
 setupCollapsible("bondYieldsExpanded", "bondyields-toggle", "bondyields-body", true);
 setupCollapsible("fiscalDominanceExpanded", "fiscaldominance-toggle", "fiscaldominance-body", true);
 setupCollapsible("sectorRotationExpanded", "sector-toggle", "sector-body", true);
+setupCollapsible("insiderActivityExpanded", "insider-toggle", "insider-body", true);
 setupCollapsible("crashProbChartExpanded", "charts-toggle", "charts-body", true);
 
 async function main() {
@@ -2638,9 +2714,13 @@ async function main() {
     // mcp_server's computeSectorRotation, duplicated not shared across the
     // Supabase-REST-vs-supabase-js boundary.
     try {
-      const rotationSeriesIds = SECTOR_ROTATION_TICKERS.flatMap(({ symbol }) => [`${symbol}_NAV`, `${symbol}_SHARES_OUT`]);
+      const rotationSeriesIds = SECTOR_ROTATION_TICKERS.flatMap(({ symbol }) => [`${symbol}_NAV`, `${symbol}_SHARES_OUT`, `${symbol}_13F_VALUE_USD`]);
       const cutoff = new Date();
-      cutoff.setUTCDate(cutoff.getUTCDate() - 370);
+      // 730d (not 370d) -- 13F is quarterly, so a full year of margin
+      // ensures 2 real quarterly points are available for the QoQ
+      // comparison below even right after a fresh quarter lands. Mirrors
+      // mcp_server/src/lib/sectorRotation.ts's same cutoff change exactly.
+      cutoff.setUTCDate(cutoff.getUTCDate() - 730);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       // ~6,600+ rows for the full 26-series/370-day window (26 series x
       // ~254 trading days/yr) -- well past PostgREST's 1000-row cap, so
@@ -2732,7 +2812,28 @@ async function main() {
             }
           }
         }
-        bySymbol.set(symbol, { navReturn, flow, flowPctOfAssets });
+        // Institutional 13F tilt -- mirrors mcp_server/src/lib/
+        // sectorRotation.ts's latestTwoPoints/QoQ math exactly. Quarterly
+        // cadence, not window-based like navReturn/flow above, so this
+        // takes the latest 2 distinct points of the series directly rather
+        // than a day-offset lookback.
+        const institutional13fSeries = bySeriesId.get(`${symbol}_13F_VALUE_USD`) ?? [];
+        let institutional13f = { tiltPctQoq: null, asOf: null, read: null, agreement: null };
+        if (institutional13fSeries.length >= 2) {
+          const prior = institutional13fSeries[institutional13fSeries.length - 2];
+          const latest = institutional13fSeries[institutional13fSeries.length - 1];
+          institutional13f.asOf = latest.date;
+          if (prior.value !== 0) {
+            const tiltPctQoq = ((latest.value - prior.value) / prior.value) * 100;
+            institutional13f.tiltPctQoq = tiltPctQoq;
+            institutional13f.read = tiltPctQoq >= 0 ? "accumulating" : "distributing";
+            const etfFlow90d = flow[90];
+            if (etfFlow90d != null && etfFlow90d !== 0) {
+              institutional13f.agreement = (tiltPctQoq >= 0) === (etfFlow90d >= 0) ? "confirmed" : "diverges";
+            }
+          }
+        }
+        bySymbol.set(symbol, { navReturn, flow, flowPctOfAssets, institutional13f });
       }
       // Return relative to SPY -- a positive absolute return can still be
       // substantial underperformance (e.g. +2.9% over 180d while SPY did
@@ -2751,6 +2852,47 @@ async function main() {
       renderSectorRotation(bySymbol);
     } catch (err) {
       document.getElementById("sector-rotation-wrap").innerHTML = `<p class="loading">Failed to load sector rotation: ${err.message}</p>`;
+    }
+
+    // Isolated: same independence rationale as the sector-rotation block
+    // above. Row counts here are tiny (a handful of filings/ticker/month at
+    // most) -- well under PostgREST's 1000-row cap, so fetchFromSupabase is
+    // enough, no pagination needed.
+    try {
+      const watchlist = await fetchFromSupabase(`watchlist_tickers?select=symbol`);
+      const tickers = watchlist.map((r) => r.symbol);
+      const cutoff = new Date();
+      cutoff.setUTCDate(cutoff.getUTCDate() - 30);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const rows = tickers.length > 0
+        ? await fetchFromSupabase(
+            `insider_transactions?select=ticker,owner_cik,is_officer,is_director,transaction_code,shares,price_per_share,transaction_date&ticker=in.(${tickers.join(",")})&transaction_date=gte.${cutoffStr}`,
+          )
+        : [];
+
+      // Mirrors mcp_server/src/lib/insiderCluster.ts's computeInsiderClusterSignals
+      // exactly -- cluster = 2+ DISTINCT officer/director open-market buyers,
+      // not a raw transaction count; sells are a count only, no dollar figure.
+      const signals = tickers.map((ticker) => {
+        const tickerRows = rows.filter((r) => r.ticker === ticker);
+        const buys = tickerRows.filter((r) => r.transaction_code === "P");
+        const sells = tickerRows.filter((r) => r.transaction_code === "S");
+        const clusterBuyers = new Set(buys.filter((r) => r.is_officer || r.is_director).map((r) => r.owner_cik));
+        const buyUsdValues = buys.filter((r) => r.price_per_share != null).map((r) => r.shares * r.price_per_share);
+        const totalBuyUsd = buyUsdValues.length > 0 ? buyUsdValues.reduce((sum, v) => sum + v, 0) : null;
+        const latestDate = tickerRows.length > 0 ? tickerRows.map((r) => r.transaction_date).sort().at(-1) : null;
+        return {
+          ticker,
+          distinct_officer_director_buyers_30d: clusterBuyers.size,
+          cluster_buy_signal: clusterBuyers.size >= 2,
+          total_buy_usd_30d: totalBuyUsd,
+          total_sell_count_30d: sells.length,
+          latest_transaction_date: latestDate,
+        };
+      });
+      renderInsiderActivity(signals);
+    } catch (err) {
+      document.getElementById("insider-wrap").innerHTML = `<p class="loading">Failed to load insider activity: ${err.message}</p>`;
     }
 
     document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));

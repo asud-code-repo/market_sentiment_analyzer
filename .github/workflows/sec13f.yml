@@ -1,0 +1,38 @@
+name: SEC 13F sector tilt (manual)
+
+# workflow_dispatch only -- deliberately not on a cron. SEC's own bulk-13F
+# publish schedule is irregular enough (confirmed: the ZIP's URL path
+# prefix itself changed between quarters) that a blind cron risks silently
+# processing stale or missing data -- see ingestion/src/sources/sec13f.ts's
+# own doc comment. Check https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets
+# for a new quarter's data, then run this manually from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Process the last 4 quarters instead of just the latest one"
+        type: boolean
+        default: false
+
+jobs:
+  sec13f:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingestion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ingestion/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run ${{ inputs.backfill && 'sec13f-backfill' || 'sec13f' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SEC_EDGAR_CONTACT_EMAIL: ${{ secrets.SEC_EDGAR_CONTACT_EMAIL }}

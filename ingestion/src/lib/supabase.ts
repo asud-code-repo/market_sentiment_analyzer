@@ -69,6 +69,47 @@ export async function getLatestValue(seriesId: string): Promise<number | null> {
   return data?.value ?? null;
 }
 
+export interface InsiderTransaction {
+  ticker: string;
+  issuer_cik: string;
+  accession_number: string;
+  line_no: number;
+  owner_name: string;
+  owner_cik: string;
+  is_officer: boolean;
+  is_director: boolean;
+  is_ten_percent_owner: boolean;
+  officer_title?: string | null;
+  transaction_code: string;
+  transaction_date: string; // YYYY-MM-DD
+  shares: number;
+  price_per_share?: number | null;
+  acquired_disposed_code?: string | null;
+  is_10b5_1: boolean;
+  filed_at: string; // YYYY-MM-DD
+}
+
+/**
+ * Upserts on (accession_number, line_no) — see the unique constraint in
+ * supabase/migrations/20261001000000_insider_transactions.sql. Same
+ * chunking rationale as writeDataPoints, though volume here is tiny by
+ * comparison (a handful of filings/day across 7 tickers at most).
+ */
+export async function writeInsiderTransactions(rows: InsiderTransaction[]): Promise<void> {
+  if (rows.length === 0) return;
+
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
+    const { error } = await supabase
+      .from("insider_transactions")
+      .upsert(chunk, { onConflict: "accession_number,line_no" });
+
+    if (error) {
+      throw new Error(`Supabase upsert failed for insider_transactions (rows ${i}-${i + chunk.length}): ${error.message}`);
+    }
+  }
+}
+
 /**
  * The BrokerageLink watchlist ticker *list* (symbols only) lives in Supabase
  * so CI can read it without access to the gitignored local watchlist file —
