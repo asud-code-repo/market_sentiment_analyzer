@@ -154,12 +154,26 @@ export async function fetchTreasuryAuctions(): Promise<DataPoint[]> {
 // $ millions, month-end -- the denominator for the Fed's share of
 // marketable Treasuries (FRED TREAST / this). Includes TIPS and FRNs, as
 // does TREAST.
+//
+// The "Total Marketable" label isn't filtered server-side: the first
+// version filtered security_class_desc and got zero rows (2026-10-02
+// backfill), so the label evidently sits in another column. All rows since
+// MSPD_HISTORY_START are fetched and the label is matched in either
+// hierarchy column; if neither matches, the error lists the labels seen.
+const MSPD_HISTORY_START = "2010-01-01";
+const isTotalMarketable = (v: string | null | undefined) => (v ?? "").trim().toLowerCase() === "total marketable";
+
 export async function fetchTreasuryMarketableDebt(): Promise<DataPoint[]> {
-  const rows = await fetchFiscalData<AuctionRow>("/v1/debt/mspd/mspd_table_1", {
-    filter: "security_class_desc:eq:Total Marketable",
+  const all = await fetchFiscalData<AuctionRow>("/v1/debt/mspd/mspd_table_1", {
+    filter: `record_date:gte:${MSPD_HISTORY_START}`,
     sort: "-record_date",
   });
-  requireFields(rows, ["record_date", "total_mil_amt"], "Treasury mspd_table_1");
+  requireFields(all, ["record_date", "security_type_desc", "security_class_desc", "total_mil_amt"], "Treasury mspd_table_1");
+  const rows = all.filter((r) => isTotalMarketable(r.security_type_desc) || isTotalMarketable(r.security_class_desc));
+  if (rows.length === 0) {
+    const labels = [...new Set(all.slice(0, 60).map((r) => `${r.security_type_desc} / ${r.security_class_desc}`))];
+    throw new Error(`Treasury mspd_table_1: no "Total Marketable" row in either security_type_desc or security_class_desc. Labels seen: ${labels.join("; ")}`);
+  }
 
   const points: DataPoint[] = [];
   for (const row of rows) {
