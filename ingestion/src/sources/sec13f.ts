@@ -164,14 +164,26 @@ function makeTsvReader(headerLine: string): TsvReader {
 
 /**
  * ACCESSION_NUMBER -> PERIODOFREPORT (the quarter being reported, e.g.
- * "30-JUN-2026"), filtered to SUBMISSIONTYPE='13F-HR' only. v1 deliberately
- * excludes 13F-HR/A amendments to avoid double-counting a manager's
- * position once under the original filing and again under its amendment --
- * a known limitation, fast-follow not v1, same honesty convention as this
- * project's other flagged-not-fixed gaps.
+ * "30-JUN-2026"), filtered to SUBMISSIONTYPE='13F-HR' only, AND further
+ * restricted to the single DOMINANT period in this filing window.
+ *
+ * Confirmed live (2026-10-02 real backfill run): a filing window's
+ * SUBMISSION.tsv isn't just "this window's real quarter" -- it also
+ * contains a long tail of stray original 13F-HR filings reporting on
+ * long-past quarters (e.g. a manager filing late for the first time, or
+ * correcting a gap), going back to 2001 in the window actually tested.
+ * Aggregating those into data_points produced ~100 bogus historical
+ * "quarters" per sector ticker, each one a wild undercount (just the
+ * handful of stragglers who happened to file during THIS window, not the
+ * complete universe of managers who actually filed for that quarter back
+ * when it was current) -- misleading data, not just extra noise. Fixed by
+ * keeping only the period with by far the most distinct filings (the one
+ * this window's 45-day deadline was actually for); every other period is
+ * real but incomplete and is dropped rather than written.
  */
 async function readSubmissionPeriods(zipPath: string): Promise<Map<string, string>> {
-  const periods = new Map<string, string>();
+  const accessionToPeriod = new Map<string, string>();
+  const periodCounts = new Map<string, number>();
   let reader: TsvReader | null = null;
   await streamEntryLines(zipPath, "SUBMISSION.tsv", (line) => {
     if (!reader) {
@@ -183,8 +195,25 @@ async function readSubmissionPeriods(zipPath: string): Promise<Map<string, strin
     if (submissionType !== "13F-HR") return;
     const accession = reader.get(fields, "ACCESSION_NUMBER");
     const period = reader.get(fields, "PERIODOFREPORT");
-    if (accession && period) periods.set(accession, period);
+    if (!accession || !period) return;
+    accessionToPeriod.set(accession, period);
+    periodCounts.set(period, (periodCounts.get(period) ?? 0) + 1);
   });
+
+  let dominantPeriod: string | null = null;
+  let dominantCount = 0;
+  for (const [period, count] of periodCounts) {
+    if (count > dominantCount) {
+      dominantPeriod = period;
+      dominantCount = count;
+    }
+  }
+  console.log(`  13F: dominant period in this window is ${dominantPeriod} (${dominantCount} filings) -- ${periodCounts.size - 1} other stray period(s) discarded`);
+
+  const periods = new Map<string, string>();
+  for (const [accession, period] of accessionToPeriod) {
+    if (period === dominantPeriod) periods.set(accession, period);
+  }
   return periods;
 }
 
@@ -203,7 +232,7 @@ function periodToIsoDate(period: string): string | null {
 }
 
 interface SectorAggregate {
-  valueThousands: number;
+  valueUsd: number;
   shares: number;
 }
 
@@ -244,14 +273,14 @@ async function aggregateInfotable(
     const periodIso = periodToIsoDate(period);
     if (!periodIso) return;
 
-    const valueThousands = Number(reader.get(fields, "VALUE"));
+    const valueUsd = Number(reader.get(fields, "VALUE"));
     const shares = Number(reader.get(fields, "SSHPRNAMT"));
-    if (!Number.isFinite(valueThousands) || !Number.isFinite(shares)) return;
+    if (!Number.isFinite(valueUsd) || !Number.isFinite(shares)) return;
 
     rowsMatched++;
     const key = `${sector.ticker}|${periodIso}`;
-    const existing = bySectorQuarter.get(key) ?? { valueThousands: 0, shares: 0 };
-    existing.valueThousands += valueThousands;
+    const existing = bySectorQuarter.get(key) ?? { valueUsd: 0, shares: 0 };
+    existing.valueUsd += valueUsd;
     existing.shares += shares;
     bySectorQuarter.set(key, existing);
   });
@@ -269,10 +298,14 @@ function toDataPoints(bySectorQuarter: Map<string, SectorAggregate>): DataPoint[
       source: "SEC_13F",
       source_series_code: ticker,
       observation_date: periodIso,
-      // INFOTABLE's VALUE column is in thousands of USD (standard 13F
-      // convention) -- x1000 to match this project's usd-unit convention
-      // elsewhere (e.g. SSGA's NAV series, which are already in whole USD).
-      value: Math.round(agg.valueThousands * 1000),
+      // CONFIRMED LIVE (2026-10-02): INFOTABLE's VALUE column is already
+      // whole USD, NOT thousands as SEC's own 13F documentation convention
+      // is widely described elsewhere -- a real sample row made this
+      // unambiguous (Cardinal Health, VALUE=388237, SSHPRNAMT=5250 shares:
+      // treating VALUE as thousands implies a ~$73,949/share price, which
+      // is absurd; whole dollars implies ~$73.95/share, a real price for
+      // that stock on that date). No conversion needed here.
+      value: Math.round(agg.valueUsd),
       unit: "usd",
     });
   }

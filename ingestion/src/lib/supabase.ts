@@ -54,6 +54,23 @@ export async function writeDataPoints(points: DataPoint[]): Promise<void> {
  * by the plausibility guard (see lib/plausibility.ts) to compare an
  * incoming value against what's already on record before writing it.
  */
+/**
+ * Deletes every data_points row from the given source -- used by
+ * sec13f-run.ts's --clean flag to purge a prior buggy run's output before
+ * reprocessing (confirmed live 2026-10-02: a since-fixed bug wrote ~100
+ * bogus historical quarters per sector ticker; a plain re-run's upsert
+ * would correct the real quarters but never remove the stale ones it no
+ * longer writes). Scoped to `source` rather than a blanket table wipe, and
+ * only ever called explicitly via a CLI flag -- never part of the regular
+ * ingest/backfill path.
+ */
+export async function deleteDataPointsBySource(source: string): Promise<void> {
+  const { error } = await supabase.from("data_points").delete().eq("source", source);
+  if (error) {
+    throw new Error(`Failed to delete data_points for source=${source}: ${error.message}`);
+  }
+}
+
 export async function getLatestValue(seriesId: string): Promise<number | null> {
   const { data, error } = await supabase
     .from("data_points")

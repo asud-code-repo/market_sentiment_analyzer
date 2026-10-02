@@ -13,6 +13,10 @@ on:
         description: "Process the last 4 quarters instead of just the latest one"
         type: boolean
         default: false
+      clean:
+        description: "Delete all existing SEC_13F data_points first (use after a bug fix to purge stale rows a plain re-run wouldn't remove)"
+        type: boolean
+        default: false
 
 jobs:
   sec13f:
@@ -31,7 +35,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run ${{ inputs.backfill && 'sec13f-backfill' || 'sec13f' }}
+      - run: npm run ${{ inputs.backfill && 'sec13f-backfill' || 'sec13f' }} -- ${{ inputs.clean && '--clean' || '' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
