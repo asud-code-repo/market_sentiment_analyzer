@@ -436,7 +436,7 @@
         <button class="collapse-toggle" id="fiscaldominance-toggle" aria-expanded="true">Hide</button>
       </div>
       <div id="fiscaldominance-body">
-        <p class="context-note">5 real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). Each card shows its own prior-period comparison — read the direction, not one reading. None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching 4 of the 5 series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
+        <p class="context-note">Real-data checks for whether Fed policy is actually <em>constrained</em> by the debt burden — not just whether debt or rates happen to be high (that's the level tracked below). Each card shows its own prior-period comparison — read the direction, not one reading. None of these is a verdict on its own; this is a structural, slow-moving read (reassess roughly quarterly, matching most of these series' own cadence), not a daily flag. See the "Fiscal Dominance Regime Checklist" section of the rules doc for the full methodology.</p>
         <div id="fiscaldominance-wrap"><p class="loading">Loading…</p></div>
       </div>
     </div>
@@ -1304,11 +1304,11 @@ function drawYieldCurveChart(wrap, snapshots) {
 }
 
 // Fiscal Dominance Regime Checklist -- mirrors mcp_server/src/lib/
-// regimeIndicators.ts's 5 checklist functions exactly (duplicated, not shared across
+// regimeIndicators.ts's checklist functions exactly (duplicated, not shared across
 // the Supabase-REST-vs-supabase-js boundary, same convention as this file's
 // other MCP-mirrored logic: erf(), estrellaMishkinRecessionProbability(),
 // adjustForSplits()). See that file's own doc comments for the full
-// methodology on each of the 5 checks -- not repeated here.
+// methodology on each of the 9 checks -- not repeated here.
 function pearsonCorrelation(xs, ys) {
   const n = xs.length;
   if (n < 2 || ys.length !== n) return null;
@@ -1518,6 +1518,111 @@ async function renderFiscalDominanceChecklist() {
         value: `${pct(latest).toFixed(1)}%`,
         trend: trendParts.length ? trendParts.join(" · ") : null,
         detail: "FEDERAL spending only, not general government (all levels) -- reads structurally lower than an international 'general government' figure. No validated threshold band applies here (an external note's <30%/30-40%/50%+ 'belt-tightening becomes difficult/near-impossible' bands are for that broader, unavailable-for-free measure). Watch the multi-year trend and rate of change, not a single level.",
+      });
+    }
+
+    // 6-8. Debt dynamics (added 2026-10-02) -- mirrors regimeIndicators.ts's
+    // computeDebtDynamics. r = Treasury's average rate on marketable debt
+    // (monthly, excl. TIPS/FRNs); g = nominal GDP YoY (same quarter a year
+    // earlier); d = debt held by the public % GDP. Debt/GDP is stable when
+    // the primary balance = d*(r-g)/(1+g).
+    const [avgRates, gdpReal, gdpPot, debtPctRows, dgs2Rows, dgs5Rows, dgs10Rows, dfii10Rows] = await Promise.all([
+      fetchRecent("TREASURY_AVG_RATE_MARKETABLE", 40),
+      fetchRecent("GDPC1", 8),
+      fetchRecent("GDPPOT", 8),
+      fetchRecent("FYGFGDQ188S", 1),
+      fetchRecent("DGS2", 1),
+      fetchRecent("DGS5", 1),
+      fetchRecent("DGS10", 1),
+      fetchRecent("DFII10", 1),
+    ]);
+    const quarterlyYoy = (rows, quartersBack) => {
+      if (!rows[0]) return null;
+      const byDate = new Map(rows.map((r) => [r.observation_date, r.value]));
+      const end = quarterShift(rows[0].observation_date, quartersBack);
+      const curr = byDate.get(end), prev = byDate.get(quarterShift(end, 4));
+      if (curr == null || prev == null || prev === 0) return null;
+      return { date: end, pct: ((curr - prev) / prev) * 100 };
+    };
+    const avgNow = avgRates[0];
+    const avgMonthsBack = (n) => {
+      if (!avgNow) return null;
+      const d = new Date(`${avgNow.observation_date}T00:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() - n);
+      const target = d.toISOString().slice(0, 10);
+      return avgRates.find((r) => r.observation_date <= target)?.value ?? null;
+    };
+    const stabilizing = (dPct, r, g) => (dPct * ((r - g) / 100)) / (1 + g / 100);
+    const gNow = quarterlyYoy(gdp, 0);
+    const gYearAgo = quarterlyYoy(gdp, 4);
+    const dgs10Now = dgs10Rows[0]?.value;
+
+    // 6. Average rate on the debt stock vs. market yields.
+    if (avgNow) {
+      const y1 = avgMonthsBack(12), y3 = avgMonthsBack(36);
+      const trendParts = [y1 != null && `${y1.toFixed(2)}% 1yr earlier`, y3 != null && `${y3.toFixed(2)}% 3yr earlier`].filter(Boolean);
+      const mkt = [["2y", dgs2Rows[0]?.value], ["5y", dgs5Rows[0]?.value], ["10y", dgs10Now]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${v.toFixed(2)}%`).join(", ");
+      const gap = dgs10Now != null ? dgs10Now - avgNow.value : null;
+      cards.push({
+        label: "Avg Rate on Marketable Debt",
+        value: `${avgNow.value.toFixed(2)}%`,
+        trend: trendParts.length ? trendParts.join(" · ") : null,
+        detail: `What the existing stock costs (${avgNow.observation_date}), vs. market ${mkt || "yields n/a"}. ${gap != null && gap > 0 ? `10y sits ${gap.toFixed(2)}pts above the average — every rollover raises the debt's cost, so the average keeps drifting up even if market yields stop rising.` : "Market yields at or below the average — rollover isn't adding cost at the margin."} Excludes TIPS and floating-rate notes.`,
+      });
+    }
+
+    // 7. r - g (nominal headline; real version for context).
+    if (avgNow && gNow) {
+      const rg = avgNow.value - gNow.pct;
+      const y1 = avgMonthsBack(12);
+      const rgYearAgo = y1 != null && gYearAgo ? y1 - gYearAgo.pct : null;
+      const realPot = quarterlyYoy(gdpPot, 0);
+      const realGdp = quarterlyYoy(gdpReal, 0);
+      const realR = dfii10Rows[0]?.value;
+      cards.push({
+        label: "r − g (nominal)",
+        value: `${signed(rg, 2)}pts`,
+        trend: rgYearAgo != null ? `${signed(rgYearAgo, 2)}pts a year earlier` : null,
+        detail: `Average debt rate ${avgNow.value.toFixed(2)}% vs. nominal GDP growth ${gNow.pct.toFixed(2)}% YoY (to ${gNow.date}).${realR != null && realPot ? ` Real: 10yr TIPS ${realR.toFixed(2)}% vs. CBO potential growth ${realPot.pct.toFixed(2)}% = ${signed(realR - realPot.pct, 2)}pts${realGdp ? ` (actual real growth ${realGdp.pct.toFixed(2)}%)` : ""}.` : ""} Negative r − g lets a modest primary deficit coexist with stable debt/GDP; it doesn't shrink debt on its own. Rising r − g is the core debt-dynamics headwind. g swings with the cycle — read the direction.`,
+      });
+    }
+
+    // 8. Debt-stabilizing primary balance + rate-sensitivity.
+    const debtNow = debtPctRows[0];
+    if (avgNow && gNow && debtNow) {
+      const pbStar = stabilizing(debtNow.value, avgNow.value, gNow.pct);
+      const pb50 = stabilizing(debtNow.value, avgNow.value + 0.5, gNow.pct);
+      const pb100 = stabilizing(debtNow.value, avgNow.value + 1, gNow.pct);
+      const actual = fiscalYears[0] ? (fiscalYears[0].primaryB / fiscalYears[0].gdpB) * 100 : null;
+      const gapPts = actual != null ? actual - pbStar : null;
+      cards.push({
+        label: "Debt-Stabilizing Primary Balance",
+        value: `${signed(pbStar, 1)}% GDP`,
+        trend: `+50bp avg rate: ${signed(pb50, 1)}% · +100bp: ${signed(pb100, 1)}%`,
+        detail: `Primary balance needed to hold debt held by the public flat at ${debtNow.value.toFixed(1)}% of GDP at today's r and g (+ = surplus).${gapPts != null ? ` Actual FY${fiscalYears[0].fy}: ${signed(actual, 1)}% — ${gapPts < 0 ? `${Math.abs(gapPts).toFixed(1)}pts short, so debt/GDP is on a rising path.` : `${gapPts.toFixed(1)}pts better, so debt/GDP is on a falling path.`}` : ""} The +50/+100bp rows raise the AVERAGE debt rate, which takes years of rollover. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g.`,
+      });
+    }
+
+    // 9. Long-end inflation expectations + term premium co-movement.
+    const fwdLatest = (await fetchRecent("T5YIFR", 1))[0];
+    const tpLatest = (await fetchRecent("THREEFYTP10", 1))[0];
+    if (fwdLatest && tpLatest) {
+      const asOf = fwdLatest.observation_date < tpLatest.observation_date ? fwdLatest.observation_date : tpLatest.observation_date;
+      const [fwdNow, tpNow, fwd3m, tp3m, fwd6m, tp6m] = await Promise.all([
+        fetchOnOrBefore("T5YIFR", asOf), fetchOnOrBefore("THREEFYTP10", asOf),
+        fetchOnOrBefore("T5YIFR", dayShift(asOf, 91)), fetchOnOrBefore("THREEFYTP10", dayShift(asOf, 91)),
+        fetchOnOrBefore("T5YIFR", dayShift(asOf, 182)), fetchOnOrBefore("THREEFYTP10", dayShift(asOf, 182)),
+      ]);
+      const chg = (a, b) => (a && b ? a.value - b.value : null);
+      const fwdChg = chg(fwdNow, fwd3m), tpChg = chg(tpNow, tp3m);
+      const fwdPrior = chg(fwd3m, fwd6m), tpPrior = chg(tp3m, tp6m);
+      const bothRising = fwdChg != null && tpChg != null && fwdChg >= 0.1 && tpChg >= 0.1;
+      const fmtChg = (v) => (v != null ? `${signed(v, 2)}` : "n/a");
+      cards.push({
+        label: "5y5y Inflation + Term Premium (3m)",
+        value: `${fmtChg(fwdChg)} / ${fmtChg(tpChg)}pts`,
+        trend: `prior 3m: ${fmtChg(fwdPrior)} / ${fmtChg(tpPrior)}pts`,
+        detail: `5y5y forward inflation ${fwdNow.value.toFixed(2)}%, 10yr term premium ${tpNow.value.toFixed(2)}%. ${bothRising ? "Both rising together — the market-pricing fingerprint of fiscal risk (more inflation AND more duration-risk compensation)." : "Not rising together (each ≥10bp over 3 months) — no joint fiscal-risk signal."} Either alone has ordinary explanations. Uncalibrated threshold; Kim-Wright term premium, not the NY Fed's ACM.`,
       });
     }
 

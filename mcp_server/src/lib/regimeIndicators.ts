@@ -555,3 +555,215 @@ export async function computeStockBondCorrelation(): Promise<StockBondCorrelatio
       "Stocks and bonds typically run negative -- equity selloffs usually drive flight-to-safety bond buying (the classic 60/40 diversification benefit). A correlation near zero or positive is the 2022-style regime-shift signature: both risk assets selling off together, historically seen when inflation/rate concerns dominate over growth concerns. Not backtested/calibrated -- a first cut, same tier as every other divergence-style read in this system.",
   };
 }
+
+/** Same-quarter YoY % growth from a newest-first quarterly series, n
+ * quarters back from the latest (n=0: latest vs. 4 quarters earlier). */
+function quarterlyYoy(points: Point[], quartersBack = 0): { date: string; pct: number } | null {
+  const byDate = new Map(points.map((p) => [p.date, p.value]));
+  const latest = points[0];
+  if (!latest) return null;
+  const end = subtractQuarters(latest.date, quartersBack);
+  const curr = byDate.get(end);
+  const prev = byDate.get(subtractQuarters(end, 4));
+  if (curr === undefined || prev === undefined || prev === 0) return null;
+  return { date: end, pct: ((curr - prev) / prev) * 100 };
+}
+
+/** Debt-stabilizing primary balance, % of GDP: d * (r - g) / (1 + g), with
+ * r and g as percents and d as debt % of GDP. Positive = surplus needed. */
+function stabilizingPrimaryBalance(debtPctGdp: number, rPct: number, gPct: number): number {
+  return (debtPctGdp * ((rPct - gPct) / 100)) / (1 + gPct / 100);
+}
+
+export interface DebtDynamicsResult {
+  average_debt_rate: {
+    avg_rate_marketable_pct: number;
+    as_of: string;
+    one_year_earlier_pct: number | null;
+    three_years_earlier_pct: number | null;
+    market_2y_pct: number | null;
+    market_5y_pct: number | null;
+    market_10y_pct: number | null;
+    rollover_gap_10y_pct: number | null;
+    caveat: string;
+  } | null;
+  r_minus_g: {
+    nominal_r_pct: number;
+    nominal_gdp_growth_yoy_pct: number;
+    nominal_r_minus_g_pct: number;
+    nominal_r_minus_g_one_year_earlier_pct: number | null;
+    real_10y_yield_pct: number | null;
+    real_potential_growth_yoy_pct: number | null;
+    real_gdp_growth_yoy_pct: number | null;
+    real_r_minus_potential_g_pct: number | null;
+    gdp_as_of: string;
+    caveat: string;
+  } | null;
+  debt_stabilizing_primary_balance: {
+    debt_held_by_public_pct_gdp: number;
+    debt_as_of: string;
+    stabilizing_primary_balance_pct_gdp: number;
+    stabilizing_at_plus_50bp_pct_gdp: number;
+    stabilizing_at_plus_100bp_pct_gdp: number;
+    actual_primary_balance_pct_gdp: number | null;
+    actual_primary_balance_fiscal_year: string | null;
+    gap_vs_stabilizing_pct_gdp: number | null;
+    caveat: string;
+  } | null;
+}
+
+/**
+ * Debt dynamics -- added 2026-10-02 (external review): the arithmetic that
+ * actually decides whether debt/GDP rises, which the level/flow checks
+ * above don't capture on their own. Debt/GDP is stable when the primary
+ * balance equals d*(r-g)/(1+g). Note r < g does NOT by itself shrink debt:
+ * a primary deficit bigger than that threshold still pushes debt/GDP up,
+ * and r > g does not mean debt rises "even with a surplus" -- only unless
+ * the surplus is big enough.
+ *
+ * r = Treasury's average rate on outstanding marketable debt (monthly,
+ * TREASURY_AVG_RATE_MARKETABLE) -- the rate the existing stock actually
+ * costs, not today's marginal yield. g = nominal GDP YoY (same quarter a
+ * year earlier). d = debt held by the public % of GDP (FYGFGDQ188S).
+ * Real version for context: 10yr TIPS yield minus CBO potential real
+ * growth (GDPPOT YoY), with actual real growth (GDPC1) alongside.
+ */
+export async function computeDebtDynamics(): Promise<DebtDynamicsResult> {
+  const [avgRates, gdp, gdpReal, gdpPot, debtPct, dgs2, dgs5, dgs10, dfii10, primary] = await Promise.all([
+    getRecentPoints("TREASURY_AVG_RATE_MARKETABLE", 40),
+    getRecentPoints("GDP", 12),
+    getRecentPoints("GDPC1", 8),
+    getRecentPoints("GDPPOT", 8),
+    getRecentPoints("FYGFGDQ188S", 1),
+    getLatestDataPoint("DGS2"),
+    getLatestDataPoint("DGS5"),
+    getLatestDataPoint("DGS10"),
+    getLatestDataPoint("DFII10"),
+    computePrimaryBalance(),
+  ]);
+
+  const avgNow = avgRates[0];
+  // Monthly series: "a year earlier" = the latest row on or before the
+  // same date 12 months back, found in the already-fetched window.
+  const avgAsOf = (monthsBack: number): number | null => {
+    if (!avgNow) return null;
+    const d = new Date(`${avgNow.date}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - monthsBack);
+    const target = d.toISOString().slice(0, 10);
+    return avgRates.find((p) => p.date <= target)?.value ?? null;
+  };
+
+  const average_debt_rate = avgNow
+    ? {
+        avg_rate_marketable_pct: round2(avgNow.value),
+        as_of: avgNow.date,
+        one_year_earlier_pct: avgAsOf(12) !== null ? round2(avgAsOf(12)!) : null,
+        three_years_earlier_pct: avgAsOf(36) !== null ? round2(avgAsOf(36)!) : null,
+        market_2y_pct: dgs2 ? round2(dgs2.value) : null,
+        market_5y_pct: dgs5 ? round2(dgs5.value) : null,
+        market_10y_pct: dgs10 ? round2(dgs10.value) : null,
+        rollover_gap_10y_pct: dgs10 ? round2(dgs10.value - avgNow.value) : null,
+        caveat:
+          "Treasury's average rate on total marketable debt (bills, notes, bonds -- EXCLUDES TIPS and floating-rate notes). It moves slowly: a positive rollover gap (market yields above the average) means every refinancing raises the debt's cost, so the average keeps drifting up for years even if market yields stop rising.",
+      }
+    : null;
+
+  const gNow = quarterlyYoy(gdp, 0);
+  const gYearAgo = quarterlyYoy(gdp, 4);
+  const realPot = quarterlyYoy(gdpPot, 0);
+  const realGdp = quarterlyYoy(gdpReal, 0);
+  const rYearAgo = avgAsOf(12);
+  const r_minus_g =
+    avgNow && gNow
+      ? {
+          nominal_r_pct: round2(avgNow.value),
+          nominal_gdp_growth_yoy_pct: round2(gNow.pct),
+          nominal_r_minus_g_pct: round2(avgNow.value - gNow.pct),
+          nominal_r_minus_g_one_year_earlier_pct: rYearAgo !== null && gYearAgo ? round2(rYearAgo - gYearAgo.pct) : null,
+          real_10y_yield_pct: dfii10 ? round2(dfii10.value) : null,
+          real_potential_growth_yoy_pct: realPot ? round2(realPot.pct) : null,
+          real_gdp_growth_yoy_pct: realGdp ? round2(realGdp.pct) : null,
+          real_r_minus_potential_g_pct: dfii10 && realPot ? round2(dfii10.value - realPot.pct) : null,
+          gdp_as_of: gNow.date,
+          caveat:
+            "Nominal r = average rate on marketable debt; g = nominal GDP growth over the latest four quarters, which swings with the cycle and inflation -- read the direction over several quarters. Negative r - g lets the government run a primary deficit up to d*(g-r)/(1+g) without debt/GDP rising; it does not make debt/GDP fall on its own. Real version: 10yr TIPS yield vs. CBO potential real growth -- a marginal-cost read, not what the existing stock costs.",
+        }
+      : null;
+
+  const d = debtPct[0];
+  const debt_stabilizing_primary_balance =
+    avgNow && gNow && d
+      ? (() => {
+          const stabilizing = stabilizingPrimaryBalance(d.value, avgNow.value, gNow.pct);
+          const actual = primary ? primary.primary_balance_pct_gdp : null;
+          return {
+            debt_held_by_public_pct_gdp: round1(d.value),
+            debt_as_of: d.date,
+            stabilizing_primary_balance_pct_gdp: round2(stabilizing),
+            stabilizing_at_plus_50bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 0.5, gNow.pct)),
+            stabilizing_at_plus_100bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 1, gNow.pct)),
+            actual_primary_balance_pct_gdp: actual,
+            actual_primary_balance_fiscal_year: primary ? primary.fiscal_year : null,
+            gap_vs_stabilizing_pct_gdp: actual !== null ? round2(actual - stabilizing) : null,
+            caveat:
+              "Primary balance (% of GDP, + = surplus) that would hold debt-held-by-the-public/GDP flat at today's r and g: d*(r-g)/(1+g). Negative gap = the actual primary balance is short of that, so debt/GDP is rising. The +50/+100bp rows raise the AVERAGE rate on the debt, which takes years of rollover to happen, not a move in market yields. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g; d includes Treasuries held by the Fed, whose interest is largely remitted back to Treasury.",
+          };
+        })()
+      : null;
+
+  return { average_debt_rate, r_minus_g, debt_stabilizing_primary_balance };
+}
+
+export interface InflationTermPremiumResult {
+  forward_5y5y_inflation_pct: number;
+  term_premium_10y_pct: number;
+  change_3m_forward_5y5y_pts: number | null;
+  change_3m_term_premium_pts: number | null;
+  prior_3m_change_forward_5y5y_pts: number | null;
+  prior_3m_change_term_premium_pts: number | null;
+  both_rising: boolean | null;
+  as_of: string;
+  caveat: string;
+}
+
+const CO_MOVEMENT_THRESHOLD_PTS = 0.1;
+
+/**
+ * Long-end inflation expectations (5y5y forward breakeven, T5YIFR) and the
+ * 10yr term premium (Kim-Wright, THREEFYTP10) moving UP TOGETHER is the
+ * market-pricing fingerprint of fiscal risk: investors demanding both more
+ * inflation compensation and more duration-risk compensation. Either alone
+ * has ordinary explanations. Compares 3-month (91-day) changes, with the
+ * preceding 3 months for trend. The 10bp "both rising" threshold is a
+ * judgment call, not calibrated.
+ */
+export async function computeInflationTermPremium(): Promise<InflationTermPremiumResult | null> {
+  const [fwd, tp] = await Promise.all([getLatestDataPoint("T5YIFR"), getLatestDataPoint("THREEFYTP10")]);
+  if (!fwd || !tp) return null;
+  const asOf = fwd.observation_date < tp.observation_date ? fwd.observation_date : tp.observation_date;
+  const [fwd3m, tp3m, fwd6m, tp6m, fwdNow, tpNow] = await Promise.all([
+    getPointOnOrBefore("T5YIFR", subtractDays(asOf, 91)),
+    getPointOnOrBefore("THREEFYTP10", subtractDays(asOf, 91)),
+    getPointOnOrBefore("T5YIFR", subtractDays(asOf, 182)),
+    getPointOnOrBefore("THREEFYTP10", subtractDays(asOf, 182)),
+    getPointOnOrBefore("T5YIFR", asOf),
+    getPointOnOrBefore("THREEFYTP10", asOf),
+  ]);
+  if (!fwdNow || !tpNow) return null;
+  const chg = (a: Point | null, b: Point | null) => (a && b ? round2(a.value - b.value) : null);
+  const fwdChg = chg(fwdNow, fwd3m);
+  const tpChg = chg(tpNow, tp3m);
+
+  return {
+    forward_5y5y_inflation_pct: round2(fwdNow.value),
+    term_premium_10y_pct: round2(tpNow.value),
+    change_3m_forward_5y5y_pts: fwdChg,
+    change_3m_term_premium_pts: tpChg,
+    prior_3m_change_forward_5y5y_pts: chg(fwd3m, fwd6m),
+    prior_3m_change_term_premium_pts: chg(tp3m, tp6m),
+    both_rising: fwdChg !== null && tpChg !== null ? fwdChg >= CO_MOVEMENT_THRESHOLD_PTS && tpChg >= CO_MOVEMENT_THRESHOLD_PTS : null,
+    as_of: asOf,
+    caveat:
+      "both_rising = each up at least 10bp over 3 months (an uncalibrated judgment threshold). 5y5y forward strips out the next five years, so it reads long-run inflation credibility rather than near-term prints. Term premium is the Kim-Wright model estimate (not the NY Fed's ACM). Either moving alone has ordinary explanations; the joint move is the fiscal-risk fingerprint.",
+  };
+}
