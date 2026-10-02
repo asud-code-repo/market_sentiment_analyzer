@@ -9,6 +9,7 @@ import { fetchMassive } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
+import { fetchTreasuryAvgRates } from "./sources/treasury.js";
 import { fetchAndWriteForm4 } from "./sources/secForm4.js";
 
 interface SourceResult {
@@ -74,6 +75,10 @@ async function main() {
     // re-upsert daily at this data size.
     runSource("GPR", false, fetchGpr),
     runSource("TIC", false, fetchTic),
+    // Best-effort: informational fiscal-dominance input (average rate on
+    // marketable debt), not one of the 6 gating indicators. Full history
+    // every run, same as GPR/TIC -- see treasury.ts.
+    runSource("TreasuryAvgRates", false, fetchTreasuryAvgRates),
   ]);
 
   const insiderRowCount = await insiderPromise;

@@ -38,6 +38,17 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Fiscal Dominance Regime Checklist: debt dynamics (2026-10-02).** Four
+  new checks from an external review: average rate on marketable debt vs.
+  2y/5y/10y (new Treasury Fiscal Data source, `treasury.ts`, best-effort),
+  nominal and real r − g, the debt-stabilizing primary balance
+  d·(r−g)/(1+g) vs. the actual one with +50/+100bp scenarios, and 5y5y
+  forward inflation + term premium rising together. New FRED series
+  `GDPC1`, `GDPPOT`, `FYGFGDQ188S`, `DGS5`, `T5YIFR` — **needs a backfill
+  run**. Not built yet (round 2): Treasury auction metrics (bid-to-cover,
+  dealer take-up, indirect share — tails need paid when-issued data) and
+  Fed absorption (`TREAST` ÷ marketable debt, QT pace, M2/GDP).
+
 - **Fiscal Dominance Regime Checklist: measurement fixes + trends
   (2026-10-02).** External review of the card. (1) Net interest moved to
   OMB fiscal-year NET interest (`FYOINT` ÷ `FYGDP` / ÷ `FYFR`) — the old

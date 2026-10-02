@@ -5,6 +5,7 @@ import { fetchMassiveBackfill } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
+import { fetchTreasuryAvgRates } from "./sources/treasury.js";
 
 // One-time historical backfill for data_points — NOT part of the daily
 // ingestion run (see ingest.ts), which only ever needs the latest reading.
@@ -55,7 +56,16 @@ async function main() {
     console.error(`TIC backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
   }
 
-  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints];
+  let treasuryPoints: Awaited<ReturnType<typeof fetchTreasuryAvgRates>> = [];
+  try {
+    console.log("Backfilling Treasury average interest rate on marketable debt (2001-present)...");
+    treasuryPoints = await fetchTreasuryAvgRates();
+    console.log(`Treasury avg-rate backfill: ${treasuryPoints.length} total observations.`);
+  } catch (err) {
+    console.error(`Treasury avg-rate backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+  }
+
+  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
   await writeDataPoints(allPoints);
   console.log("Backfill complete.");

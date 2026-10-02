@@ -200,6 +200,24 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   { id: "FYFR", unit: "usd_millions" },  // Federal Receipts (OMB, fiscal year).
   { id: "FYGDP", unit: "usd_billions" }, // GDP on a fiscal-year basis (OMB) — denominator for
                                           // the fiscal-year ratios above.
+  // 2026-10-02 additions -- Fiscal Dominance checklist debt-dynamics checks
+  // (r - g, debt-stabilizing primary balance, long-end inflation
+  // expectations vs. term premium). See regimeIndicators.ts.
+  { id: "GDPC1", unit: "usd_billions_chained_saar" }, // Real GDP, quarterly — actual real
+                                          // growth for the real r - g read.
+  { id: "GDPPOT", unit: "usd_billions_chained" }, // CBO Real Potential GDP, quarterly —
+                                          // the trend-growth g in real r - g. Like NROU,
+                                          // CBO publishes projections years ahead; the
+                                          // observation_end pin keeps those out.
+  { id: "FYGFGDQ188S", unit: "percent" }, // Federal Debt Held by the PUBLIC as % of GDP,
+                                          // quarterly — the d in d*(r-g)/(1+g). Not
+                                          // GFDEGDQ188S above, which includes debt held by
+                                          // federal trust funds (intragovernmental).
+  { id: "DGS5", unit: "percent" },       // 5yr Treasury yield — fills the 2y/5y/10y set
+                                          // compared against the average rate on the debt.
+  { id: "T5YIFR", unit: "percent" },     // 5-Year, 5-Year Forward Inflation Expectation
+                                          // Rate — long-end expectations, cleaner than
+                                          // T10YIE (strips out the next 5 years).
   { id: "PCEPILFE", unit: "index" },     // Core PCE price index (ex food & energy), monthly —
                                           // the Fed's own target measure, used as the Taylor
                                           // Rule gap's inflation input instead of headline CPI
