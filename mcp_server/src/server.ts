@@ -13,7 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -453,7 +453,7 @@ server.registerTool(
       "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
       "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22. " +
       "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
-      "same name for the full methodology) is 9 real-data checks for whether Fed policy is " +
+      "same name for the full methodology) is 12 real-data checks for whether Fed policy is " +
       "actually CONSTRAINED by the debt burden, not just whether debt/rates are high: a Taylor " +
       "Rule gap on core PCE (is the Fed's actual rate below what inflation/employment alone would justify; " +
       "the headline-CPI version is returned alongside for comparison), " +
@@ -469,7 +469,9 @@ server.registerTool(
       "(Treasury's average rate on marketable debt vs. 2y/5y/10y market yields), r_minus_g (that rate minus " +
       "nominal GDP growth, plus a real version), debt_stabilizing_primary_balance (d*(r-g)/(1+g) vs. the " +
       "actual primary balance, with +50/+100bp scenarios), and inflation_expectations_term_premium (5y5y " +
-      "forward inflation and the term premium rising together). Each check also carries its " +
+      "forward inflation and the term premium rising together); and treasury_auction_demand (bid-to-cover, " +
+      "dealer take-down and indirect share of the latest 2y/5y/10y/30y auctions vs. each tenor's previous 6), " +
+      "fed_share_of_marketable_debt (with the 13-week QT/buying pace) and m2_to_gdp. Each check also carries its " +
       "own prior-period comparison (a year/fiscal year/window earlier) -- read the direction, not one reading. None of these are a " +
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
@@ -488,7 +490,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -530,6 +532,8 @@ server.registerTool(
         computeStockBondCorrelation(),
         computeDebtDynamics(),
         computeInflationTermPremium(),
+        computeAuctionDemand(),
+        computeFedAbsorption(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("RSP"),
@@ -745,7 +749,7 @@ server.registerTool(
         ...debtToGdp,
         signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
       },
-      // 9 real-data checks for whether Fed policy is actually CONSTRAINED by
+      // 12 real-data checks for whether Fed policy is actually CONSTRAINED by
       // the debt burden (the Leeper fiscal/monetary regime framework's
       // actual definition of fiscal dominance), not just whether debt/rates
       // happen to be high. See crash-check-rules.md's "Fiscal Dominance
@@ -790,6 +794,20 @@ server.registerTool(
         inflation_expectations_term_premium: inflationTermPremium && {
           ...inflationTermPremium,
           signal: `5y5y forward inflation ${inflationTermPremium.forward_5y5y_inflation_pct}% (3m change ${inflationTermPremium.change_3m_forward_5y5y_pts != null ? signed(inflationTermPremium.change_3m_forward_5y5y_pts) : "n/a"}pts), 10yr term premium ${inflationTermPremium.term_premium_10y_pct}% (3m change ${inflationTermPremium.change_3m_term_premium_pts != null ? signed(inflationTermPremium.change_3m_term_premium_pts) : "n/a"}pts). ${inflationTermPremium.both_rising ? "Both rising together -- the market-pricing fingerprint of fiscal risk (more inflation AND more duration-risk compensation)." : "Not rising together -- no joint fiscal-risk signal from market pricing."} ${inflationTermPremium.caveat}`,
+        },
+        // Added 2026-10-02 (external review, round 2): who is buying the
+        // bonds (auction demand) and how much the Fed is absorbing.
+        treasury_auction_demand: auctionDemand && {
+          ...auctionDemand,
+          signal: `Latest benchmark coupon auctions: ${auctionDemand.tenors.map((t) => `${t.tenor} ${t.auction_date} bid-to-cover ${t.bid_to_cover}x${t.prior_avg_bid_to_cover != null ? ` (prior avg ${t.prior_avg_bid_to_cover}x)` : ""}, dealers ${t.dealer_pct ?? "n/a"}%${t.prior_avg_dealer_pct != null ? ` (${t.prior_avg_dealer_pct}%)` : ""}, indirect ${t.indirect_pct ?? "n/a"}%${t.prior_avg_indirect_pct != null ? ` (${t.prior_avg_indirect_pct}%)` : ""}`).join("; ")}. ${auctionDemand.weaker_than_recent_count} of ${auctionDemand.tenors.length} tenors were weaker than their recent average on both dealer take-down and bid-to-cover${auctionDemand.weaker_than_recent_count >= 2 ? " -- weakness across several tenors is the early-warning pattern for private demand." : "."} ${auctionDemand.caveat}`,
+        },
+        fed_share_of_marketable_debt: fedAbsorption.fed_share_of_marketable_debt && {
+          ...fedAbsorption.fed_share_of_marketable_debt,
+          signal: `The Fed holds ${fedAbsorption.fed_share_of_marketable_debt.fed_share_pct}% of marketable Treasury debt as of ${fedAbsorption.fed_share_of_marketable_debt.as_of}${fedAbsorption.fed_share_of_marketable_debt.one_year_earlier_pct != null ? ` (1yr earlier: ${fedAbsorption.fed_share_of_marketable_debt.one_year_earlier_pct}%` + (fedAbsorption.fed_share_of_marketable_debt.three_years_earlier_pct != null ? `; 3yr earlier: ${fedAbsorption.fed_share_of_marketable_debt.three_years_earlier_pct}%)` : ")") : ""}.${fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month != null ? ` Holdings are ${fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month < 0 ? "running off" : "growing"} at $${Math.abs(fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month)}B/month over the last 13 weeks${fedAbsorption.fed_share_of_marketable_debt.prior_13w_usd_billions_per_month != null ? ` (prior 13 weeks: ${signed(fedAbsorption.fed_share_of_marketable_debt.prior_13w_usd_billions_per_month)}B/month)` : ""}.` : ""} ${fedAbsorption.fed_share_of_marketable_debt.caveat}`,
+        },
+        m2_to_gdp: fedAbsorption.m2_to_gdp && {
+          ...fedAbsorption.m2_to_gdp,
+          signal: `M2 is ${fedAbsorption.m2_to_gdp.m2_pct_gdp}% of nominal GDP (quarter starting ${fedAbsorption.m2_to_gdp.as_of})${fedAbsorption.m2_to_gdp.one_year_earlier_pct != null ? `, vs. ${fedAbsorption.m2_to_gdp.one_year_earlier_pct}% a year earlier` : ""}.${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct != null && fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct != null ? ` M2 growth ${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct}% YoY vs. nominal GDP ${fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct}%.` : ""} ${fedAbsorption.m2_to_gdp.caveat}`,
         },
         interpretation:
           "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",

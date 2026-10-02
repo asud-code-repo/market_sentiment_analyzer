@@ -38,6 +38,16 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Fiscal Dominance Regime Checklist: auctions + Fed absorption
+  (2026-10-02, round 2).** Treasury auction demand (bid-to-cover, dealer
+  take-down, indirect share of original-issue 2y/5y/10y/30y coupons vs.
+  each tenor's prior 6; tails not computed, they need paid when-issued
+  data), Fed share of marketable Treasuries (`TREAST` ÷ MSPD total
+  marketable) with 13-week QT pace, and M2/GDP. New Treasury Fiscal Data
+  sources `auctions_query` and `mspd_table_1` (best-effort; they fail with
+  the field names actually returned if the API shape differs) and FRED
+  `TREAST`, `M2SL` — **needs a backfill run**.
+
 - **Fiscal Dominance Regime Checklist: debt dynamics (2026-10-02).** Four
   new checks from an external review: average rate on marketable debt vs.
   2y/5y/10y (new Treasury Fiscal Data source, `treasury.ts`, best-effort),
@@ -45,9 +55,7 @@ full history of what was built and how lives in project memory, not here.
   d·(r−g)/(1+g) vs. the actual one with +50/+100bp scenarios, and 5y5y
   forward inflation + term premium rising together. New FRED series
   `GDPC1`, `GDPPOT`, `FYGFGDQ188S`, `DGS5`, `T5YIFR` — **needs a backfill
-  run**. Not built yet (round 2): Treasury auction metrics (bid-to-cover,
-  dealer take-up, indirect share — tails need paid when-issued data) and
-  Fed absorption (`TREAST` ÷ marketable debt, QT pace, M2/GDP).
+  run**.
 
 - **Fiscal Dominance Regime Checklist: measurement fixes + trends
   (2026-10-02).** External review of the card. (1) Net interest moved to

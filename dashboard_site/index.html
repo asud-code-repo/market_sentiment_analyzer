@@ -1308,7 +1308,7 @@ function drawYieldCurveChart(wrap, snapshots) {
 // the Supabase-REST-vs-supabase-js boundary, same convention as this file's
 // other MCP-mirrored logic: erf(), estrellaMishkinRecessionProbability(),
 // adjustForSplits()). See that file's own doc comments for the full
-// methodology on each of the 9 checks -- not repeated here.
+// methodology on each of the 12 checks -- not repeated here.
 function pearsonCorrelation(xs, ys) {
   const n = xs.length;
   if (n < 2 || ys.length !== n) return null;
@@ -1624,6 +1624,102 @@ async function renderFiscalDominanceChecklist() {
         trend: `prior 3m: ${fmtChg(fwdPrior)} / ${fmtChg(tpPrior)}pts`,
         detail: `5y5y forward inflation ${fwdNow.value.toFixed(2)}%, 10yr term premium ${tpNow.value.toFixed(2)}%. ${bothRising ? "Both rising together — the market-pricing fingerprint of fiscal risk (more inflation AND more duration-risk compensation)." : "Not rising together (each ≥10bp over 3 months) — no joint fiscal-risk signal."} Either alone has ordinary explanations. Uncalibrated threshold; Kim-Wright term premium, not the NY Fed's ACM.`,
       });
+    }
+
+    // 10. Treasury auction demand (added 2026-10-02, round 2) -- mirrors
+    // computeAuctionDemand: latest original-issue 2y/5y/10y/30y coupon
+    // auction vs. that tenor's previous 6. "Weaker" = higher dealer
+    // take-down AND lower bid-to-cover than that average.
+    const auctionTenors = await Promise.all(["2Y", "5Y", "10Y", "30Y"].map(async (tenor) => {
+      const [btc, dealer, indirect] = await Promise.all([
+        fetchRecent(`AUCTION_${tenor}_BID_TO_COVER`, 7),
+        fetchRecent(`AUCTION_${tenor}_DEALER_PCT`, 7),
+        fetchRecent(`AUCTION_${tenor}_INDIRECT_PCT`, 7),
+      ]);
+      if (btc.length === 0) return null;
+      const date = btc[0].observation_date;
+      const valueOn = (rows) => rows.find((r) => r.observation_date === date)?.value ?? null;
+      const priorAvg = (rows) => {
+        const prior = rows.filter((r) => r.observation_date < date).slice(0, 6);
+        return prior.length ? prior.reduce((a, r) => a + r.value, 0) / prior.length : null;
+      };
+      const d = valueOn(dealer), avgBtc = priorAvg(btc), avgDealer = priorAvg(dealer);
+      return { tenor, date, btc: btc[0].value, dealer: d, indirect: valueOn(indirect), avgBtc, avgDealer, avgIndirect: priorAvg(indirect),
+        weaker: d != null && avgBtc != null && avgDealer != null ? d > avgDealer && btc[0].value < avgBtc : false };
+    }));
+    const auctions = auctionTenors.filter(Boolean);
+    if (auctions.length > 0) {
+      const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+      const dealerNow = mean(auctions.filter((a) => a.dealer != null).map((a) => a.dealer));
+      const dealerPrior = mean(auctions.filter((a) => a.avgDealer != null).map((a) => a.avgDealer));
+      const weakCount = auctions.filter((a) => a.weaker).length;
+      const fmtPct = (v) => (v != null ? `${v.toFixed(1)}%` : "n/a");
+      cards.push({
+        label: "Treasury Auction Demand",
+        value: dealerNow != null ? `${dealerNow.toFixed(1)}% dealer take-down` : `${auctions.length} tenors`,
+        trend: dealerPrior != null ? `${dealerPrior.toFixed(1)}% avg of each tenor's prior 6 auctions` : null,
+        detail: `${auctions.map((a) => `${a.tenor} (${a.date}): ${a.btc.toFixed(2)}x${a.avgBtc != null ? ` vs ${a.avgBtc.toFixed(2)}x` : ""}, dealers ${fmtPct(a.dealer)}${a.avgDealer != null ? ` vs ${fmtPct(a.avgDealer)}` : ""}, indirect ${fmtPct(a.indirect)}${a.avgIndirect != null ? ` vs ${fmtPct(a.avgIndirect)}` : ""}`).join(" · ")}. ${weakCount} of ${auctions.length} tenors weaker than recent on both dealer take-down and bid-to-cover${weakCount >= 2 ? " — weakness across several tenors is the early-warning pattern for private demand." : "."} Original-issue nominal coupons only; indirect bidders are the usual foreign-demand proxy. Tails need paid data. Single auctions are noisy.`,
+      });
+    }
+
+    // 11. Fed share of marketable Treasury debt + 13-week QT pace --
+    // mirrors computeFedAbsorption. TREAST ($M, weekly) / MSPD total
+    // marketable ($M, month-end) on matching dates.
+    const [mspdLatestRows, treastLatestRows] = await Promise.all([fetchRecent("MSPD_TOTAL_MARKETABLE", 1), fetchRecent("TREAST", 1)]);
+    const mspdLatest = mspdLatestRows[0], treastLatest = treastLatestRows[0];
+    if (mspdLatest && treastLatest) {
+      const shareAsOf = async (date) => {
+        const [debt, fed] = await Promise.all([fetchOnOrBefore("MSPD_TOTAL_MARKETABLE", date), fetchOnOrBefore("TREAST", date)]);
+        return debt && fed && debt.value !== 0 ? (fed.value / debt.value) * 100 : null;
+      };
+      const asOf = mspdLatest.observation_date;
+      const [shareNow, share1y, share3y, tq, tq2] = await Promise.all([
+        shareAsOf(asOf), shareAsOf(dayShift(asOf, 365)), shareAsOf(dayShift(asOf, 365 * 3)),
+        fetchOnOrBefore("TREAST", dayShift(treastLatest.observation_date, 91)),
+        fetchOnOrBefore("TREAST", dayShift(treastLatest.observation_date, 182)),
+      ]);
+      if (shareNow != null) {
+        const pace = (a, b) => (a - b) / 1000 / 3;
+        const paceNow = tq ? pace(treastLatest.value, tq.value) : null;
+        const pacePrior = tq && tq2 ? pace(tq.value, tq2.value) : null;
+        const trendParts = [share1y != null && `${share1y.toFixed(1)}% 1yr earlier`, share3y != null && `${share3y.toFixed(1)}% 3yr earlier`].filter(Boolean);
+        cards.push({
+          label: "Fed Share of Marketable Treasuries",
+          value: `${shareNow.toFixed(1)}%`,
+          trend: trendParts.length ? trendParts.join(" · ") : null,
+          detail: `As of ${asOf}.${paceNow != null ? ` Fed Treasury holdings ${paceNow < 0 ? "running off" : "growing"} at $${Math.abs(paceNow).toFixed(0)}B/month over the last 13 weeks${pacePrior != null ? ` (prior 13 weeks: ${signed(pacePrior, 0)}B/month)` : ""}.` : ""} A rising share, or runoff turning into net buying, means the Fed is absorbing more supply. Purchases can have non-fiscal motives (market functioning, reserve management) — read with the auction and r − g checks.`,
+        });
+      }
+    }
+
+    // 12. M2 / nominal GDP -- M2 averaged over GDP's latest quarter.
+    const m2Rows = await fetchRecent("M2SL", 30);
+    const gdpQ = gdp[0];
+    const quarterAvg = (rows, start) => {
+      const byDate = new Map(rows.map((r) => [r.observation_date, r.value]));
+      const vals = [0, 1, 2].map((i) => {
+        const d = new Date(`${start}T00:00:00Z`);
+        d.setUTCMonth(d.getUTCMonth() + i);
+        return byDate.get(d.toISOString().slice(0, 10));
+      });
+      return vals.every((v) => v != null) ? vals.reduce((a, b) => a + b, 0) / 3 : null;
+    };
+    if (gdpQ && gdpQ.value !== 0) {
+      const m2Q = quarterAvg(m2Rows, gdpQ.observation_date);
+      if (m2Q != null) {
+        const gdpYearAgo = gdp.find((r) => r.observation_date === quarterShift(gdpQ.observation_date, 4));
+        const m2QYearAgo = quarterAvg(m2Rows, quarterShift(gdpQ.observation_date, 4));
+        const m2Latest = m2Rows[0];
+        const m2YearAgo = m2Latest ? m2Rows.find((r) => r.observation_date === quarterShift(m2Latest.observation_date, 4)) : null;
+        const m2Growth = m2Latest && m2YearAgo ? ((m2Latest.value - m2YearAgo.value) / m2YearAgo.value) * 100 : null;
+        const gdpGrowth = gdpYearAgo ? ((gdpQ.value - gdpYearAgo.value) / gdpYearAgo.value) * 100 : null;
+        cards.push({
+          label: "M2 / Nominal GDP",
+          value: `${((m2Q / gdpQ.value) * 100).toFixed(1)}%`,
+          trend: m2QYearAgo != null && gdpYearAgo ? `${((m2QYearAgo / gdpYearAgo.value) * 100).toFixed(1)}% a year earlier` : null,
+          detail: `Quarter starting ${gdpQ.observation_date}.${m2Growth != null && gdpGrowth != null ? ` M2 growth ${m2Growth.toFixed(2)}% YoY vs. nominal GDP ${gdpGrowth.toFixed(2)}%.` : ""} M2 outgrowing nominal GDP for a sustained stretch is the monetary-financing pattern; the ratio also moves with rate-driven shifts between deposits and money funds/T-bills, so it's context, not a verdict.`,
+        });
+      }
     }
 
     if (cards.length === 0) {
