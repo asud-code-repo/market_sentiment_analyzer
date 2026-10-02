@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page Not Found</title>
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#0d0d0d">
+<style>
+  /* Same theme tokens as index.html, copied not shared -- this is a
+     standalone static file Cloudflare Pages serves directly for any
+     unmatched path, no build step, same zero-tooling convention as the
+     rest of this site. */
+  :root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --neutral-blue:   #2a78d6;
+    --neutral-blue-bg:#e7f0fc;
+    --ground:         #0b0b0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --neutral-blue:   #3987e5;
+      --neutral-blue-bg:#132537;
+      --ground:         #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .wrap { max-width: 640px; margin: auto; width: 100%; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+  .code { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: var(--neutral-blue); margin: 0; }
+  h1 { font-size: 20px; margin: 0; }
+  p.sub { font-size: 14px; color: var(--text-secondary); margin: 0 0 6px; line-height: 1.6; }
+  a.home { font-size: 13px; color: var(--neutral-blue); text-decoration: none; font-weight: 600; }
+  a.home:hover { text-decoration: underline; }
+
+  /* The "hidden" part -- a small, low-contrast game-console glyph sitting in
+     the footer like any other icon, not a labeled button. Brightens on
+     hover/focus as the only hint it does anything. */
+  footer { margin-top: 40px; display: flex; justify-content: center; }
+  .game-trigger {
+    background: none; border: none; cursor: pointer; padding: 6px;
+    opacity: 0.32; color: var(--text-muted); border-radius: 6px;
+    transition: opacity 0.15s ease;
+  }
+  .game-trigger:hover, .game-trigger:focus-visible { opacity: 0.85; }
+  .game-trigger svg { display: block; width: 18px; height: 18px; }
+
+  #game-panel { display: none; flex-direction: column; gap: 8px; align-items: center; }
+  #game-panel.open { display: flex; }
+  .game-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; display: flex; flex-direction: column; gap: 8px; align-items: center;
+  }
+  .game-hud { display: flex; justify-content: space-between; width: 100%; max-width: 480px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  #dino-canvas { background: var(--page); border-radius: 6px; max-width: 100%; touch-action: manipulation; }
+  .game-hint { font-size: 11px; color: var(--text-muted); margin: 0; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="code">404</p>
+    <h1>This page doesn't exist.</h1>
+    <p class="sub">The link may be out of date, or the page may have moved.<br>The dashboard itself is still here.</p>
+    <a class="home" href="/">&larr; Back to the dashboard</a>
+
+    <div id="game-panel">
+      <div class="game-card">
+        <div class="game-hud">
+          <span>Score: <span id="game-score">0</span></span>
+          <span>Best: <span id="game-best">0</span></span>
+        </div>
+        <canvas id="dino-canvas" width="480" height="150"></canvas>
+        <p class="game-hint" id="game-hint">Space / &uarr; / tap to jump</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <button class="game-trigger" id="game-toggle" type="button" aria-label="Play a game" title="psst...">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="7" width="20" height="11" rx="5"/>
+        <line x1="7" y1="10.5" x2="7" y2="14.5"/>
+        <line x1="5" y1="12.5" x2="9" y2="12.5"/>
+        <circle cx="16" cy="10.5" r="1.1" fill="currentColor"/>
+        <circle cx="18.5" cy="13" r="1.1" fill="currentColor"/>
+      </svg>
+    </button>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var toggleBtn = document.getElementById("game-toggle");
+  var panel = document.getElementById("game-panel");
+  var canvas = document.getElementById("dino-canvas");
+  var ctx = canvas.getContext("2d");
+  var scoreEl = document.getElementById("game-score");
+  var bestEl = document.getElementById("game-best");
+  var hintEl = document.getElementById("game-hint");
+
+  var HIGH_SCORE_KEY = "stress-monitor-404-dino-best";
+  var best = 0;
+  try {
+    best = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+  } catch (err) {
+    // Private browsing / blocked storage -- game still works, just no persistence.
+  }
+  bestEl.textContent = best;
+
+  var W = canvas.width, H = canvas.height;
+  var GROUND_Y = H - 24;
+  var GRAVITY = 0.0028;
+  var JUMP_VELOCITY = -0.78;
+
+  var started = false;
+  var over = false;
+  var raf = null;
+  var lastTs = 0;
+  var speed = 0.28; // px/ms, ramps up over time
+  var distance = 0;
+  var score = 0;
+
+  var dino = { x: 30, y: GROUND_Y - 30, w: 22, h: 30, vy: 0, onGround: true };
+  var obstacles = []; // {x, w, h}
+  var nextSpawnAt = 0;
+
+  function reset() {
+    started = false;
+    over = false;
+    speed = 0.28;
+    distance = 0;
+    score = 0;
+    dino.y = GROUND_Y - dino.h;
+    dino.vy = 0;
+    dino.onGround = true;
+    obstacles = [];
+    nextSpawnAt = 600;
+    scoreEl.textContent = "0";
+    hintEl.textContent = "Space / ↑ / tap to jump";
+    draw();
+  }
+
+  function jump() {
+    // `over` must be checked before `!started` -- a collision sets both
+    // over=true and started=false together (see update()), so once a run
+    // ends, `!started` is always true too and would otherwise shadow this
+    // branch forever, soft-locking the game on the game-over screen with
+    // no way to retry short of reloading the page (found in testing).
+    if (over) {
+      reset();
+      started = true;
+      lastTs = 0;
+      hintEl.textContent = "";
+      raf = requestAnimationFrame(loop);
+      return;
+    }
+    if (!started) {
+      started = true;
+      lastTs = 0;
+      hintEl.textContent = "";
+      raf = requestAnimationFrame(loop);
+      return;
+    }
+    if (dino.onGround) {
+      dino.vy = JUMP_VELOCITY;
+      dino.onGround = false;
+    }
+  }
+
+  function spawnObstacle() {
+    var h = 20 + Math.random() * 20;
+    obstacles.push({ x: W + 10, w: 12 + Math.random() * 10, h: h });
+  }
+
+  function update(dt) {
+    distance += speed * dt;
+    speed = Math.min(0.62, 0.28 + distance * 0.00003);
+    score = Math.floor(distance / 6);
+    scoreEl.textContent = String(score);
+
+    dino.vy += GRAVITY * dt;
+    dino.y += dino.vy * dt;
+    if (dino.y >= GROUND_Y - dino.h) {
+      dino.y = GROUND_Y - dino.h;
+      dino.vy = 0;
+      dino.onGround = true;
+    }
+
+    nextSpawnAt -= dt;
+    if (nextSpawnAt <= 0) {
+      spawnObstacle();
+      nextSpawnAt = 900 + Math.random() * 900 - distance * 0.15;
+      if (nextSpawnAt < 420) nextSpawnAt = 420;
+    }
+
+    for (var i = obstacles.length - 1; i >= 0; i--) {
+      obstacles[i].x -= speed * dt;
+      if (obstacles[i].x + obstacles[i].w < 0) {
+        obstacles.splice(i, 1);
+        continue;
+      }
+      var ox = obstacles[i].x, ow = obstacles[i].w, oh = obstacles[i].h;
+      var oy = GROUND_Y - oh;
+      var hit = dino.x < ox + ow && dino.x + dino.w > ox && dino.y < oy + oh && dino.y + dino.h > oy;
+      if (hit) {
+        over = true;
+        started = false;
+        if (score > best) {
+          best = score;
+          bestEl.textContent = String(best);
+          try {
+            localStorage.setItem(HIGH_SCORE_KEY, String(best));
+          } catch (err) {
+            // Ignore -- score this run still shown, just not saved.
+          }
+        }
+        hintEl.textContent = "Game over — space / tap to retry";
+      }
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    var cs = getComputedStyle(document.body);
+    var ink = cs.getPropertyValue("--text-primary").trim() || "#0b0b0b";
+    var muted = cs.getPropertyValue("--text-muted").trim() || "#898781";
+
+    ctx.strokeStyle = muted;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y + 0.5);
+    ctx.lineTo(W, GROUND_Y + 0.5);
+    ctx.stroke();
+
+    ctx.fillStyle = ink;
+    ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i];
+      ctx.fillRect(o.x, GROUND_Y - o.h, o.w, o.h);
+    }
+  }
+
+  function loop(ts) {
+    if (!lastTs) lastTs = ts;
+    var dt = Math.min(40, ts - lastTs);
+    lastTs = ts;
+    if (started && !over) {
+      update(dt);
+    }
+    draw();
+    if (started && !over) {
+      raf = requestAnimationFrame(loop);
+    }
+  }
+
+  function onKey(e) {
+    if (!panel.classList.contains("open")) return;
+    if (e.code === "Space" || e.code === "ArrowUp") {
+      e.preventDefault();
+      jump();
+    }
+  }
+
+  toggleBtn.addEventListener("click", function () {
+    var opening = !panel.classList.contains("open");
+    panel.classList.toggle("open");
+    if (opening) {
+      reset();
+    } else if (raf) {
+      cancelAnimationFrame(raf);
+      raf = null;
+    }
+  });
+  canvas.addEventListener("pointerdown", jump);
+  document.addEventListener("keydown", onKey);
+
+  draw();
+})();
+</script>
+</body>
+</html>
