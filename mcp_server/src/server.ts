@@ -13,7 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -471,7 +471,11 @@ server.registerTool(
       "actual primary balance, with +50/+100bp scenarios), and inflation_expectations_term_premium (5y5y " +
       "forward inflation and the term premium rising together); and treasury_auction_demand (bid-to-cover, " +
       "dealer take-down and indirect share of the latest 2y/5y/10y/30y auctions vs. each tenor's previous 6), " +
-      "fed_share_of_marketable_debt (with the 13-week QT/buying pace) and m2_to_gdp. Each check also carries its " +
+      "fed_share_of_marketable_debt (with the 13-week QT/buying pace) and m2_to_gdp. Its `stages` field (added " +
+      "2026-10-03) groups the checks as fiscal pressure -> market sensitivity -> financing & absorption -> policy " +
+      "constraint with a per-stage stress tally. rates_decomposition (added 2026-10-03) splits the last 3 months' " +
+      "curve move into policy expectations (2y), real yield vs. breakeven, and expected path vs. term premium, " +
+      "with a bull/bear steepening/flattening label. Each check also carries its " +
       "own prior-period comparison (a year/fiscal year/window earlier) -- read the direction, not one reading. None of these are a " +
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
@@ -490,7 +494,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -534,6 +538,7 @@ server.registerTool(
         computeInflationTermPremium(),
         computeAuctionDemand(),
         computeFedAbsorption(),
+        computeRatesDecomposition(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("RSP"),
@@ -755,6 +760,13 @@ server.registerTool(
       // happen to be high. See crash-check-rules.md's "Fiscal Dominance
       // Regime Checklist" for the full methodology and why no single number
       // here is a verdict on its own.
+      // Added 2026-10-03 (external review): what drove the curve over the
+      // last 3 months -- policy expectations, real yields, breakevens or
+      // term premium. See regimeIndicators.ts computeRatesDecomposition.
+      rates_decomposition: ratesDecomposition && {
+        ...ratesDecomposition,
+        signal: `Over ${ratesDecomposition.window_days} days to ${ratesDecomposition.as_of}: 2y ${signed(ratesDecomposition.change_2y_pts)}pts, 10y ${signed(ratesDecomposition.change_10y_pts)}pts, 2s10s ${signed(ratesDecomposition.change_2s10s_pts)}pts -- ${ratesDecomposition.curve_move}.${ratesDecomposition.change_real_10y_pts != null && ratesDecomposition.change_breakeven_10y_pts != null ? ` 10y split: real yield ${signed(ratesDecomposition.change_real_10y_pts)}pts, breakeven ${signed(ratesDecomposition.change_breakeven_10y_pts)}pts.` : ""}${ratesDecomposition.change_term_premium_10y_pts != null ? ` Term premium ${signed(ratesDecomposition.change_term_premium_10y_pts)}pts vs. expected short-rate path ${signed(ratesDecomposition.change_expected_path_10y_pts!)}pts.` : ""} ${ratesDecomposition.caveat}`,
+      },
       fiscal_dominance_checklist: {
         taylor_rule_gap: taylorRuleGap && {
           ...taylorRuleGap,
@@ -809,8 +821,21 @@ server.registerTool(
           ...fedAbsorption.m2_to_gdp,
           signal: `M2 is ${fedAbsorption.m2_to_gdp.m2_pct_gdp}% of nominal GDP (quarter starting ${fedAbsorption.m2_to_gdp.as_of})${fedAbsorption.m2_to_gdp.one_year_earlier_pct != null ? `, vs. ${fedAbsorption.m2_to_gdp.one_year_earlier_pct}% a year earlier` : ""}.${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct != null && fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct != null ? ` M2 growth ${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct}% YoY vs. nominal GDP ${fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct}%.` : ""} ${fedAbsorption.m2_to_gdp.caveat}`,
         },
+        // Added 2026-10-03 (external review): the checks above grouped into
+        // transmission stages, with a per-stage tally under explicit rules.
+        stages: summarizeFiscalStages({
+          taylor: taylorRuleGap,
+          primary: primaryBalance,
+          interest: netInterestBurden,
+          spending: govtSpendingShare,
+          gold: goldRealYieldCorrelation,
+          debt: debtDynamics,
+          itp: inflationTermPremium,
+          auctions: auctionDemand,
+          fed: fedAbsorption,
+        }),
         interpretation:
-          "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",
+          "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way. `stages` groups the checks as fiscal pressure -> market sensitivity -> financing & absorption -> policy constraint, with how many in each point toward stress under the stated rule. Use it as evidence for how far along that chain the US is; state which stage the evidence supports and what is missing for the next one -- never a single cross-stage score.",
       },
       // Added 2026-09-22 (external review): broader macro-regime context,
       // not specific to the fiscal-dominance question above -- kept as a

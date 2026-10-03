@@ -38,6 +38,18 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Macro & Context restructure (2026-10-03, external review).** Fiscal
+  Dominance checklist grouped into transmission stages (fiscal pressure →
+  market sensitivity → financing & absorption → policy constraint) with a
+  per-stage stress tally under explicit rules, never a cross-stage score.
+  New rates decomposition under the Yield Curve card (curve-move label;
+  10y split into real vs. breakeven and path vs. term premium). Contextual
+  Indicators split into six groups by what they measure and how fast they
+  move. No new data. **Next candidate:** a Macro Regime Synthesis (growth /
+  inflation / liquidity / rates / fiscal / credit / positioning / stress
+  labels chosen by the LLM each run) — needs a `write_snapshot` schema
+  change, a migration and a `project-instructions.md` step.
+
 - **Fiscal Dominance Regime Checklist: auctions + Fed absorption
   (2026-10-02, round 2).** Treasury auction demand (bid-to-cover, dealer
   take-down, indirect share of original-issue 2y/5y/10y/30y coupons vs.
