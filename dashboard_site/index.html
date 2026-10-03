@@ -427,6 +427,9 @@
       <div id="bondyields-body">
         <p class="context-note">3M/2Y/10Y/30Y yields, three dates overlaid (6 months ago, 3 months ago, today) — a steepening, flattening, or inversion shows up as a shape change here, not something you'd have to scan across table columns to notice. Fed Funds, the dollar index, gold, and federal debt/GDP are tracked individually below and in the Fiscal Dominance Regime Checklist below, rather than folded into this chart.</p>
         <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
+        <p class="eyebrow" style="margin: 18px 0 4px;">What moved the curve — last 3 months</p>
+        <p class="context-note" style="margin: 0 0 8px;">A steepening can mean easing expectations, rising inflation expectations or a rising term premium — very different regimes. The 2y is the cleanest read on policy expectations; the 10y is split two approximate ways.</p>
+        <div id="ratesdecomp-wrap"><p class="loading">Loading…</p></div>
       </div>
     </div>
 
@@ -448,7 +451,7 @@
       </div>
       <div id="context-body" hidden>
         <p class="context-note">Latest available reading for each series — not tied to the Stress Monitor tab's selected date, since these aren't stored per crash-check run.</p>
-        <div id="context-grid" class="grid-4"><p class="loading">Loading…</p></div>
+        <div id="context-grid"><p class="loading">Loading…</p></div>
       </div>
     </div>
   </div>
@@ -1041,6 +1044,21 @@ function estrellaMishkinRecessionProbability(spread10y3mo) {
   return phi * 100;
 }
 
+// Grouped by what each series measures and how fast it moves (added
+// 2026-10-03, external review): a quarterly structural series and a daily
+// market price aren't equivalent observations and shouldn't sit in one
+// undifferentiated grid. Every CONTEXT_INFO key belongs to exactly one
+// group; any key added later without a group falls into "Other" rather
+// than silently disappearing.
+const CONTEXT_GROUPS = [
+  { title: "Rates, inflation & dollar", cadence: "market prices, daily", keys: ["spread2s10s", "dgs30", "dfii10", "t10yie", "threefytp10", "dff", "sofr", "dtwexbgs"] },
+  { title: "Credit & financial conditions", cadence: "daily to quarterly", keys: ["stlfsi4", "nfci", "nfcirisk", "nfcicredit", "bamlc0a0cm", "regionalBankStress", "drtscilm"] },
+  { title: "Liquidity", cadence: "weekly to daily", keys: ["netLiquidity", "walcl", "rrpontsyd"] },
+  { title: "Cross-asset & breadth", cadence: "market prices, 7-day / 180-day windows", keys: ["smallCapBreadth", "equalWeightBreadth", "stockBondCorrelation", "gold", "bitcoin", "dcoilwtico", "pcoppusdm"] },
+  { title: "Growth & labor", cadence: "weekly to monthly releases", keys: ["icsa", "ccsa", "jtshir", "rsafs", "cgbd2024", "drcclacbs", "recprousm156n", "nyFedRecessionProb"] },
+  { title: "Structural & geopolitical", cadence: "monthly to quarterly, lagged", keys: ["gfdegdq188s", "ticForeignHoldings", "gprIndex"] },
+];
+
 function renderContextIndicators(latest) {
   const grid = document.getElementById("context-grid");
   const dgs10 = latest.DGS10, dgs2 = latest.DGS2, dgs3mo = latest.DGS3MO;
@@ -1092,8 +1110,8 @@ function renderContextIndicators(latest) {
     stockBondCorrelation: latest.STOCK_BOND_CORRELATION_180D,
   };
 
-  grid.innerHTML = Object.entries(CONTEXT_INFO)
-    .map(([key, info]) => {
+  const renderCard = (key) => {
+      const info = CONTEXT_INFO[key];
       const v = values[key];
       // "Notable" is a deliberately separate, non-RAG marker — only for
       // cards with an already-documented, unambiguous single-direction
@@ -1109,6 +1127,19 @@ function renderContextIndicators(latest) {
           <div class="value">${v != null ? info.format(v) : "—"}</div>
           <div class="signal">${v != null ? info.signal(v) : "No data yet"}</div>
         </div>
+      `;
+  };
+
+  const grouped = new Set(CONTEXT_GROUPS.flatMap((g) => g.keys));
+  const ungrouped = Object.keys(CONTEXT_INFO).filter((k) => !grouped.has(k));
+  const groups = ungrouped.length ? [...CONTEXT_GROUPS, { title: "Other", cadence: "", keys: ungrouped }] : CONTEXT_GROUPS;
+  grid.innerHTML = groups
+    .map((g) => {
+      const keys = g.keys.filter((k) => CONTEXT_INFO[k]);
+      if (keys.length === 0) return "";
+      return `
+        <p class="eyebrow" style="margin: 16px 0 8px;">${g.title}${g.cadence ? ` <span style="text-transform:none; letter-spacing:0; font-weight:400;">· ${g.cadence}</span>` : ""}</p>
+        <div class="grid-4">${keys.map(renderCard).join("")}</div>
       `;
     })
     .join("");
@@ -1330,6 +1361,55 @@ function pearsonCorrelation(xs, ys) {
 // scoped inside that card's own try block and isn't reachable here. Same
 // isolation principle as renderYieldCurveChart: a context-indicators
 // fetch failure must not take this card down too.
+// Rates decomposition (added 2026-10-03, external review) -- mirrors
+// regimeIndicators.ts computeRatesDecomposition: 3-month changes in the 2y
+// and 10y, a bull/bear steepening/flattening label, and the 10y change
+// split into real yield + breakeven and into expected short-rate path +
+// term premium (Kim-Wright). Both splits are approximate.
+async function renderRatesDecomposition() {
+  const wrap = document.getElementById("ratesdecomp-wrap");
+  try {
+    const onOrBefore = async (id, date) => {
+      const rows = await fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${id}${date ? `&observation_date=lte.${date}` : ""}&order=observation_date.desc&limit=1`);
+      return rows[0] ?? null;
+    };
+    const latest = await onOrBefore("DGS10");
+    if (!latest) {
+      wrap.innerHTML = '<p class="loading">No data yet.</p>';
+      return;
+    }
+    const start = new Date(`${latest.observation_date}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 91);
+    const startStr = start.toISOString().slice(0, 10);
+    const ids = ["DGS2", "DGS10", "DFII10", "T10YIE", "THREEFYTP10"];
+    const pairs = await Promise.all(ids.map((id) => Promise.all([onOrBefore(id, latest.observation_date), onOrBefore(id, startStr)])));
+    const [d2y, d10y, dReal, dBe, dTp] = pairs.map(([now, then]) => (now && then ? now.value - then.value : null));
+    if (d2y == null || d10y == null) {
+      wrap.innerHTML = '<p class="loading">Not enough history yet.</p>';
+      return;
+    }
+    const dSpread = d10y - d2y, level = (d2y + d10y) / 2;
+    const move = Math.abs(dSpread) < 0.05 ? `Roughly parallel ${level < 0 ? "fall" : "rise"}` : `${level < 0 ? "Bull" : "Bear"} ${dSpread > 0 ? "steepening" : "flattening"}`;
+    const bp = (v) => (v == null ? "n/a" : `${v >= 0 ? "+" : ""}${Math.round(v * 100)}bp`);
+    const leader = (a, aName, b, bName) => (a == null || b == null ? "" : Math.abs(a) >= Math.abs(b) ? aName : bName);
+    const realVsBe = leader(dReal, "real yields", dBe, "breakevens");
+    const pathVsTp = dTp != null ? leader(d10y - dTp, "the expected short-rate path", dTp, "term premium") : "";
+    const cards = [
+      { label: "Curve move", value: move, detail: `2y ${bp(d2y)}, 10y ${bp(d10y)}, 2s10s ${bp(dSpread)} since ${startStr}. "Bull" = yields fell on average; under 5bp of spread change reads as parallel.` },
+      { label: "10y: real vs. inflation", value: `${bp(dReal)} / ${bp(dBe)}`, detail: `Real yield (TIPS) vs. breakeven inflation.${realVsBe ? ` Led by ${realVsBe}.` : ""} The two won't sum exactly to the nominal change (TIPS liquidity, indexation lag).` },
+      { label: "10y: path vs. term premium", value: dTp != null ? `${bp(d10y - dTp)} / ${bp(dTp)}` : "n/a", detail: `Expected short-rate path vs. Kim-Wright term premium (a model estimate).${pathVsTp ? ` Led by ${pathVsTp}.` : ""} A bear steepening led by term premium is the fiscal-risk pattern; led by breakevens, an inflation story; a bull steepening led by the 2y, an easing story.` },
+    ];
+    wrap.innerHTML = `<div class="grid-3">${cards.map((c) => `
+      <div class="indicator neutral">
+        <div class="label">${c.label}</div>
+        <div class="value">${c.value}</div>
+        <div class="signal">${c.detail}</div>
+      </div>`).join("")}</div>`;
+  } catch (err) {
+    wrap.innerHTML = `<p class="loading">Failed to load rates decomposition: ${err.message}</p>`;
+  }
+}
+
 async function renderFiscalDominanceChecklist() {
   const wrap = document.getElementById("fiscaldominance-wrap");
   try {
@@ -1409,6 +1489,7 @@ async function renderFiscalDominanceChecklist() {
         const yearAgoGap = yearAgo && yearAgoInflation != null ? yearAgo.fedFunds - taylorRate(yearAgoInflation, yearAgo.unemploymentGap) : null;
         const cpiGap = usingCorePce && now.cpi != null ? now.fedFunds - taylorRate(now.cpi, now.unemploymentGap) : null;
         cards.push({
+stage: "Policy constraint", stress: gap < 0, rule: "policy rate below the rule",
           label: `Taylor Rule Gap (${usingCorePce ? "core PCE" : "headline CPI"})`,
           value: `${signed(gap, 2)}pts`,
           trend: yearAgoGap != null ? `${signed(yearAgoGap, 2)}pts a year earlier` : null,
@@ -1434,6 +1515,7 @@ async function renderFiscalDominanceChecklist() {
       const [latest, prior] = fiscalYears;
       const pctGdp = (r) => (r.primaryB / r.gdpB) * 100;
       cards.push({
+stage: "Fiscal pressure", stress: latest.primaryB < 0, rule: "primary deficit",
         label: `Primary Balance, FY${latest.fy} (ex-interest)`,
         value: `${latest.primaryB >= 0 ? "+" : "-"}$${Math.abs(latest.primaryB).toFixed(0)}B (${signed(pctGdp(latest), 1)}% GDP)`,
         trend: prior ? `FY${prior.fy}: ${prior.primaryB >= 0 ? "+" : "-"}$${Math.abs(prior.primaryB).toFixed(0)}B (${signed(pctGdp(prior), 1)}% GDP)` : null,
@@ -1454,6 +1536,7 @@ async function renderFiscalDominanceChecklist() {
       const trendParts = [prior && `FY${prior.fy}: ${fmt(prior)}`, fiveBack && `FY${fiveBack.fy}: ${fmt(fiveBack)}`].filter(Boolean);
       const [nipa] = joinByDate(nipaInterest, gdp, nipaReceipts);
       cards.push({
+stage: "Fiscal pressure", stress: prior ? latest.interestB / latest.receiptsB > prior.interestB / prior.receiptsB : null, rule: "% of receipts up vs. prior fiscal year",
         label: `Net Interest, FY${latest.fy} (% GDP / % Receipts)`,
         value: fmt(latest),
         trend: trendParts.length ? trendParts.join(" · ") : null,
@@ -1489,6 +1572,7 @@ async function renderFiscalDominanceChecklist() {
     const [correlation, priorCorrelation] = await Promise.all([goldCorrelation(todayStr), goldCorrelation(dayShift(todayStr, 180))]);
     if (correlation !== null) {
       cards.push({
+stage: "Market sensitivity", stress: correlation >= -0.1, rule: "correlation near zero or positive",
         label: "Gold ↔ Real Yield Correlation (180d)",
         value: correlation.toFixed(2),
         trend: priorCorrelation !== null ? `${priorCorrelation.toFixed(2)} in the prior 180 days` : null,
@@ -1514,6 +1598,7 @@ async function renderFiscalDominanceChecklist() {
       const back = (n) => spendingRows.find((r) => r.date === quarterShift(latest.date, n));
       const trendParts = [[back(4), "1yr"], [back(20), "5yr"]].filter(([r]) => r).map(([r, label]) => `${pct(r).toFixed(1)}% ${label} earlier`);
       cards.push({
+stage: "Fiscal pressure", stress: back(4) ? pct(latest) > pct(back(4)) : null, rule: "% of GDP up vs. a year earlier",
         label: "Govt Spending (% GDP)",
         value: `${pct(latest).toFixed(1)}%`,
         trend: trendParts.length ? trendParts.join(" · ") : null,
@@ -1564,6 +1649,7 @@ async function renderFiscalDominanceChecklist() {
       const mkt = [["2y", dgs2Rows[0]?.value], ["5y", dgs5Rows[0]?.value], ["10y", dgs10Now]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${v.toFixed(2)}%`).join(", ");
       const gap = dgs10Now != null ? dgs10Now - avgNow.value : null;
       cards.push({
+stage: "Fiscal pressure", stress: gap != null ? gap > 0 : null, rule: "10y market yield above the average (rollover raises cost)",
         label: "Avg Rate on Marketable Debt",
         value: `${avgNow.value.toFixed(2)}%`,
         trend: trendParts.length ? trendParts.join(" · ") : null,
@@ -1580,6 +1666,7 @@ async function renderFiscalDominanceChecklist() {
       const realGdp = quarterlyYoy(gdpReal, 0);
       const realR = dfii10Rows[0]?.value;
       cards.push({
+stage: "Fiscal pressure", stress: rgYearAgo != null ? rg > rgYearAgo : null, rule: "up vs. a year earlier",
         label: "r − g (nominal)",
         value: `${signed(rg, 2)}pts`,
         trend: rgYearAgo != null ? `${signed(rgYearAgo, 2)}pts a year earlier` : null,
@@ -1596,6 +1683,7 @@ async function renderFiscalDominanceChecklist() {
       const actual = fiscalYears[0] ? (fiscalYears[0].primaryB / fiscalYears[0].gdpB) * 100 : null;
       const gapPts = actual != null ? actual - pbStar : null;
       cards.push({
+stage: "Fiscal pressure", stress: gapPts != null ? gapPts < 0 : null, rule: "actual primary balance short of stabilizing",
         label: "Debt-Stabilizing Primary Balance",
         value: `${signed(pbStar, 1)}% GDP`,
         trend: `+50bp avg rate: ${signed(pb50, 1)}% · +100bp: ${signed(pb100, 1)}%`,
@@ -1619,6 +1707,7 @@ async function renderFiscalDominanceChecklist() {
       const bothRising = fwdChg != null && tpChg != null && fwdChg >= 0.1 && tpChg >= 0.1;
       const fmtChg = (v) => (v != null ? `${signed(v, 2)}` : "n/a");
       cards.push({
+stage: "Market sensitivity", stress: fwdChg != null && tpChg != null ? bothRising : null, rule: "both up ≥10bp over 3 months",
         label: "5y5y Inflation + Term Premium (3m)",
         value: `${fmtChg(fwdChg)} / ${fmtChg(tpChg)}pts`,
         trend: `prior 3m: ${fmtChg(fwdPrior)} / ${fmtChg(tpPrior)}pts`,
@@ -1655,6 +1744,7 @@ async function renderFiscalDominanceChecklist() {
       const weakCount = auctions.filter((a) => a.weaker).length;
       const fmtPct = (v) => (v != null ? `${v.toFixed(1)}%` : "n/a");
       cards.push({
+stage: "Market sensitivity", stress: weakCount >= 2, rule: "2+ tenors weaker than recent on both dealer take-down and bid-to-cover",
         label: "Treasury Auction Demand",
         value: dealerNow != null ? `${dealerNow.toFixed(1)}% dealer take-down` : `${auctions.length} tenors`,
         trend: dealerPrior != null ? `${dealerPrior.toFixed(1)}% avg of each tenor's prior 6 auctions` : null,
@@ -1684,6 +1774,7 @@ async function renderFiscalDominanceChecklist() {
         const pacePrior = tq && tq2 ? pace(tq.value, tq2.value) : null;
         const trendParts = [share1y != null && `${share1y.toFixed(1)}% 1yr earlier`, share3y != null && `${share3y.toFixed(1)}% 3yr earlier`].filter(Boolean);
         cards.push({
+stage: "Financing & absorption", stress: (share1y != null && shareNow > share1y) || (paceNow ?? 0) > 0, rule: "share up vs. a year earlier, or holdings growing over 13 weeks",
           label: "Fed Share of Marketable Treasuries",
           value: `${shareNow.toFixed(1)}%`,
           trend: trendParts.length ? trendParts.join(" · ") : null,
@@ -1714,6 +1805,7 @@ async function renderFiscalDominanceChecklist() {
         const m2Growth = m2Latest && m2YearAgo ? ((m2Latest.value - m2YearAgo.value) / m2YearAgo.value) * 100 : null;
         const gdpGrowth = gdpYearAgo ? ((gdpQ.value - gdpYearAgo.value) / gdpYearAgo.value) * 100 : null;
         cards.push({
+stage: "Financing & absorption", stress: m2QYearAgo != null && gdpYearAgo ? m2Q / gdpQ.value > m2QYearAgo / gdpYearAgo.value : null, rule: "up vs. a year earlier",
           label: "M2 / Nominal GDP",
           value: `${((m2Q / gdpQ.value) * 100).toFixed(1)}%`,
           trend: m2QYearAgo != null && gdpYearAgo ? `${((m2QYearAgo / gdpYearAgo.value) * 100).toFixed(1)}% a year earlier` : null,
@@ -1727,21 +1819,38 @@ async function renderFiscalDominanceChecklist() {
       return;
     }
 
-    wrap.innerHTML = `
-      <div class="grid-4">
-        ${cards
-          .map(
-            (c) => `
-          <div class="indicator neutral">
+    // Grouped into transmission stages (added 2026-10-03, external review)
+    // -- mirrors regimeIndicators.ts summarizeFiscalStages. Each stage shows
+    // how many of its checks point toward stress under the rule printed on
+    // each card: a per-stage tally, never a cross-stage score or a verdict
+    // on which stage the US is in.
+    const FISCAL_STAGES = [
+      { stage: "Fiscal pressure", question: "Is the fiscal position getting harder to sustain?" },
+      { stage: "Market sensitivity", question: "Is fiscal deterioration showing up in market pricing?" },
+      { stage: "Financing & absorption", question: "Is the central bank absorbing more of the fiscal burden?" },
+      { stage: "Policy constraint", question: "Is monetary policy looser than inflation and employment alone justify?" },
+    ];
+    const renderCard = (c) => `
+          <div class="indicator neutral${c.stress ? " notable" : ""}">
+            ${c.stress ? '<div class="notable-tag">● Points to stress</div>' : ""}
             <div class="label">${c.label}</div>
             <div class="value">${c.value}</div>
             ${c.trend ? `<div class="signal"><strong>Trend:</strong> ${c.trend}</div>` : ""}
             <div class="signal">${c.detail}</div>
+            <div class="signal"><strong>Stress rule:</strong> ${c.rule}${c.stress == null ? " (not enough history yet)" : ""}</div>
           </div>
-        `,
-          )
-          .join("")}
-      </div>
+        `;
+    wrap.innerHTML = `
+      ${FISCAL_STAGES.map(({ stage, question }, i) => {
+        const stageCards = cards.filter((c) => c.stage === stage);
+        if (stageCards.length === 0) return "";
+        const withData = stageCards.filter((c) => c.stress != null).length;
+        const stressed = stageCards.filter((c) => c.stress === true).length;
+        return `
+        <p class="eyebrow" style="margin: ${i === 0 ? "0" : "18px"} 0 4px;">${i + 1}. ${stage} <span style="text-transform:none; letter-spacing:0; font-weight:400;">· ${stressed} of ${withData} pointing toward stress</span></p>
+        <p class="context-note" style="margin: 0 0 8px;">${question}</p>
+        <div class="grid-4">${stageCards.map(renderCard).join("")}</div>`;
+      }).join("")}
       <p class="context-note" style="margin-top:10px;">Report each check on its own — do not average these into a single "fiscal dominance score." None individually proves the regime either way.</p>
     `;
   } catch (err) {
@@ -3061,6 +3170,7 @@ async function main() {
     // everything below it.
     renderYieldCurveChart();
     renderFiscalDominanceChecklist();
+    renderRatesDecomposition();
 
     // Isolated: a sector-rotation fetch failure shouldn't take down date
     // navigation, trend charts, or the contextual-indicators card above,

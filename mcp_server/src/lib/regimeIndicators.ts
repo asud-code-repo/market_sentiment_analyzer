@@ -952,3 +952,157 @@ export async function computeFedAbsorption(): Promise<FedAbsorptionResult> {
 
   return { fed_share_of_marketable_debt, m2_to_gdp };
 }
+
+export interface RatesDecompositionResult {
+  window_days: number;
+  as_of: string;
+  change_2y_pts: number;
+  change_10y_pts: number;
+  change_2s10s_pts: number;
+  curve_move: string;
+  change_real_10y_pts: number | null;
+  change_breakeven_10y_pts: number | null;
+  change_term_premium_10y_pts: number | null;
+  change_expected_path_10y_pts: number | null;
+  caveat: string;
+}
+
+const RATES_WINDOW_DAYS = 91;
+const PARALLEL_THRESHOLD_PTS = 0.05;
+
+/** Bull/bear steepening/flattening label from 2y and 10y changes (pts). */
+export function classifyCurveMove(d2y: number, d10y: number): string {
+  const dSpread = d10y - d2y;
+  const level = (d2y + d10y) / 2;
+  const direction = level < 0 ? "bull" : "bear";
+  if (Math.abs(dSpread) < PARALLEL_THRESHOLD_PTS) return `roughly parallel ${level < 0 ? "fall" : "rise"}`;
+  return `${direction} ${dSpread > 0 ? "steepening" : "flattening"}`;
+}
+
+/**
+ * What moved the curve -- added 2026-10-03 (external review): a 2s10s
+ * steepening can mean fading recession fears, Fed easing, rising inflation
+ * expectations or a rising term premium, which are very different regimes.
+ * Over the last RATES_WINDOW_DAYS:
+ *   - curve move: bull/bear steepening/flattening from the 2y and 10y
+ *     changes ("bull" = yields fell on average; under 5bp of spread change
+ *     reads as a parallel shift)
+ *   - 10y split two ways, each approximate:
+ *       real yield (DFII10) + breakeven inflation (T10YIE)
+ *       expected short-rate path (10y minus term premium) + term premium
+ *         (Kim-Wright THREEFYTP10)
+ * The 2y change is the cleanest proxy for policy expectations.
+ */
+export async function computeRatesDecomposition(): Promise<RatesDecompositionResult | null> {
+  const latest = await getLatestDataPoint("DGS10");
+  if (!latest) return null;
+  const asOf = latest.observation_date;
+  const start = subtractDays(asOf, RATES_WINDOW_DAYS);
+  const ids = ["DGS2", "DGS10", "DFII10", "T10YIE", "THREEFYTP10"] as const;
+  const pairs = await Promise.all(ids.map((id) => Promise.all([getPointOnOrBefore(id, asOf), getPointOnOrBefore(id, start)])));
+  const change = (i: number) => {
+    const [now, then] = pairs[i];
+    return now && then ? now.value - then.value : null;
+  };
+  const [d2y, d10y, dReal, dBe, dTp] = ids.map((_, i) => change(i));
+  if (d2y === null || d10y === null) return null;
+
+  return {
+    window_days: RATES_WINDOW_DAYS,
+    as_of: asOf,
+    change_2y_pts: round2(d2y),
+    change_10y_pts: round2(d10y),
+    change_2s10s_pts: round2(d10y - d2y),
+    curve_move: classifyCurveMove(d2y, d10y),
+    change_real_10y_pts: dReal !== null ? round2(dReal) : null,
+    change_breakeven_10y_pts: dBe !== null ? round2(dBe) : null,
+    change_term_premium_10y_pts: dTp !== null ? round2(dTp) : null,
+    change_expected_path_10y_pts: dTp !== null ? round2(d10y - dTp) : null,
+    caveat:
+      "Approximate decompositions: real + breakeven won't sum exactly to the nominal 10y change (TIPS liquidity and indexation lag), and the Kim-Wright term premium is a model estimate fitted to a zero-coupon curve, so expected path = 10y change minus term premium change absorbs model error. The 2y change is the cleanest market read on policy expectations. A bear steepening led by term premium is the fiscal-risk pattern; one led by breakevens is an inflation story; a bull steepening led by the 2y is an easing story.",
+  };
+}
+
+export interface StageCheck {
+  check: string;
+  points_to_stress: boolean | null;
+  rule: string;
+}
+
+export interface FiscalStage {
+  stage: string;
+  question: string;
+  checks: StageCheck[];
+  pointing_to_stress: number;
+  with_data: number;
+}
+
+/**
+ * Groups the checklist into the transmission stages from the 2026-10-03
+ * external review -- fiscal pressure -> market sensitivity -> financing &
+ * absorption -> policy constraint -- and tallies, per stage, how many
+ * checks currently point toward stress under the explicit rule beside
+ * each. Deliberately a per-stage tally, never a cross-stage score or a
+ * "which stage are we in" verdict: the rules are direction calls, not
+ * calibrated thresholds, and the stage judgment belongs in the narrative
+ * with these as evidence. Mirrored in dashboard_site's checklist render.
+ */
+export function summarizeFiscalStages(r: {
+  taylor: TaylorRuleGapResult | null;
+  primary: PrimaryBalanceResult | null;
+  interest: NetInterestBurdenResult | null;
+  spending: GovtSpendingShareResult | null;
+  gold: GoldRealYieldCorrelationResult | null;
+  debt: DebtDynamicsResult;
+  itp: InflationTermPremiumResult | null;
+  auctions: AuctionDemandResult | null;
+  fed: FedAbsorptionResult;
+}): FiscalStage[] {
+  const gt = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null ? a > b : null);
+  const rg = r.debt.r_minus_g;
+  const stab = r.debt.debt_stabilizing_primary_balance;
+  const avg = r.debt.average_debt_rate;
+  const fedShare = r.fed.fed_share_of_marketable_debt;
+  const m2 = r.fed.m2_to_gdp;
+  const stages: Omit<FiscalStage, "pointing_to_stress" | "with_data">[] = [
+    {
+      stage: "Fiscal pressure",
+      question: "Is the fiscal position getting harder to sustain?",
+      checks: [
+        { check: "Primary balance", points_to_stress: r.primary ? r.primary.primary_balance_usd_billions < 0 : null, rule: "primary deficit" },
+        { check: "Net interest", points_to_stress: r.interest ? gt(r.interest.net_interest_pct_revenue, r.interest.prior_fiscal_year_pct_revenue) : null, rule: "% of receipts up vs. prior fiscal year" },
+        { check: "Govt spending share", points_to_stress: r.spending ? gt(r.spending.govt_spending_pct_gdp, r.spending.one_year_earlier_pct_gdp) : null, rule: "% of GDP up vs. a year earlier" },
+        { check: "Avg rate on debt", points_to_stress: avg && avg.rollover_gap_10y_pct != null ? avg.rollover_gap_10y_pct > 0 : null, rule: "10y market yield above the average (rollover raises cost)" },
+        { check: "r − g", points_to_stress: rg ? gt(rg.nominal_r_minus_g_pct, rg.nominal_r_minus_g_one_year_earlier_pct) : null, rule: "up vs. a year earlier" },
+        { check: "Debt-stabilizing balance", points_to_stress: stab && stab.gap_vs_stabilizing_pct_gdp != null ? stab.gap_vs_stabilizing_pct_gdp < 0 : null, rule: "actual primary balance short of stabilizing" },
+      ],
+    },
+    {
+      stage: "Market sensitivity",
+      question: "Is fiscal deterioration showing up in market pricing?",
+      checks: [
+        { check: "5y5y inflation + term premium", points_to_stress: r.itp ? r.itp.both_rising : null, rule: "both up ≥10bp over 3 months" },
+        { check: "Gold ↔ real yield", points_to_stress: r.gold ? r.gold.correlation >= -0.1 : null, rule: "correlation near zero or positive" },
+        { check: "Treasury auction demand", points_to_stress: r.auctions ? r.auctions.weaker_than_recent_count >= 2 : null, rule: "2+ tenors weaker than recent on both dealer take-down and bid-to-cover" },
+      ],
+    },
+    {
+      stage: "Financing & absorption",
+      question: "Is the central bank absorbing more of the fiscal burden?",
+      checks: [
+        { check: "Fed share of marketable Treasuries", points_to_stress: fedShare ? (gt(fedShare.fed_share_pct, fedShare.one_year_earlier_pct) ?? false) || (fedShare.holdings_change_13w_usd_billions_per_month ?? 0) > 0 : null, rule: "share up vs. a year earlier, or holdings growing over 13 weeks" },
+        { check: "M2 / GDP", points_to_stress: m2 ? gt(m2.m2_pct_gdp, m2.one_year_earlier_pct) : null, rule: "up vs. a year earlier" },
+      ],
+    },
+    {
+      stage: "Policy constraint",
+      question: "Is monetary policy looser than inflation and employment alone justify?",
+      checks: [{ check: "Taylor Rule gap (core PCE)", points_to_stress: r.taylor ? r.taylor.gap_pct < 0 : null, rule: "policy rate below the rule" }],
+    },
+  ];
+  return stages.map((s) => ({
+    ...s,
+    pointing_to_stress: s.checks.filter((c) => c.points_to_stress === true).length,
+    with_data: s.checks.filter((c) => c.points_to_stress !== null).length,
+  }));
+}

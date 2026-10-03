@@ -731,6 +731,38 @@ as a daily flag.
 | Fed share of marketable Treasuries + QT pace | FRED `TREAST` (Fed Treasury holdings, H.4.1, weekly) ÷ Treasury MSPD total marketable debt (`MSPD_TOTAL_MARKETABLE`, month-end, Treasury Fiscal Data), on matching dates; 13-week change in `TREAST` per month | Whether the central bank is absorbing more of the fiscal burden: a rising share, or runoff turning into net buying | Purchases can have non-fiscal motives (market functioning, reserve management), so read alongside the auction and r − g checks. Trend: 1yr and 3yrs earlier; prior 13 weeks for pace. Added 2026-10-02 |
 | M2 / nominal GDP | FRED `M2SL` averaged over GDP's latest quarter ÷ that quarter's `GDP`; M2 YoY vs. nominal GDP YoY | Money growth outrunning nominal GDP for a sustained stretch is the monetary-financing pattern | Also moves with rate-driven shifts between deposits and money funds/T-bills, so it's context, not a verdict. Trend: a year earlier. Added 2026-10-02 |
 
+
+**Transmission stages** (added 2026-10-03, external review). The checks are
+grouped by how far along the fiscal-constraint chain each one sits, so
+fiscal *stress* and an actual *monetary-policy constraint* aren't read as the
+same thing:
+
+| Stage | Question | Checks (and the rule under which each "points to stress") |
+|---|---|---|
+| 1. Fiscal pressure | Is the fiscal position getting harder to sustain? | Primary balance (primary deficit); net interest (% of receipts up vs. prior FY); govt spending share (% GDP up y/y); average rate on debt (10y above the average); r − g (up y/y); debt-stabilizing balance (actual short of stabilizing) |
+| 2. Market sensitivity | Is fiscal deterioration showing up in market pricing? | 5y5y inflation + term premium (both up ≥10bp over 3m); gold ↔ real yield (correlation ≥ −0.1); auction demand (2+ tenors weaker on both dealer take-down and bid-to-cover) |
+| 3. Financing & absorption | Is the central bank absorbing more of the fiscal burden? | Fed share of marketable Treasuries (up y/y, or holdings growing over 13 weeks); M2/GDP (up y/y) |
+| 4. Policy constraint | Is monetary policy looser than inflation and employment alone justify? | Taylor gap on core PCE (policy rate below the rule) |
+
+Each stage shows how many of its checks point toward stress. That is a
+**per-stage tally, never a cross-stage score**, and the code never decides
+which stage the US is in: the rules are direction calls, not calibrated
+thresholds. The stage judgment belongs in the narrative, using these as
+evidence. Earlier stages can be fully lit while later ones stay dark — fiscal
+pressure without market sensitivity is not fiscal dominance, and the policy-
+constraint stage is deliberately thin because a genuinely constrained Fed is
+the hardest thing to observe directly. Computed in `summarizeFiscalStages`
+(`regimeIndicators.ts`), mirrored in the dashboard render.
+
+**Rates decomposition** (added 2026-10-03, external review, shown under the
+Yield Curve card and as `rates_decomposition` in `get_context_indicators`).
+Over the last 91 days: the 2y and 10y changes with a bull/bear steepening/
+flattening label (under 5bp of spread change reads as parallel), and the 10y
+change split two approximate ways — real yield (`DFII10`) + breakeven
+(`T10YIE`), and expected short-rate path + term premium (`THREEFYTP10`). A
+bear steepening led by term premium is the fiscal-risk pattern; led by
+breakevens, an inflation story; a bull steepening led by the 2y, an easing
+story.
 **Every check carries its own prior-period comparison** (added 2026-10-02, external review): the guidance was always "watch the trend, not one reading," but the card showed only the latest value, which invited readers to infer a trend that wasn't displayed. Each check now returns and displays a prior-period value on the same basis — Taylor gap a year earlier, primary balance and net interest for the prior fiscal year (net interest also five fiscal years earlier), the previous 180-day gold/real-yield window, and spending share 4 and 20 quarters earlier.
 
 Exposed via `get_context_indicators`'s `fiscal_dominance_checklist` field
