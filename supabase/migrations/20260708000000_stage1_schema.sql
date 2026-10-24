@@ -1,5 +1,5 @@
 -- Stage 1 schema: crash_checks, latest_snapshot, data_points
--- See reference_docs/crash-check-system-build-spec.md for architecture context.
+-- See reference_docs/archive/crash-check-system-build-spec.md for architecture context.
 --
 -- Contains NO personal account balances or dollar figures by design.
 -- Personal portfolio data lives locally in local_state/portfolio.yaml (gitignored),
