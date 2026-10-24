@@ -13,7 +13,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -28,6 +28,10 @@ function json(data: unknown) {
 // Deliberately loose (`any`) rather than generic over the handler's real
 // input/output types — it's a transparent side-channel, not part of the
 // zod-validated request/response contract each tool already has.
+function signed(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}`;
+}
+
 function withLogging(name: string, handler: (...args: any[]) => Promise<any>) {
   return async (...args: any[]) => {
     const result = await handler(...args);
@@ -449,16 +453,30 @@ server.registerTool(
       "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
       "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22. " +
       "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
-      "same name for the full methodology) is 5 real-data checks for whether Fed policy is " +
+      "same name for the full methodology) is 12 real-data checks for whether Fed policy is " +
       "actually CONSTRAINED by the debt burden, not just whether debt/rates are high: a Taylor " +
-      "Rule gap (is the Fed's actual rate below what inflation/employment alone would justify), " +
-      "primary balance (is the government running a deficit even excluding interest payments), " +
-      "net-interest burden as % of GDP, gold's rolling correlation with real yields (has the " +
+      "Rule gap on core PCE (is the Fed's actual rate below what inflation/employment alone would justify; " +
+      "the headline-CPI version is returned alongside for comparison), " +
+      "primary balance (is the government running a deficit even excluding interest payments, " +
+      "OMB fiscal-year FYFSD + FYOINT), net-interest burden as % of GDP and of receipts (OMB " +
+      "fiscal-year NET interest; the quarterly BEA figure is returned separately as nipa_gross_* " +
+      "-- gross, reads higher, use for direction only), gold's rolling correlation with real yields (has the " +
       "normal inverse relationship broken down, the debasement-hedge tell), and (added 2026-09-28, " +
       "prompted by an external research note) govt_spending_pct_gdp -- federal spending as a FLOW " +
       "share of GDP (FGEXPND/GDP), a different question from federal_debt_pct_gdp's debt STOCK. " +
       "FEDERAL ONLY, not general government (all levels) -- no validated threshold band applies; " +
-      "report the number and its multi-year trend, not a fixed cutoff. None of these are a " +
+      "report the number and its multi-year trend, not a fixed cutoff. Added 2026-10-02: average_debt_rate " +
+      "(Treasury's average rate on marketable debt vs. 2y/5y/10y market yields), r_minus_g (that rate minus " +
+      "nominal GDP growth, plus a real version), debt_stabilizing_primary_balance (d*(r-g)/(1+g) vs. the " +
+      "actual primary balance, with +50/+100bp scenarios), and inflation_expectations_term_premium (5y5y " +
+      "forward inflation and the term premium rising together); and treasury_auction_demand (bid-to-cover, " +
+      "dealer take-down and indirect share of the latest 2y/5y/10y/30y auctions vs. each tenor's previous 6), " +
+      "fed_share_of_marketable_debt (with the 13-week QT/buying pace) and m2_to_gdp. Its `stages` field (added " +
+      "2026-10-03) groups the checks as fiscal pressure -> market sensitivity -> financing & absorption -> policy " +
+      "constraint with a per-stage stress tally. rates_decomposition (added 2026-10-03) splits the last 3 months' " +
+      "curve move into policy expectations (2y), real yield vs. breakeven, and expected path vs. term premium, " +
+      "with a bull/bear steepening/flattening label. Each check also carries its " +
+      "own prior-period comparison (a year/fiscal year/window earlier) -- read the direction, not one reading. None of these are a " +
       "single verdict — report each number and its own caveat, do not synthesize them into one " +
       "score or claim they prove a regime; this is structural/slow-moving, reassess in your " +
       "narrative roughly at the cadence these series actually update (quarterly for 3 of the 4), " +
@@ -476,7 +494,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -516,6 +534,11 @@ server.registerTool(
         computeGovtSpendingShare(),
         computeGoldRealYieldCorrelation(),
         computeStockBondCorrelation(),
+        computeDebtDynamics(),
+        computeInflationTermPremium(),
+        computeAuctionDemand(),
+        computeFedAbsorption(),
+        computeRatesDecomposition(),
         computeSeriesDelta("IWM"),
         computeSeriesDelta("SPY"),
         computeSeriesDelta("RSP"),
@@ -731,35 +754,88 @@ server.registerTool(
         ...debtToGdp,
         signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
       },
-      // 5 real-data checks for whether Fed policy is actually CONSTRAINED by
+      // 12 real-data checks for whether Fed policy is actually CONSTRAINED by
       // the debt burden (the Leeper fiscal/monetary regime framework's
       // actual definition of fiscal dominance), not just whether debt/rates
       // happen to be high. See crash-check-rules.md's "Fiscal Dominance
       // Regime Checklist" for the full methodology and why no single number
       // here is a verdict on its own.
+      // Added 2026-10-03 (external review): what drove the curve over the
+      // last 3 months -- policy expectations, real yields, breakevens or
+      // term premium. See regimeIndicators.ts computeRatesDecomposition.
+      rates_decomposition: ratesDecomposition && {
+        ...ratesDecomposition,
+        signal: `Over ${ratesDecomposition.window_days} days to ${ratesDecomposition.as_of}: 2y ${signed(ratesDecomposition.change_2y_pts)}pts, 10y ${signed(ratesDecomposition.change_10y_pts)}pts, 2s10s ${signed(ratesDecomposition.change_2s10s_pts)}pts -- ${ratesDecomposition.curve_move}.${ratesDecomposition.change_real_10y_pts != null && ratesDecomposition.change_breakeven_10y_pts != null ? ` 10y split: real yield ${signed(ratesDecomposition.change_real_10y_pts)}pts, breakeven ${signed(ratesDecomposition.change_breakeven_10y_pts)}pts.` : ""}${ratesDecomposition.change_term_premium_10y_pts != null ? ` Term premium ${signed(ratesDecomposition.change_term_premium_10y_pts)}pts vs. expected short-rate path ${signed(ratesDecomposition.change_expected_path_10y_pts!)}pts.` : ""} ${ratesDecomposition.caveat}`,
+      },
       fiscal_dominance_checklist: {
         taylor_rule_gap: taylorRuleGap && {
           ...taylorRuleGap,
-          signal: `Actual Fed funds ${taylorRuleGap.actual_fed_funds_pct}% vs. Taylor-rule-implied ${taylorRuleGap.taylor_implied_rate_pct}% (gap ${taylorRuleGap.gap_pct >= 0 ? "+" : ""}${taylorRuleGap.gap_pct}pts). ${taylorRuleGap.gap_pct < 0 ? "Policy is running LOOSER than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself (a genuinely dovish Fed for ordinary reasons looks identical here)." : "Policy is running at or above what the formula prescribes -- no gap-based fiscal-dominance signal from this check."}`,
+          signal: `Actual Fed funds ${taylorRuleGap.actual_fed_funds_pct}% vs. Taylor-rule-implied ${taylorRuleGap.taylor_implied_rate_pct}% on ${taylorRuleGap.inflation_measure === "core_pce" ? "core PCE" : "headline CPI"} (gap ${signed(taylorRuleGap.gap_pct)}pts${taylorRuleGap.gap_one_year_ago_pct != null ? `; ${signed(taylorRuleGap.gap_one_year_ago_pct)}pts a year earlier` : ""}). ${taylorRuleGap.gap_pct < 0 ? "Policy is running LOOSER than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself (a genuinely dovish Fed for ordinary reasons looks identical here)." : "Policy is running at or above what the formula prescribes -- no gap-based fiscal-dominance signal from this check."}${taylorRuleGap.inflation_measure === "core_pce" && taylorRuleGap.headline_cpi_gap_pct != null ? ` On headline CPI instead the gap would be ${signed(taylorRuleGap.headline_cpi_gap_pct)}pts -- core PCE is the Fed's own target measure, so treat that as the upper bound on looseness, not the headline read.` : ""}`,
         },
         primary_balance: primaryBalance && {
           ...primaryBalance,
-          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B for FY ${primaryBalance.fiscal_year_as_of.slice(0, 4)}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."}`,
+          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B (${primaryBalance.primary_balance_pct_gdp}% of GDP) for FY ${primaryBalance.fiscal_year}${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp != null ? `, vs. ${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp}% of GDP the prior fiscal year` : ""}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."} ${primaryBalance.caveat}`,
         },
         net_interest_pct_gdp: netInterestBurden && {
           ...netInterestBurden,
-          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP${netInterestBurden.net_interest_pct_revenue != null ? ` and ${netInterestBurden.net_interest_pct_revenue}% of total federal revenue` : ""} as of ${netInterestBurden.as_of}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget -- watch the trend over several quarters, not one reading.`,
+          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP and ${netInterestBurden.net_interest_pct_revenue}% of federal receipts for FY ${netInterestBurden.fiscal_year}${netInterestBurden.prior_fiscal_year_pct_gdp != null ? ` (prior FY: ${netInterestBurden.prior_fiscal_year_pct_gdp}% / ${netInterestBurden.prior_fiscal_year_pct_revenue}%` + (netInterestBurden.five_years_earlier_pct_gdp != null ? `; FY ${netInterestBurden.five_years_earlier_fiscal_year}: ${netInterestBurden.five_years_earlier_pct_gdp}% / ${netInterestBurden.five_years_earlier_pct_revenue}%)` : ")") : ""}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. ${netInterestBurden.caveat}`,
         },
         gold_real_yield_correlation: goldRealYieldCorrelation && {
           ...goldRealYieldCorrelation,
-          signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
+          signal: `${goldRealYieldCorrelation.window_calendar_days}-day rolling correlation between gold's daily % change and 10yr TIPS real yield's daily change is ${goldRealYieldCorrelation.correlation}${goldRealYieldCorrelation.prior_window_correlation != null ? ` (prior ${goldRealYieldCorrelation.window_calendar_days}-day window: ${goldRealYieldCorrelation.prior_window_correlation})` : ""}. ${goldRealYieldCorrelation.correlation >= -0.1 ? "Near zero or positive -- the usual inverse relationship (higher real yields = headwind for a non-yielding asset) is weak or has broken down, the more distinctive debasement-hedge signature." : "Still meaningfully negative -- gold is behaving like it normally does relative to real yields, no decoupling signal here."} ${goldRealYieldCorrelation.typical_historical_note}`,
         },
         govt_spending_pct_gdp: govtSpendingShare && {
           ...govtSpendingShare,
-          signal: `Federal government spending is ${govtSpendingShare.govt_spending_pct_gdp}% of GDP as of ${govtSpendingShare.as_of}. ${govtSpendingShare.caveat}`,
+          signal: `Federal government spending is ${govtSpendingShare.govt_spending_pct_gdp}% of GDP as of ${govtSpendingShare.as_of}${govtSpendingShare.one_year_earlier_pct_gdp != null ? ` (1yr earlier: ${govtSpendingShare.one_year_earlier_pct_gdp}%` + (govtSpendingShare.five_years_earlier_pct_gdp != null ? `; 5yr earlier: ${govtSpendingShare.five_years_earlier_pct_gdp}%)` : ")") : ""}. ${govtSpendingShare.caveat}`,
         },
+        // Added 2026-10-02 (external review): debt dynamics -- the arithmetic
+        // that decides whether debt/GDP actually rises -- plus the joint move
+        // in long-end inflation expectations and term premium.
+        average_debt_rate: debtDynamics.average_debt_rate && {
+          ...debtDynamics.average_debt_rate,
+          signal: `Treasury's average rate on marketable debt is ${debtDynamics.average_debt_rate.avg_rate_marketable_pct}% as of ${debtDynamics.average_debt_rate.as_of}${debtDynamics.average_debt_rate.one_year_earlier_pct != null ? ` (1yr earlier: ${debtDynamics.average_debt_rate.one_year_earlier_pct}%` + (debtDynamics.average_debt_rate.three_years_earlier_pct != null ? `; 3yr earlier: ${debtDynamics.average_debt_rate.three_years_earlier_pct}%)` : ")") : ""}, vs. market 2y/5y/10y of ${debtDynamics.average_debt_rate.market_2y_pct ?? "n/a"}/${debtDynamics.average_debt_rate.market_5y_pct ?? "n/a"}/${debtDynamics.average_debt_rate.market_10y_pct ?? "n/a"}%. ${debtDynamics.average_debt_rate.rollover_gap_10y_pct != null && debtDynamics.average_debt_rate.rollover_gap_10y_pct > 0 ? `Market yields sit ${debtDynamics.average_debt_rate.rollover_gap_10y_pct}pts above the average (10y), so rollover keeps raising the debt's cost.` : "Market yields are at or below the average, so rollover isn't adding cost at the margin."} ${debtDynamics.average_debt_rate.caveat}`,
+        },
+        r_minus_g: debtDynamics.r_minus_g && {
+          ...debtDynamics.r_minus_g,
+          signal: `Nominal r - g is ${signed(debtDynamics.r_minus_g.nominal_r_minus_g_pct)}pts (average debt rate ${debtDynamics.r_minus_g.nominal_r_pct}% vs. nominal GDP growth ${debtDynamics.r_minus_g.nominal_gdp_growth_yoy_pct}% YoY to ${debtDynamics.r_minus_g.gdp_as_of})${debtDynamics.r_minus_g.nominal_r_minus_g_one_year_earlier_pct != null ? `; ${signed(debtDynamics.r_minus_g.nominal_r_minus_g_one_year_earlier_pct)}pts a year earlier` : ""}.${debtDynamics.r_minus_g.real_r_minus_potential_g_pct != null ? ` Real: 10yr TIPS ${debtDynamics.r_minus_g.real_10y_yield_pct}% vs. CBO potential growth ${debtDynamics.r_minus_g.real_potential_growth_yoy_pct}% = ${signed(debtDynamics.r_minus_g.real_r_minus_potential_g_pct)}pts.` : ""} A rising r - g is the core debt-dynamics headwind. ${debtDynamics.r_minus_g.caveat}`,
+        },
+        debt_stabilizing_primary_balance: debtDynamics.debt_stabilizing_primary_balance && {
+          ...debtDynamics.debt_stabilizing_primary_balance,
+          signal: `Holding debt held by the public flat at ${debtDynamics.debt_stabilizing_primary_balance.debt_held_by_public_pct_gdp}% of GDP needs a primary balance of ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_primary_balance_pct_gdp)}% of GDP at today's r and g (${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_50bp_pct_gdp)}% if the average debt rate rises 50bp, ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_100bp_pct_gdp)}% at +100bp).${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp != null ? ` The actual FY ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_fiscal_year} primary balance is ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_pct_gdp}% of GDP, ${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp < 0 ? `${Math.abs(debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp)}pts short of stabilizing -- debt/GDP is on a rising path.` : `${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp}pts better than stabilizing -- debt/GDP is on a falling path.`}` : ""} ${debtDynamics.debt_stabilizing_primary_balance.caveat}`,
+        },
+        inflation_expectations_term_premium: inflationTermPremium && {
+          ...inflationTermPremium,
+          signal: `5y5y forward inflation ${inflationTermPremium.forward_5y5y_inflation_pct}% (3m change ${inflationTermPremium.change_3m_forward_5y5y_pts != null ? signed(inflationTermPremium.change_3m_forward_5y5y_pts) : "n/a"}pts), 10yr term premium ${inflationTermPremium.term_premium_10y_pct}% (3m change ${inflationTermPremium.change_3m_term_premium_pts != null ? signed(inflationTermPremium.change_3m_term_premium_pts) : "n/a"}pts). ${inflationTermPremium.both_rising ? "Both rising together -- the market-pricing fingerprint of fiscal risk (more inflation AND more duration-risk compensation)." : "Not rising together -- no joint fiscal-risk signal from market pricing."} ${inflationTermPremium.caveat}`,
+        },
+        // Added 2026-10-02 (external review, round 2): who is buying the
+        // bonds (auction demand) and how much the Fed is absorbing.
+        treasury_auction_demand: auctionDemand && {
+          ...auctionDemand,
+          signal: `Latest benchmark coupon auctions: ${auctionDemand.tenors.map((t) => `${t.tenor} ${t.auction_date} bid-to-cover ${t.bid_to_cover}x${t.prior_avg_bid_to_cover != null ? ` (prior avg ${t.prior_avg_bid_to_cover}x)` : ""}, dealers ${t.dealer_pct ?? "n/a"}%${t.prior_avg_dealer_pct != null ? ` (${t.prior_avg_dealer_pct}%)` : ""}, indirect ${t.indirect_pct ?? "n/a"}%${t.prior_avg_indirect_pct != null ? ` (${t.prior_avg_indirect_pct}%)` : ""}`).join("; ")}. ${auctionDemand.weaker_than_recent_count} of ${auctionDemand.tenors.length} tenors were weaker than their recent average on both dealer take-down and bid-to-cover${auctionDemand.weaker_than_recent_count >= 2 ? " -- weakness across several tenors is the early-warning pattern for private demand." : "."} ${auctionDemand.caveat}`,
+        },
+        fed_share_of_marketable_debt: fedAbsorption.fed_share_of_marketable_debt && {
+          ...fedAbsorption.fed_share_of_marketable_debt,
+          signal: `The Fed holds ${fedAbsorption.fed_share_of_marketable_debt.fed_share_pct}% of marketable Treasury debt as of ${fedAbsorption.fed_share_of_marketable_debt.as_of}${fedAbsorption.fed_share_of_marketable_debt.one_year_earlier_pct != null ? ` (1yr earlier: ${fedAbsorption.fed_share_of_marketable_debt.one_year_earlier_pct}%` + (fedAbsorption.fed_share_of_marketable_debt.three_years_earlier_pct != null ? `; 3yr earlier: ${fedAbsorption.fed_share_of_marketable_debt.three_years_earlier_pct}%)` : ")") : ""}.${fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month != null ? ` Holdings are ${fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month < 0 ? "running off" : "growing"} at $${Math.abs(fedAbsorption.fed_share_of_marketable_debt.holdings_change_13w_usd_billions_per_month)}B/month over the last 13 weeks${fedAbsorption.fed_share_of_marketable_debt.prior_13w_usd_billions_per_month != null ? ` (prior 13 weeks: ${signed(fedAbsorption.fed_share_of_marketable_debt.prior_13w_usd_billions_per_month)}B/month)` : ""}.` : ""} ${fedAbsorption.fed_share_of_marketable_debt.caveat}`,
+        },
+        m2_to_gdp: fedAbsorption.m2_to_gdp && {
+          ...fedAbsorption.m2_to_gdp,
+          signal: `M2 is ${fedAbsorption.m2_to_gdp.m2_pct_gdp}% of nominal GDP (quarter starting ${fedAbsorption.m2_to_gdp.as_of})${fedAbsorption.m2_to_gdp.one_year_earlier_pct != null ? `, vs. ${fedAbsorption.m2_to_gdp.one_year_earlier_pct}% a year earlier` : ""}.${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct != null && fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct != null ? ` M2 growth ${fedAbsorption.m2_to_gdp.m2_growth_yoy_pct}% YoY vs. nominal GDP ${fedAbsorption.m2_to_gdp.nominal_gdp_growth_yoy_pct}%.` : ""} ${fedAbsorption.m2_to_gdp.caveat}`,
+        },
+        // Added 2026-10-03 (external review): the checks above grouped into
+        // transmission stages, with a per-stage tally under explicit rules.
+        stages: summarizeFiscalStages({
+          taylor: taylorRuleGap,
+          primary: primaryBalance,
+          interest: netInterestBurden,
+          spending: govtSpendingShare,
+          gold: goldRealYieldCorrelation,
+          debt: debtDynamics,
+          itp: inflationTermPremium,
+          auctions: auctionDemand,
+          fed: fedAbsorption,
+        }),
         interpretation:
-          "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way.",
+          "Report each check's own number and caveat -- do NOT average these into a single 'fiscal dominance score' or state a regime is confirmed/not confirmed. This is a structural, slow-moving classification (reassess roughly quarterly, matching 3 of the 4 series' own update cadence), not a daily flag, and none of these checks individually proves the regime either way. `stages` groups the checks as fiscal pressure -> market sensitivity -> financing & absorption -> policy constraint, with how many in each point toward stress under the stated rule. Use it as evidence for how far along that chain the US is; state which stage the evidence supports and what is missing for the next one -- never a single cross-stage score.",
       },
       // Added 2026-09-22 (external review): broader macro-regime context,
       // not specific to the fiscal-dominance question above -- kept as a

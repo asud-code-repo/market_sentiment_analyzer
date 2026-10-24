@@ -1,5 +1,5 @@
 import { supabase, getLatestDataPoint } from "./supabase.js";
-import { getValueOnOrBefore, subtractDays } from "./seriesDelta.js";
+import { subtractDays } from "./seriesDelta.js";
 
 // Fiscal Dominance Regime Checklist (added 2026-09-22, see
 // reference_docs/rules/crash-check-rules.md's section of the same name for
@@ -11,16 +11,116 @@ import { getValueOnOrBefore, subtractDays } from "./seriesDelta.js";
 // verdict. Each function here returns its own real numbers plus an honest
 // caveat; synthesis (if any) is the LLM narrative layer's job, informed by
 // these, same division of labor as crash-type diagnosis.
+//
+// 2026-10-02 revision (external review of the dashboard card): every check
+// now also returns a prior-period comparison, since the checklist's own
+// guidance is "watch the trend, not one reading" and a single latest value
+// gave no way to do that. Net interest and the primary balance moved to
+// OMB fiscal-year series (FYOINT/FYFR/FYGDP alongside FYFSD) -- the BEA
+// NIPA series used before (A091RC1Q027SBEA) is GROSS interest payments
+// (incl. imputed interest on federal pension liabilities), not net
+// interest, and pairing a latest-quarter annualized figure with the prior
+// full fiscal year's deficit mixed periods. The Taylor Rule gap now uses
+// core PCE (the Fed's own target measure) instead of headline CPI.
+
+interface Point {
+  date: string;
+  value: number;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Latest observation on or before a date, with its date (seriesDelta's
+ * getValueOnOrBefore returns the value only). */
+async function getPointOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<Point | null> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("observation_date, value")
+    .eq("series_id", seriesId)
+    .lte("observation_date", onOrBeforeDate)
+    .order("observation_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to read ${seriesId} on/before ${onOrBeforeDate}: ${error.message}`);
+  }
+  return data ? { date: data.observation_date as string, value: data.value as number } : null;
+}
+
+/** Most recent `count` observations, newest first. */
+async function getRecentPoints(seriesId: string, count: number): Promise<Point[]> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("observation_date, value")
+    .eq("series_id", seriesId)
+    .order("observation_date", { ascending: false })
+    .limit(count);
+  if (error) {
+    throw new Error(`Failed to read recent ${seriesId} history: ${error.message}`);
+  }
+  return (data ?? []).map((r) => ({ date: r.observation_date as string, value: r.value as number }));
+}
+
+/** Inner-joins several series on observation_date, newest first -- the
+ * quarterly/fiscal-year ratios below must divide same-period values, never
+ * one series' latest by another's. */
+function joinByDate(...series: Point[][]): { date: string; values: number[] }[] {
+  const maps = series.slice(1).map((s) => new Map(s.map((p) => [p.date, p.value])));
+  const joined: { date: string; values: number[] }[] = [];
+  for (const p of series[0]) {
+    const others = maps.map((m) => m.get(p.date));
+    if (others.some((v) => v === undefined)) continue;
+    joined.push({ date: p.date, values: [p.value, ...(others as number[])] });
+  }
+  return joined;
+}
+
+/** YoY % change of a monthly price index, as of its latest print on or
+ * before `asOf`. */
+async function inflationYoyAsOf(seriesId: string, asOf: string): Promise<number | null> {
+  const latest = await getPointOnOrBefore(seriesId, asOf);
+  if (!latest) return null;
+  const yearAgo = await getPointOnOrBefore(seriesId, subtractDays(latest.date, 365));
+  if (!yearAgo || yearAgo.value === 0) return null;
+  return ((latest.value - yearAgo.value) / yearAgo.value) * 100;
+}
 
 export interface TaylorRuleGapResult {
   actual_fed_funds_pct: number;
   taylor_implied_rate_pct: number;
   gap_pct: number;
+  inflation_measure: "core_pce" | "headline_cpi";
   inflation_yoy_pct: number;
   unemployment_gap_pct: number;
+  headline_cpi_yoy_pct: number | null;
+  headline_cpi_taylor_implied_rate_pct: number | null;
+  headline_cpi_gap_pct: number | null;
+  gap_one_year_ago_pct: number | null;
   as_of: string;
   assumptions: string;
 }
+
+interface TaylorPoint {
+  fedFunds: number;
+  unemploymentGap: number;
+  corePce: number | null;
+  cpi: number | null;
+}
+
+async function taylorInputsAsOf(asOf: string): Promise<TaylorPoint | null> {
+  const [dff, unrate, nrou, corePce, cpi] = await Promise.all([
+    getPointOnOrBefore("DFF", asOf),
+    getPointOnOrBefore("UNRATE", asOf),
+    getPointOnOrBefore("NROU", asOf),
+    inflationYoyAsOf("PCEPILFE", asOf),
+    inflationYoyAsOf("CPIAUCSL", asOf),
+  ]);
+  if (!dff || !unrate || !nrou) return null;
+  return { fedFunds: dff.value, unemploymentGap: unrate.value - nrou.value, corePce, cpi };
+}
+
+const taylorRate = (inflationYoy: number, unemploymentGap: number) => 1 + 1.5 * inflationYoy - unemploymentGap;
 
 /**
  * Original Taylor (1993) rule: i = r* + pi + 0.5(pi - pi*) + 0.5*(output gap).
@@ -30,47 +130,80 @@ export interface TaylorRuleGapResult {
  * (natural rate), since no free real-time potential-GDP series exists.
  * Algebraically: i = 1 + 1.5*pi - (UNRATE - NROU).
  *
+ * pi is core PCE YoY (PCEPILFE) -- the measure the Fed's 2% target is
+ * actually defined on. Headline CPI typically runs above core PCE, and
+ * every extra point of pi adds 1.5pts to the implied rate, so a CPI-based
+ * rule overstates how loose policy is; the CPI version is still returned
+ * alongside for comparison. Falls back to CPI (and says so via
+ * inflation_measure) only if PCEPILFE has no data yet.
+ *
  * A persistently negative gap (actual Fed funds below the Taylor-implied
  * rate) means policy is running looser than inflation/employment alone
  * would justify -- one candidate signal of a Fed constrained by the debt
  * burden, not proof of it (a genuinely dovish Fed for ordinary reasons
- * looks identical in this one number).
+ * looks identical in this one number). gap_one_year_ago_pct is the same
+ * calculation on the inputs as they stood 365 days earlier.
  */
 export async function computeTaylorRuleGap(): Promise<TaylorRuleGapResult | null> {
-  const [dff, unrate, nrou, cpiLatest] = await Promise.all([
-    getLatestDataPoint("DFF"),
-    getLatestDataPoint("UNRATE"),
-    getLatestDataPoint("NROU"),
-    getLatestDataPoint("CPIAUCSL"),
-  ]);
-  if (!dff || !unrate || !nrou || !cpiLatest) return null;
+  const dffLatest = await getLatestDataPoint("DFF");
+  if (!dffLatest) return null;
+  const asOf = dffLatest.observation_date;
+  const [now, yearAgo] = await Promise.all([taylorInputsAsOf(asOf), taylorInputsAsOf(subtractDays(asOf, 365))]);
+  if (!now) return null;
 
-  const cpiYearAgo = await getValueOnOrBefore("CPIAUCSL", subtractDays(cpiLatest.observation_date, 365));
-  if (cpiYearAgo === null || cpiYearAgo === 0) return null;
+  const measure = now.corePce !== null ? "core_pce" : "headline_cpi";
+  const inflation = now.corePce ?? now.cpi;
+  if (inflation === null) return null;
+  const implied = taylorRate(inflation, now.unemploymentGap);
+  const cpiImplied = now.cpi !== null ? taylorRate(now.cpi, now.unemploymentGap) : null;
 
-  const inflationYoy = ((cpiLatest.value - cpiYearAgo) / cpiYearAgo) * 100;
-  const unemploymentGap = unrate.value - nrou.value;
-  const taylorRate = 1 + 1.5 * inflationYoy - unemploymentGap;
-  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const yearAgoInflation = yearAgo ? (measure === "core_pce" ? yearAgo.corePce : yearAgo.cpi) : null;
+  const yearAgoGap =
+    yearAgo && yearAgoInflation !== null ? yearAgo.fedFunds - taylorRate(yearAgoInflation, yearAgo.unemploymentGap) : null;
 
   return {
-    actual_fed_funds_pct: round2(dff.value),
-    taylor_implied_rate_pct: round2(taylorRate),
-    gap_pct: round2(dff.value - taylorRate),
-    inflation_yoy_pct: round2(inflationYoy),
-    unemployment_gap_pct: round2(unemploymentGap),
-    as_of: dff.observation_date,
+    actual_fed_funds_pct: round2(now.fedFunds),
+    taylor_implied_rate_pct: round2(implied),
+    gap_pct: round2(now.fedFunds - implied),
+    inflation_measure: measure,
+    inflation_yoy_pct: round2(inflation),
+    unemployment_gap_pct: round2(now.unemploymentGap),
+    headline_cpi_yoy_pct: now.cpi !== null ? round2(now.cpi) : null,
+    headline_cpi_taylor_implied_rate_pct: cpiImplied !== null ? round2(cpiImplied) : null,
+    headline_cpi_gap_pct: cpiImplied !== null ? round2(now.fedFunds - cpiImplied) : null,
+    gap_one_year_ago_pct: yearAgoGap !== null ? round2(yearAgoGap) : null,
+    as_of: asOf,
     assumptions:
-      "Assumes a 2% neutral real rate and 2% inflation target (original Taylor 1993 constants, not fitted) and approximates the output-gap term via Okun's Law (coefficient 2) on UNRATE minus CBO's NROU. Negative gap_pct = actual policy looser than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself.",
+      `Inflation input is ${measure === "core_pce" ? "core PCE YoY (PCEPILFE), the Fed's own target measure" : "headline CPI YoY -- core PCE (PCEPILFE) has no data yet, so this reads looser than the core-PCE version will"}. Assumes a 2% neutral real rate and 2% inflation target (original Taylor 1993 constants, not fitted) and approximates the output-gap term via Okun's Law (coefficient 2) on UNRATE minus CBO's NROU. Negative gap_pct = actual policy looser than the formula prescribes -- one candidate fiscal-dominance signal, not proof by itself. headline_cpi_* fields show the same rule on headline CPI for comparison; it typically implies a higher rate (more negative gap).`,
   };
+}
+
+/** Joined OMB fiscal-year rows (FYFSD, FYOINT, FYFR, FYGDP), newest first.
+ * FYFSD/FYOINT/FYFR are $ millions, FYGDP is $ billions. */
+async function getFiscalYearRows(count: number) {
+  const [fyfsd, fyoint, fyfr, fygdp] = await Promise.all([
+    getRecentPoints("FYFSD", count),
+    getRecentPoints("FYOINT", count),
+    getRecentPoints("FYFR", count),
+    getRecentPoints("FYGDP", count),
+  ]);
+  return joinByDate(fyfsd, fyoint, fyfr, fygdp).map(({ date, values: [deficit, interest, receipts, gdp] }) => ({
+    fiscal_year: date.slice(0, 4),
+    total_balance_usd_billions: deficit / 1000,
+    net_interest_usd_billions: interest / 1000,
+    receipts_usd_billions: receipts / 1000,
+    gdp_usd_billions: gdp,
+  }));
 }
 
 export interface PrimaryBalanceResult {
   total_balance_usd_billions: number;
   net_interest_usd_billions: number;
   primary_balance_usd_billions: number;
-  fiscal_year_as_of: string;
-  net_interest_as_of: string;
+  primary_balance_pct_gdp: number;
+  fiscal_year: string;
+  prior_fiscal_year_primary_balance_usd_billions: number | null;
+  prior_fiscal_year_primary_balance_pct_gdp: number | null;
   caveat: string;
 }
 
@@ -82,66 +215,94 @@ export interface PrimaryBalanceResult {
  * textbook "active fiscal policy" signature in the Leeper fiscal/monetary
  * regime framework (the fiscal authority isn't adjusting the primary
  * balance to stabilize debt).
+ *
+ * Both legs are OMB fiscal-year actuals for the SAME fiscal year (FYFSD +
+ * FYOINT, joined on observation date) -- the CBO/OMB definition of the
+ * primary deficit. Also returned as % of fiscal-year GDP (FYGDP), the
+ * comparable-across-years form, with the prior fiscal year for trend.
  */
 export async function computePrimaryBalance(): Promise<PrimaryBalanceResult | null> {
-  const [fyfsd, netInterest] = await Promise.all([
-    getLatestDataPoint("FYFSD"),
-    getLatestDataPoint("A091RC1Q027SBEA"),
-  ]);
-  if (!fyfsd || !netInterest) return null;
-
-  const round1 = (n: number) => Math.round(n * 10) / 10;
-  const totalBalanceUsdBillions = fyfsd.value / 1000; // FYFSD is $ millions
-  const primaryBalance = totalBalanceUsdBillions + netInterest.value;
+  const rows = await getFiscalYearRows(3);
+  if (rows.length === 0) return null;
+  const primary = (r: (typeof rows)[number]) => r.total_balance_usd_billions + r.net_interest_usd_billions;
+  const pctGdp = (r: (typeof rows)[number]) => (primary(r) / r.gdp_usd_billions) * 100;
+  const [latest, prior] = rows;
 
   return {
-    total_balance_usd_billions: round1(totalBalanceUsdBillions),
-    net_interest_usd_billions: round1(netInterest.value),
-    primary_balance_usd_billions: round1(primaryBalance),
-    fiscal_year_as_of: fyfsd.observation_date,
-    net_interest_as_of: netInterest.observation_date,
+    total_balance_usd_billions: round1(latest.total_balance_usd_billions),
+    net_interest_usd_billions: round1(latest.net_interest_usd_billions),
+    primary_balance_usd_billions: round1(primary(latest)),
+    primary_balance_pct_gdp: round2(pctGdp(latest)),
+    fiscal_year: latest.fiscal_year,
+    prior_fiscal_year_primary_balance_usd_billions: prior ? round1(primary(prior)) : null,
+    prior_fiscal_year_primary_balance_pct_gdp: prior ? round2(pctGdp(prior)) : null,
     caveat:
-      "total_balance is OMB's actual annual fiscal-year cash-basis total (FYFSD); net_interest is BEA's NIPA accrual-basis quarterly annualized rate (A091RC1Q027SBEA) -- a different period and accounting convention, combined here as a structural approximation, not a precisely reconciled figure.",
+      "OMB fiscal-year actuals (FYFSD total balance + FYOINT net interest, same fiscal year), so this is annual and lags: the latest reading is the most recently completed fiscal year, not the current one.",
   };
 }
 
 export interface NetInterestBurdenResult {
+  fiscal_year: string;
   net_interest_usd_billions: number;
-  gdp_usd_billions: number;
   net_interest_pct_gdp: number;
-  revenue_usd_billions: number | null;
-  net_interest_pct_revenue: number | null;
-  as_of: string;
+  net_interest_pct_revenue: number;
+  prior_fiscal_year_pct_gdp: number | null;
+  prior_fiscal_year_pct_revenue: number | null;
+  five_years_earlier_fiscal_year: string | null;
+  five_years_earlier_pct_gdp: number | null;
+  five_years_earlier_pct_revenue: number | null;
+  nipa_gross_interest_pct_gdp: number | null;
+  nipa_gross_interest_pct_revenue: number | null;
+  nipa_as_of: string | null;
+  caveat: string;
 }
 
 /**
- * Two cuts of the same net-interest burden, not two separate checks --
- * added 2026-09-22 (external review) after verifying FGRECPT (BEA's
- * broader "Federal government current receipts" total: tax + social-
- * insurance + other) is the correct revenue denominator, not the narrower
- * W006RC1Q027SBEA ("current TAX receipts" only), which would understate
- * revenue by excluding social-insurance contributions and so overstate the
- * burden. pct_revenue is closer to the actual debt-sustainability question
- * ("can the government service this from its own income") than pct_gdp,
- * and is the more commonly-cited cut in practice. revenue fields are
- * nullable independent of the GDP fields -- a gap in FGRECPT shouldn't
- * null out the pct_gdp reading this check already had.
+ * Two cuts of the same net-interest burden, not two separate checks: % of
+ * GDP and % of total federal receipts. pct_revenue is closer to the actual
+ * debt-sustainability question ("can the government service this from its
+ * own income") and is the more commonly-cited cut in practice.
+ *
+ * Headline numbers are OMB fiscal-year NET interest (FYOINT) over FYGDP and
+ * FYFR -- the same basis CBO and Treasury report. Before 2026-10-02 this
+ * used BEA's A091RC1Q027SBEA, which is GROSS NIPA interest payments
+ * (includes imputed interest on federal employee pension liabilities and
+ * nets out none of the government's interest receipts), so it read
+ * materially higher than the commonly-cited net figure. That NIPA ratio is
+ * kept as nipa_gross_* -- it updates quarterly, so it's the timelier
+ * direction-of-travel read between annual OMB prints, but its LEVEL isn't
+ * comparable to the headline. Trend: prior fiscal year and five years
+ * earlier.
  */
 export async function computeNetInterestBurden(): Promise<NetInterestBurdenResult | null> {
-  const [netInterest, gdp, revenue] = await Promise.all([
-    getLatestDataPoint("A091RC1Q027SBEA"),
-    getLatestDataPoint("GDP"),
-    getLatestDataPoint("FGRECPT"),
+  const [rows, nipaInterest, nipaGdp, nipaReceipts] = await Promise.all([
+    getFiscalYearRows(6),
+    getRecentPoints("A091RC1Q027SBEA", 4),
+    getRecentPoints("GDP", 4),
+    getRecentPoints("FGRECPT", 4),
   ]);
-  if (!netInterest || !gdp || gdp.value === 0) return null;
+  if (rows.length === 0) return null;
+  const pctGdp = (r: (typeof rows)[number]) => round2((r.net_interest_usd_billions / r.gdp_usd_billions) * 100);
+  const pctRevenue = (r: (typeof rows)[number]) => round2((r.net_interest_usd_billions / r.receipts_usd_billions) * 100);
+  const [latest, prior] = rows;
+  const fiveBack = rows[5];
+  const [nipa] = joinByDate(nipaInterest, nipaGdp, nipaReceipts);
 
   return {
-    net_interest_usd_billions: Math.round(netInterest.value * 10) / 10,
-    gdp_usd_billions: Math.round(gdp.value * 10) / 10,
-    net_interest_pct_gdp: Math.round((netInterest.value / gdp.value) * 10000) / 100,
-    revenue_usd_billions: revenue ? Math.round(revenue.value * 10) / 10 : null,
-    net_interest_pct_revenue: revenue && revenue.value !== 0 ? Math.round((netInterest.value / revenue.value) * 10000) / 100 : null,
-    as_of: netInterest.observation_date,
+    fiscal_year: latest.fiscal_year,
+    net_interest_usd_billions: round1(latest.net_interest_usd_billions),
+    net_interest_pct_gdp: pctGdp(latest),
+    net_interest_pct_revenue: pctRevenue(latest),
+    prior_fiscal_year_pct_gdp: prior ? pctGdp(prior) : null,
+    prior_fiscal_year_pct_revenue: prior ? pctRevenue(prior) : null,
+    five_years_earlier_fiscal_year: fiveBack ? fiveBack.fiscal_year : null,
+    five_years_earlier_pct_gdp: fiveBack ? pctGdp(fiveBack) : null,
+    five_years_earlier_pct_revenue: fiveBack ? pctRevenue(fiveBack) : null,
+    nipa_gross_interest_pct_gdp: nipa ? round2((nipa.values[0] / nipa.values[1]) * 100) : null,
+    nipa_gross_interest_pct_revenue: nipa ? round2((nipa.values[0] / nipa.values[2]) * 100) : null,
+    nipa_as_of: nipa ? nipa.date : null,
+    caveat:
+      "Headline is OMB fiscal-year NET interest (FYOINT) / FYGDP and / FYFR -- annual, so it lags up to a year. nipa_gross_* is BEA's quarterly GROSS interest payments (A091RC1Q027SBEA, includes imputed pension interest) over GDP / FGRECPT: timelier, but reads structurally higher -- use it for direction between annual prints, not as a level.",
   };
 }
 
@@ -149,6 +310,8 @@ export interface GovtSpendingShareResult {
   govt_spending_usd_billions: number;
   gdp_usd_billions: number;
   govt_spending_pct_gdp: number;
+  one_year_earlier_pct_gdp: number | null;
+  five_years_earlier_pct_gdp: number | null;
   as_of: string;
   caveat: string;
 }
@@ -172,24 +335,35 @@ export interface GovtSpendingShareResult {
  * series IDs don't resolve), so it reads structurally lower than those
  * bands assume; rescaling them without real validation would manufacture a
  * precision this system doesn't have. Report the number and its own
- * multi-year trend instead, same discipline already applied to
- * federal_debt_pct_gdp ("level alone isn't a signal; watch the trend").
+ * multi-year trend instead (4 and 20 quarters earlier, same-quarter pairs).
  */
 export async function computeGovtSpendingShare(): Promise<GovtSpendingShareResult | null> {
-  const [govtSpending, gdp] = await Promise.all([
-    getLatestDataPoint("FGEXPND"),
-    getLatestDataPoint("GDP"),
-  ]);
-  if (!govtSpending || !gdp || gdp.value === 0) return null;
+  const [govtSpending, gdp] = await Promise.all([getRecentPoints("FGEXPND", 21), getRecentPoints("GDP", 21)]);
+  const rows = joinByDate(govtSpending, gdp).filter((r) => r.values[1] !== 0);
+  if (rows.length === 0) return null;
+  const pct = (r: (typeof rows)[number]) => round2((r.values[0] / r.values[1]) * 100);
+  const latest = rows[0];
+  const quartersBack = (n: number) => rows.find((r) => r.date === subtractQuarters(latest.date, n));
+  const oneYear = quartersBack(4);
+  const fiveYears = quartersBack(20);
 
   return {
-    govt_spending_usd_billions: Math.round(govtSpending.value * 10) / 10,
-    gdp_usd_billions: Math.round(gdp.value * 10) / 10,
-    govt_spending_pct_gdp: Math.round((govtSpending.value / gdp.value) * 10000) / 100,
-    as_of: govtSpending.observation_date,
+    govt_spending_usd_billions: round1(latest.values[0]),
+    gdp_usd_billions: round1(latest.values[1]),
+    govt_spending_pct_gdp: pct(latest),
+    one_year_earlier_pct_gdp: oneYear ? pct(oneYear) : null,
+    five_years_earlier_pct_gdp: fiveYears ? pct(fiveYears) : null,
+    as_of: latest.date,
     caveat:
       "FGEXPND is FEDERAL government spending only -- it excludes state/local spending, so it reads meaningfully lower than a 'general government, all levels' figure (the more commonly-cited version internationally, and the basis for any external threshold framework like <30%/30-40%/50%+ 'belt-tightening becomes difficult/near-impossible' bands). No clean free 'general government, all levels' series was found on FRED. Watch the multi-year trend and rate of change, not a single level -- no validated threshold band applies to this federal-only figure.",
   };
+}
+
+/** Quarter-start date n quarters before a quarter-start date (YYYY-MM-01). */
+function subtractQuarters(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - 3 * n);
+  return d.toISOString().slice(0, 10);
 }
 
 export interface GoldRealYieldCorrelationResult {
@@ -197,6 +371,7 @@ export interface GoldRealYieldCorrelationResult {
   window_calendar_days: number;
   observation_count: number;
   as_of: string;
+  prior_window_correlation: number | null;
   typical_historical_note: string;
 }
 
@@ -211,7 +386,7 @@ interface SeriesPoint {
 // (duplicated, not shared -- that one is keyed to a multi-series batch read,
 // this one to a single series over a shorter window, different enough
 // shapes that sharing would add an abstraction for two call sites).
-async function fetchSeriesHistorySince(seriesId: string, cutoff: string): Promise<SeriesPoint[]> {
+async function fetchSeriesHistorySince(seriesId: string, cutoff: string, end: string): Promise<SeriesPoint[]> {
   const pageSize = 1000;
   let offset = 0;
   const rows: SeriesPoint[] = [];
@@ -221,6 +396,7 @@ async function fetchSeriesHistorySince(seriesId: string, cutoff: string): Promis
       .select("observation_date, value")
       .eq("series_id", seriesId)
       .gte("observation_date", cutoff)
+      .lte("observation_date", end)
       .order("observation_date", { ascending: true })
       .range(offset, offset + pageSize - 1);
     if (error) {
@@ -294,11 +470,12 @@ async function computeRollingCorrelation(
   seriesBId: string,
   seriesBKind: ChangeKind,
   windowDays: number,
+  windowEnd: string = new Date().toISOString().slice(0, 10),
 ): Promise<RollingCorrelationResult | null> {
-  const cutoff = subtractDays(new Date().toISOString().slice(0, 10), windowDays);
+  const cutoff = subtractDays(windowEnd, windowDays);
   const [historyA, historyB] = await Promise.all([
-    fetchSeriesHistorySince(seriesAId, cutoff),
-    fetchSeriesHistorySince(seriesBId, cutoff),
+    fetchSeriesHistorySince(seriesAId, cutoff, windowEnd),
+    fetchSeriesHistorySince(seriesBId, cutoff, windowEnd),
   ]);
   if (historyA.length < 10 || historyB.length < 10) return null;
 
@@ -333,11 +510,21 @@ async function computeRollingCorrelation(
   };
 }
 
+/**
+ * prior_window_correlation is the same calculation over the immediately
+ * preceding, non-overlapping 180-day window -- the trend comparison (a
+ * drift toward zero matters more than any one window's level).
+ */
 export async function computeGoldRealYieldCorrelation(): Promise<GoldRealYieldCorrelationResult | null> {
-  const result = await computeRollingCorrelation("GLD", "pct", "DFII10", "level", CORRELATION_WINDOW_DAYS);
+  const today = new Date().toISOString().slice(0, 10);
+  const [result, prior] = await Promise.all([
+    computeRollingCorrelation("GLD", "pct", "DFII10", "level", CORRELATION_WINDOW_DAYS, today),
+    computeRollingCorrelation("GLD", "pct", "DFII10", "level", CORRELATION_WINDOW_DAYS, subtractDays(today, CORRELATION_WINDOW_DAYS)),
+  ]);
   if (!result) return null;
   return {
     ...result,
+    prior_window_correlation: prior ? prior.correlation : null,
     typical_historical_note:
       "Gold and real yields typically run modestly negative -- higher real yields raise the opportunity cost of holding a non-yielding asset. A correlation near zero or positive is the more distinctive fiscal-dominance/debasement-hedge signature: gold rising for reasons unrelated to (or despite) the usual real-yield relationship. Not backtested/calibrated -- a first cut, same tier as every other divergence-style read in this system.",
   };
@@ -367,4 +554,555 @@ export async function computeStockBondCorrelation(): Promise<StockBondCorrelatio
     typical_historical_note:
       "Stocks and bonds typically run negative -- equity selloffs usually drive flight-to-safety bond buying (the classic 60/40 diversification benefit). A correlation near zero or positive is the 2022-style regime-shift signature: both risk assets selling off together, historically seen when inflation/rate concerns dominate over growth concerns. Not backtested/calibrated -- a first cut, same tier as every other divergence-style read in this system.",
   };
+}
+
+/** Same-quarter YoY % growth from a newest-first quarterly series, n
+ * quarters back from the latest (n=0: latest vs. 4 quarters earlier). */
+function quarterlyYoy(points: Point[], quartersBack = 0): { date: string; pct: number } | null {
+  const byDate = new Map(points.map((p) => [p.date, p.value]));
+  const latest = points[0];
+  if (!latest) return null;
+  const end = subtractQuarters(latest.date, quartersBack);
+  const curr = byDate.get(end);
+  const prev = byDate.get(subtractQuarters(end, 4));
+  if (curr === undefined || prev === undefined || prev === 0) return null;
+  return { date: end, pct: ((curr - prev) / prev) * 100 };
+}
+
+/** Debt-stabilizing primary balance, % of GDP: d * (r - g) / (1 + g), with
+ * r and g as percents and d as debt % of GDP. Positive = surplus needed. */
+function stabilizingPrimaryBalance(debtPctGdp: number, rPct: number, gPct: number): number {
+  return (debtPctGdp * ((rPct - gPct) / 100)) / (1 + gPct / 100);
+}
+
+export interface DebtDynamicsResult {
+  average_debt_rate: {
+    avg_rate_marketable_pct: number;
+    as_of: string;
+    one_year_earlier_pct: number | null;
+    three_years_earlier_pct: number | null;
+    market_2y_pct: number | null;
+    market_5y_pct: number | null;
+    market_10y_pct: number | null;
+    rollover_gap_10y_pct: number | null;
+    caveat: string;
+  } | null;
+  r_minus_g: {
+    nominal_r_pct: number;
+    nominal_gdp_growth_yoy_pct: number;
+    nominal_r_minus_g_pct: number;
+    nominal_r_minus_g_one_year_earlier_pct: number | null;
+    real_10y_yield_pct: number | null;
+    real_potential_growth_yoy_pct: number | null;
+    real_gdp_growth_yoy_pct: number | null;
+    real_r_minus_potential_g_pct: number | null;
+    gdp_as_of: string;
+    caveat: string;
+  } | null;
+  debt_stabilizing_primary_balance: {
+    debt_held_by_public_pct_gdp: number;
+    debt_as_of: string;
+    stabilizing_primary_balance_pct_gdp: number;
+    stabilizing_at_plus_50bp_pct_gdp: number;
+    stabilizing_at_plus_100bp_pct_gdp: number;
+    actual_primary_balance_pct_gdp: number | null;
+    actual_primary_balance_fiscal_year: string | null;
+    gap_vs_stabilizing_pct_gdp: number | null;
+    caveat: string;
+  } | null;
+}
+
+/**
+ * Debt dynamics -- added 2026-10-02 (external review): the arithmetic that
+ * actually decides whether debt/GDP rises, which the level/flow checks
+ * above don't capture on their own. Debt/GDP is stable when the primary
+ * balance equals d*(r-g)/(1+g). Note r < g does NOT by itself shrink debt:
+ * a primary deficit bigger than that threshold still pushes debt/GDP up,
+ * and r > g does not mean debt rises "even with a surplus" -- only unless
+ * the surplus is big enough.
+ *
+ * r = Treasury's average rate on outstanding marketable debt (monthly,
+ * TREASURY_AVG_RATE_MARKETABLE) -- the rate the existing stock actually
+ * costs, not today's marginal yield. g = nominal GDP YoY (same quarter a
+ * year earlier). d = debt held by the public % of GDP (FYGFGDQ188S).
+ * Real version for context: 10yr TIPS yield minus CBO potential real
+ * growth (GDPPOT YoY), with actual real growth (GDPC1) alongside.
+ */
+export async function computeDebtDynamics(): Promise<DebtDynamicsResult> {
+  const [avgRates, gdp, gdpReal, gdpPot, debtPct, dgs2, dgs5, dgs10, dfii10, primary] = await Promise.all([
+    getRecentPoints("TREASURY_AVG_RATE_MARKETABLE", 40),
+    getRecentPoints("GDP", 12),
+    getRecentPoints("GDPC1", 8),
+    getRecentPoints("GDPPOT", 8),
+    getRecentPoints("FYGFGDQ188S", 1),
+    getLatestDataPoint("DGS2"),
+    getLatestDataPoint("DGS5"),
+    getLatestDataPoint("DGS10"),
+    getLatestDataPoint("DFII10"),
+    computePrimaryBalance(),
+  ]);
+
+  const avgNow = avgRates[0];
+  // Monthly series: "a year earlier" = the latest row on or before the
+  // same date 12 months back, found in the already-fetched window.
+  const avgAsOf = (monthsBack: number): number | null => {
+    if (!avgNow) return null;
+    const d = new Date(`${avgNow.date}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - monthsBack);
+    const target = d.toISOString().slice(0, 10);
+    return avgRates.find((p) => p.date <= target)?.value ?? null;
+  };
+
+  const average_debt_rate = avgNow
+    ? {
+        avg_rate_marketable_pct: round2(avgNow.value),
+        as_of: avgNow.date,
+        one_year_earlier_pct: avgAsOf(12) !== null ? round2(avgAsOf(12)!) : null,
+        three_years_earlier_pct: avgAsOf(36) !== null ? round2(avgAsOf(36)!) : null,
+        market_2y_pct: dgs2 ? round2(dgs2.value) : null,
+        market_5y_pct: dgs5 ? round2(dgs5.value) : null,
+        market_10y_pct: dgs10 ? round2(dgs10.value) : null,
+        rollover_gap_10y_pct: dgs10 ? round2(dgs10.value - avgNow.value) : null,
+        caveat:
+          "Treasury's average rate on total marketable debt (bills, notes, bonds -- EXCLUDES TIPS and floating-rate notes). It moves slowly: a positive rollover gap (market yields above the average) means every refinancing raises the debt's cost, so the average keeps drifting up for years even if market yields stop rising.",
+      }
+    : null;
+
+  const gNow = quarterlyYoy(gdp, 0);
+  const gYearAgo = quarterlyYoy(gdp, 4);
+  const realPot = quarterlyYoy(gdpPot, 0);
+  const realGdp = quarterlyYoy(gdpReal, 0);
+  const rYearAgo = avgAsOf(12);
+  const r_minus_g =
+    avgNow && gNow
+      ? {
+          nominal_r_pct: round2(avgNow.value),
+          nominal_gdp_growth_yoy_pct: round2(gNow.pct),
+          nominal_r_minus_g_pct: round2(avgNow.value - gNow.pct),
+          nominal_r_minus_g_one_year_earlier_pct: rYearAgo !== null && gYearAgo ? round2(rYearAgo - gYearAgo.pct) : null,
+          real_10y_yield_pct: dfii10 ? round2(dfii10.value) : null,
+          real_potential_growth_yoy_pct: realPot ? round2(realPot.pct) : null,
+          real_gdp_growth_yoy_pct: realGdp ? round2(realGdp.pct) : null,
+          real_r_minus_potential_g_pct: dfii10 && realPot ? round2(dfii10.value - realPot.pct) : null,
+          gdp_as_of: gNow.date,
+          caveat:
+            "Nominal r = average rate on marketable debt; g = nominal GDP growth over the latest four quarters, which swings with the cycle and inflation -- read the direction over several quarters. Negative r - g lets the government run a primary deficit up to d*(g-r)/(1+g) without debt/GDP rising; it does not make debt/GDP fall on its own. Real version: 10yr TIPS yield vs. CBO potential real growth -- a marginal-cost read, not what the existing stock costs.",
+        }
+      : null;
+
+  const d = debtPct[0];
+  const debt_stabilizing_primary_balance =
+    avgNow && gNow && d
+      ? (() => {
+          const stabilizing = stabilizingPrimaryBalance(d.value, avgNow.value, gNow.pct);
+          const actual = primary ? primary.primary_balance_pct_gdp : null;
+          return {
+            debt_held_by_public_pct_gdp: round1(d.value),
+            debt_as_of: d.date,
+            stabilizing_primary_balance_pct_gdp: round2(stabilizing),
+            stabilizing_at_plus_50bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 0.5, gNow.pct)),
+            stabilizing_at_plus_100bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 1, gNow.pct)),
+            actual_primary_balance_pct_gdp: actual,
+            actual_primary_balance_fiscal_year: primary ? primary.fiscal_year : null,
+            gap_vs_stabilizing_pct_gdp: actual !== null ? round2(actual - stabilizing) : null,
+            caveat:
+              "Primary balance (% of GDP, + = surplus) that would hold debt-held-by-the-public/GDP flat at today's r and g: d*(r-g)/(1+g). Negative gap = the actual primary balance is short of that, so debt/GDP is rising. The +50/+100bp rows raise the AVERAGE rate on the debt, which takes years of rollover to happen, not a move in market yields. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g; d includes Treasuries held by the Fed, whose interest is largely remitted back to Treasury.",
+          };
+        })()
+      : null;
+
+  return { average_debt_rate, r_minus_g, debt_stabilizing_primary_balance };
+}
+
+export interface InflationTermPremiumResult {
+  forward_5y5y_inflation_pct: number;
+  term_premium_10y_pct: number;
+  change_3m_forward_5y5y_pts: number | null;
+  change_3m_term_premium_pts: number | null;
+  prior_3m_change_forward_5y5y_pts: number | null;
+  prior_3m_change_term_premium_pts: number | null;
+  both_rising: boolean | null;
+  as_of: string;
+  caveat: string;
+}
+
+const CO_MOVEMENT_THRESHOLD_PTS = 0.1;
+
+/**
+ * Long-end inflation expectations (5y5y forward breakeven, T5YIFR) and the
+ * 10yr term premium (Kim-Wright, THREEFYTP10) moving UP TOGETHER is the
+ * market-pricing fingerprint of fiscal risk: investors demanding both more
+ * inflation compensation and more duration-risk compensation. Either alone
+ * has ordinary explanations. Compares 3-month (91-day) changes, with the
+ * preceding 3 months for trend. The 10bp "both rising" threshold is a
+ * judgment call, not calibrated.
+ */
+export async function computeInflationTermPremium(): Promise<InflationTermPremiumResult | null> {
+  const [fwd, tp] = await Promise.all([getLatestDataPoint("T5YIFR"), getLatestDataPoint("THREEFYTP10")]);
+  if (!fwd || !tp) return null;
+  const asOf = fwd.observation_date < tp.observation_date ? fwd.observation_date : tp.observation_date;
+  const [fwd3m, tp3m, fwd6m, tp6m, fwdNow, tpNow] = await Promise.all([
+    getPointOnOrBefore("T5YIFR", subtractDays(asOf, 91)),
+    getPointOnOrBefore("THREEFYTP10", subtractDays(asOf, 91)),
+    getPointOnOrBefore("T5YIFR", subtractDays(asOf, 182)),
+    getPointOnOrBefore("THREEFYTP10", subtractDays(asOf, 182)),
+    getPointOnOrBefore("T5YIFR", asOf),
+    getPointOnOrBefore("THREEFYTP10", asOf),
+  ]);
+  if (!fwdNow || !tpNow) return null;
+  const chg = (a: Point | null, b: Point | null) => (a && b ? round2(a.value - b.value) : null);
+  const fwdChg = chg(fwdNow, fwd3m);
+  const tpChg = chg(tpNow, tp3m);
+
+  return {
+    forward_5y5y_inflation_pct: round2(fwdNow.value),
+    term_premium_10y_pct: round2(tpNow.value),
+    change_3m_forward_5y5y_pts: fwdChg,
+    change_3m_term_premium_pts: tpChg,
+    prior_3m_change_forward_5y5y_pts: chg(fwd3m, fwd6m),
+    prior_3m_change_term_premium_pts: chg(tp3m, tp6m),
+    both_rising: fwdChg !== null && tpChg !== null ? fwdChg >= CO_MOVEMENT_THRESHOLD_PTS && tpChg >= CO_MOVEMENT_THRESHOLD_PTS : null,
+    as_of: asOf,
+    caveat:
+      "both_rising = each up at least 10bp over 3 months (an uncalibrated judgment threshold). 5y5y forward strips out the next five years, so it reads long-run inflation credibility rather than near-term prints. Term premium is the Kim-Wright model estimate (not the NY Fed's ACM). Either moving alone has ordinary explanations; the joint move is the fiscal-risk fingerprint.",
+  };
+}
+
+const AUCTION_TENORS = ["2Y", "5Y", "10Y", "30Y"] as const;
+const AUCTION_LOOKBACK = 6;
+
+export interface AuctionTenorResult {
+  tenor: (typeof AUCTION_TENORS)[number];
+  auction_date: string;
+  bid_to_cover: number;
+  dealer_pct: number | null;
+  indirect_pct: number | null;
+  prior_avg_bid_to_cover: number | null;
+  prior_avg_dealer_pct: number | null;
+  prior_avg_indirect_pct: number | null;
+  weaker_than_recent: boolean | null;
+}
+
+export interface AuctionDemandResult {
+  tenors: AuctionTenorResult[];
+  avg_dealer_pct_latest: number | null;
+  avg_dealer_pct_prior: number | null;
+  weaker_than_recent_count: number;
+  caveat: string;
+}
+
+/**
+ * Treasury auction demand -- added 2026-10-02 (external review, round 2).
+ * Latest original-issue 2y/5y/10y/30y nominal coupon auction (see
+ * ingestion's treasury.ts) vs. the average of that tenor's previous
+ * AUCTION_LOOKBACK auctions. weaker_than_recent = higher dealer take-down
+ * AND lower bid-to-cover than that average -- the two together, not either
+ * alone, and no fixed threshold (none is calibrated). Single auctions are
+ * noisy; persistence across tenors and months is the signal.
+ */
+export async function computeAuctionDemand(): Promise<AuctionDemandResult | null> {
+  const n = AUCTION_LOOKBACK + 1;
+  const perTenor = await Promise.all(
+    AUCTION_TENORS.map(async (tenor) => {
+      const [btc, dealer, indirect] = await Promise.all([
+        getRecentPoints(`AUCTION_${tenor}_BID_TO_COVER`, n),
+        getRecentPoints(`AUCTION_${tenor}_DEALER_PCT`, n),
+        getRecentPoints(`AUCTION_${tenor}_INDIRECT_PCT`, n),
+      ]);
+      if (btc.length === 0) return null;
+      const valueOn = (pts: Point[], date: string) => pts.find((p) => p.date === date)?.value ?? null;
+      const priorAvg = (pts: Point[]) => {
+        const prior = pts.filter((p) => p.date < btc[0].date).slice(0, AUCTION_LOOKBACK);
+        return prior.length > 0 ? prior.reduce((a, p) => a + p.value, 0) / prior.length : null;
+      };
+      const latestDealer = valueOn(dealer, btc[0].date);
+      const avgBtc = priorAvg(btc);
+      const avgDealer = priorAvg(dealer);
+      const result: AuctionTenorResult = {
+        tenor,
+        auction_date: btc[0].date,
+        bid_to_cover: round2(btc[0].value),
+        dealer_pct: latestDealer !== null ? round1(latestDealer) : null,
+        indirect_pct: valueOn(indirect, btc[0].date) !== null ? round1(valueOn(indirect, btc[0].date)!) : null,
+        prior_avg_bid_to_cover: avgBtc !== null ? round2(avgBtc) : null,
+        prior_avg_dealer_pct: avgDealer !== null ? round1(avgDealer) : null,
+        prior_avg_indirect_pct: priorAvg(indirect) !== null ? round1(priorAvg(indirect)!) : null,
+        weaker_than_recent: latestDealer !== null && avgBtc !== null && avgDealer !== null ? latestDealer > avgDealer && btc[0].value < avgBtc : null,
+      };
+      return result;
+    }),
+  );
+  const tenors = perTenor.filter((t): t is AuctionTenorResult => t !== null);
+  if (tenors.length === 0) return null;
+  const mean = (xs: number[]) => (xs.length > 0 ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+
+  return {
+    tenors,
+    avg_dealer_pct_latest: mean(tenors.flatMap((t) => (t.dealer_pct !== null ? [t.dealer_pct] : []))),
+    avg_dealer_pct_prior: mean(tenors.flatMap((t) => (t.prior_avg_dealer_pct !== null ? [t.prior_avg_dealer_pct] : []))),
+    weaker_than_recent_count: tenors.filter((t) => t.weaker_than_recent).length,
+    caveat:
+      `Original-issue nominal coupon auctions only (no reopenings, TIPS or FRNs); dealer and indirect shares are % of competitive accepted. Indirect bidders are the usual foreign-demand proxy but also include domestic funds bidding through dealers. Compared with each tenor's previous ${AUCTION_LOOKBACK} auctions. Tails (yield vs. when-issued) need paid data and aren't shown. Single auctions are noisy -- look for weakness repeating across tenors and months.`,
+  };
+}
+
+export interface FedAbsorptionResult {
+  fed_share_of_marketable_debt: {
+    fed_treasury_holdings_usd_billions: number;
+    marketable_debt_usd_billions: number;
+    fed_share_pct: number;
+    one_year_earlier_pct: number | null;
+    three_years_earlier_pct: number | null;
+    holdings_change_13w_usd_billions_per_month: number | null;
+    prior_13w_usd_billions_per_month: number | null;
+    as_of: string;
+    caveat: string;
+  } | null;
+  m2_to_gdp: {
+    m2_pct_gdp: number;
+    one_year_earlier_pct: number | null;
+    m2_growth_yoy_pct: number | null;
+    nominal_gdp_growth_yoy_pct: number | null;
+    as_of: string;
+    caveat: string;
+  } | null;
+}
+
+/** Average of a monthly series over the three months of a quarter
+ * starting at quarterStart (YYYY-MM-01); null unless all three exist. */
+function quarterAverage(monthly: Point[], quarterStart: string): number | null {
+  const byDate = new Map(monthly.map((p) => [p.date, p.value]));
+  const vals = [0, 1, 2].map((i) => {
+    const d = new Date(`${quarterStart}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + i);
+    return byDate.get(d.toISOString().slice(0, 10));
+  });
+  return vals.every((v) => v !== undefined) ? (vals as number[]).reduce((a, b) => a + b, 0) / 3 : null;
+}
+
+/**
+ * Monetary absorption -- added 2026-10-02 (external review, round 2):
+ * whether the Fed is taking more of the fiscal burden onto its balance
+ * sheet. Fed share = TREAST (weekly) / Treasury's total marketable debt
+ * (MSPD, month-end), on matching dates. QT pace = change in TREAST over 13
+ * weeks, per month (negative = runoff, positive = net buying). M2/GDP =
+ * M2 averaged over GDP's latest quarter / that quarter's GDP (SAAR).
+ */
+export async function computeFedAbsorption(): Promise<FedAbsorptionResult> {
+  const [mspdLatest, treastLatest, m2, gdp] = await Promise.all([
+    getLatestDataPoint("MSPD_TOTAL_MARKETABLE"),
+    getLatestDataPoint("TREAST"),
+    getRecentPoints("M2SL", 30),
+    getRecentPoints("GDP", 9),
+  ]);
+
+  let fed_share_of_marketable_debt: FedAbsorptionResult["fed_share_of_marketable_debt"] = null;
+  if (mspdLatest && treastLatest) {
+    const shareAsOf = async (date: string): Promise<{ share: number; fed: number; debt: number } | null> => {
+      const [debt, fed] = await Promise.all([getPointOnOrBefore("MSPD_TOTAL_MARKETABLE", date), getPointOnOrBefore("TREAST", date)]);
+      if (!debt || !fed || debt.value === 0) return null;
+      return { share: (fed.value / debt.value) * 100, fed: fed.value, debt: debt.value };
+    };
+    const asOf = mspdLatest.observation_date;
+    const [now, y1, y3, tq, tq2] = await Promise.all([
+      shareAsOf(asOf),
+      shareAsOf(subtractDays(asOf, 365)),
+      shareAsOf(subtractDays(asOf, 365 * 3)),
+      getPointOnOrBefore("TREAST", subtractDays(treastLatest.observation_date, 91)),
+      getPointOnOrBefore("TREAST", subtractDays(treastLatest.observation_date, 182)),
+    ]);
+    // TREAST is $ millions; per-month pace in $ billions over ~3 months.
+    const pace = (a: number, b: number) => round1((a - b) / 1000 / 3);
+    if (now) {
+      fed_share_of_marketable_debt = {
+        fed_treasury_holdings_usd_billions: round1(now.fed / 1000),
+        marketable_debt_usd_billions: round1(now.debt / 1000),
+        fed_share_pct: round2(now.share),
+        one_year_earlier_pct: y1 ? round2(y1.share) : null,
+        three_years_earlier_pct: y3 ? round2(y3.share) : null,
+        holdings_change_13w_usd_billions_per_month: tq ? pace(treastLatest.value, tq.value) : null,
+        prior_13w_usd_billions_per_month: tq && tq2 ? pace(tq.value, tq2.value) : null,
+        as_of: asOf,
+        caveat:
+          "Fed Treasury holdings (H.4.1 TREAST, weekly) / total marketable Treasury debt (MSPD, month-end), on matching dates. A rising share -- or the 13-week pace turning from runoff to net buying -- means the Fed is absorbing more of the supply. Purchases can have non-fiscal motives (market functioning, reserve management), so read the share alongside the auction and r - g checks, not alone.",
+      };
+    }
+  }
+
+  let m2_to_gdp: FedAbsorptionResult["m2_to_gdp"] = null;
+  const gdpNow = gdp[0];
+  if (gdpNow && gdpNow.value !== 0) {
+    const m2Q = quarterAverage(m2, gdpNow.date);
+    const gdpYearAgo = gdp.find((p) => p.date === subtractQuarters(gdpNow.date, 4));
+    const m2QYearAgo = quarterAverage(m2, subtractQuarters(gdpNow.date, 4));
+    const m2Latest = m2[0];
+    const m2YearAgo = m2Latest ? m2.find((p) => p.date === subtractQuarters(m2Latest.date, 4)) : undefined;
+    if (m2Q !== null) {
+      m2_to_gdp = {
+        m2_pct_gdp: round1((m2Q / gdpNow.value) * 100),
+        one_year_earlier_pct: m2QYearAgo !== null && gdpYearAgo ? round1((m2QYearAgo / gdpYearAgo.value) * 100) : null,
+        m2_growth_yoy_pct: m2Latest && m2YearAgo ? round2(((m2Latest.value - m2YearAgo.value) / m2YearAgo.value) * 100) : null,
+        nominal_gdp_growth_yoy_pct: gdpYearAgo ? round2(((gdpNow.value - gdpYearAgo.value) / gdpYearAgo.value) * 100) : null,
+        as_of: gdpNow.date,
+        caveat:
+          "M2 averaged over GDP's latest quarter / that quarter's nominal GDP (SAAR). M2 growing faster than nominal GDP for a sustained stretch is the monetary-financing pattern; the ratio also moves with rate-driven shifts between deposits and money funds/T-bills, so it's context, not a verdict on its own.",
+      };
+    }
+  }
+
+  return { fed_share_of_marketable_debt, m2_to_gdp };
+}
+
+export interface RatesDecompositionResult {
+  window_days: number;
+  as_of: string;
+  change_2y_pts: number;
+  change_10y_pts: number;
+  change_2s10s_pts: number;
+  curve_move: string;
+  change_real_10y_pts: number | null;
+  change_breakeven_10y_pts: number | null;
+  change_term_premium_10y_pts: number | null;
+  change_expected_path_10y_pts: number | null;
+  caveat: string;
+}
+
+const RATES_WINDOW_DAYS = 91;
+const PARALLEL_THRESHOLD_PTS = 0.05;
+
+/** Bull/bear steepening/flattening label from 2y and 10y changes (pts). */
+export function classifyCurveMove(d2y: number, d10y: number): string {
+  const dSpread = d10y - d2y;
+  const level = (d2y + d10y) / 2;
+  const direction = level < 0 ? "bull" : "bear";
+  if (Math.abs(dSpread) < PARALLEL_THRESHOLD_PTS) return `roughly parallel ${level < 0 ? "fall" : "rise"}`;
+  return `${direction} ${dSpread > 0 ? "steepening" : "flattening"}`;
+}
+
+/**
+ * What moved the curve -- added 2026-10-03 (external review): a 2s10s
+ * steepening can mean fading recession fears, Fed easing, rising inflation
+ * expectations or a rising term premium, which are very different regimes.
+ * Over the last RATES_WINDOW_DAYS:
+ *   - curve move: bull/bear steepening/flattening from the 2y and 10y
+ *     changes ("bull" = yields fell on average; under 5bp of spread change
+ *     reads as a parallel shift)
+ *   - 10y split two ways, each approximate:
+ *       real yield (DFII10) + breakeven inflation (T10YIE)
+ *       expected short-rate path (10y minus term premium) + term premium
+ *         (Kim-Wright THREEFYTP10)
+ * The 2y change is the cleanest proxy for policy expectations.
+ */
+export async function computeRatesDecomposition(): Promise<RatesDecompositionResult | null> {
+  const latest = await getLatestDataPoint("DGS10");
+  if (!latest) return null;
+  const asOf = latest.observation_date;
+  const start = subtractDays(asOf, RATES_WINDOW_DAYS);
+  const ids = ["DGS2", "DGS10", "DFII10", "T10YIE", "THREEFYTP10"] as const;
+  const pairs = await Promise.all(ids.map((id) => Promise.all([getPointOnOrBefore(id, asOf), getPointOnOrBefore(id, start)])));
+  const change = (i: number) => {
+    const [now, then] = pairs[i];
+    return now && then ? now.value - then.value : null;
+  };
+  const [d2y, d10y, dReal, dBe, dTp] = ids.map((_, i) => change(i));
+  if (d2y === null || d10y === null) return null;
+
+  return {
+    window_days: RATES_WINDOW_DAYS,
+    as_of: asOf,
+    change_2y_pts: round2(d2y),
+    change_10y_pts: round2(d10y),
+    change_2s10s_pts: round2(d10y - d2y),
+    curve_move: classifyCurveMove(d2y, d10y),
+    change_real_10y_pts: dReal !== null ? round2(dReal) : null,
+    change_breakeven_10y_pts: dBe !== null ? round2(dBe) : null,
+    change_term_premium_10y_pts: dTp !== null ? round2(dTp) : null,
+    change_expected_path_10y_pts: dTp !== null ? round2(d10y - dTp) : null,
+    caveat:
+      "Approximate decompositions: real + breakeven won't sum exactly to the nominal 10y change (TIPS liquidity and indexation lag), and the Kim-Wright term premium is a model estimate fitted to a zero-coupon curve, so expected path = 10y change minus term premium change absorbs model error. The 2y change is the cleanest market read on policy expectations. A bear steepening led by term premium is the fiscal-risk pattern; one led by breakevens is an inflation story; a bull steepening led by the 2y is an easing story.",
+  };
+}
+
+export interface StageCheck {
+  check: string;
+  points_to_stress: boolean | null;
+  rule: string;
+}
+
+export interface FiscalStage {
+  stage: string;
+  question: string;
+  checks: StageCheck[];
+  pointing_to_stress: number;
+  with_data: number;
+}
+
+/**
+ * Groups the checklist into the transmission stages from the 2026-10-03
+ * external review -- fiscal pressure -> market sensitivity -> financing &
+ * absorption -> policy constraint -- and tallies, per stage, how many
+ * checks currently point toward stress under the explicit rule beside
+ * each. Deliberately a per-stage tally, never a cross-stage score or a
+ * "which stage are we in" verdict: the rules are direction calls, not
+ * calibrated thresholds, and the stage judgment belongs in the narrative
+ * with these as evidence. Mirrored in dashboard_site's checklist render.
+ */
+export function summarizeFiscalStages(r: {
+  taylor: TaylorRuleGapResult | null;
+  primary: PrimaryBalanceResult | null;
+  interest: NetInterestBurdenResult | null;
+  spending: GovtSpendingShareResult | null;
+  gold: GoldRealYieldCorrelationResult | null;
+  debt: DebtDynamicsResult;
+  itp: InflationTermPremiumResult | null;
+  auctions: AuctionDemandResult | null;
+  fed: FedAbsorptionResult;
+}): FiscalStage[] {
+  const gt = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null ? a > b : null);
+  const rg = r.debt.r_minus_g;
+  const stab = r.debt.debt_stabilizing_primary_balance;
+  const avg = r.debt.average_debt_rate;
+  const fedShare = r.fed.fed_share_of_marketable_debt;
+  const m2 = r.fed.m2_to_gdp;
+  const stages: Omit<FiscalStage, "pointing_to_stress" | "with_data">[] = [
+    {
+      stage: "Fiscal pressure",
+      question: "Is the fiscal position getting harder to sustain?",
+      checks: [
+        { check: "Primary balance", points_to_stress: r.primary ? r.primary.primary_balance_usd_billions < 0 : null, rule: "primary deficit" },
+        { check: "Net interest", points_to_stress: r.interest ? gt(r.interest.net_interest_pct_revenue, r.interest.prior_fiscal_year_pct_revenue) : null, rule: "% of receipts up vs. prior fiscal year" },
+        { check: "Govt spending share", points_to_stress: r.spending ? gt(r.spending.govt_spending_pct_gdp, r.spending.one_year_earlier_pct_gdp) : null, rule: "% of GDP up vs. a year earlier" },
+        { check: "Avg rate on debt", points_to_stress: avg && avg.rollover_gap_10y_pct != null ? avg.rollover_gap_10y_pct > 0 : null, rule: "10y market yield above the average (rollover raises cost)" },
+        { check: "r − g", points_to_stress: rg ? gt(rg.nominal_r_minus_g_pct, rg.nominal_r_minus_g_one_year_earlier_pct) : null, rule: "up vs. a year earlier" },
+        { check: "Debt-stabilizing balance", points_to_stress: stab && stab.gap_vs_stabilizing_pct_gdp != null ? stab.gap_vs_stabilizing_pct_gdp < 0 : null, rule: "actual primary balance short of stabilizing" },
+      ],
+    },
+    {
+      stage: "Market sensitivity",
+      question: "Is fiscal deterioration showing up in market pricing?",
+      checks: [
+        { check: "5y5y inflation + term premium", points_to_stress: r.itp ? r.itp.both_rising : null, rule: "both up ≥10bp over 3 months" },
+        { check: "Gold ↔ real yield", points_to_stress: r.gold ? r.gold.correlation >= -0.1 : null, rule: "correlation near zero or positive" },
+        { check: "Treasury auction demand", points_to_stress: r.auctions ? r.auctions.weaker_than_recent_count >= 2 : null, rule: "2+ tenors weaker than recent on both dealer take-down and bid-to-cover" },
+      ],
+    },
+    {
+      stage: "Financing & absorption",
+      question: "Is the central bank absorbing more of the fiscal burden?",
+      checks: [
+        { check: "Fed share of marketable Treasuries", points_to_stress: fedShare ? (gt(fedShare.fed_share_pct, fedShare.one_year_earlier_pct) ?? false) || (fedShare.holdings_change_13w_usd_billions_per_month ?? 0) > 0 : null, rule: "share up vs. a year earlier, or holdings growing over 13 weeks" },
+        { check: "M2 / GDP", points_to_stress: m2 ? gt(m2.m2_pct_gdp, m2.one_year_earlier_pct) : null, rule: "up vs. a year earlier" },
+      ],
+    },
+    {
+      stage: "Policy constraint",
+      question: "Is monetary policy looser than inflation and employment alone justify?",
+      checks: [{ check: "Taylor Rule gap (core PCE)", points_to_stress: r.taylor ? r.taylor.gap_pct < 0 : null, rule: "policy rate below the rule" }],
+    },
+  ];
+  return stages.map((s) => ({
+    ...s,
+    pointing_to_stress: s.checks.filter((c) => c.points_to_stress === true).length,
+    with_data: s.checks.filter((c) => c.points_to_stress !== null).length,
+  }));
 }

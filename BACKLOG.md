@@ -38,6 +38,53 @@ full history of what was built and how lives in project memory, not here.
   on) — no equivalent of `wave_deployment_state.yaml`/`record_wave_deployment`
   exists for this yet.
 
+- **Macro & Context restructure (2026-10-03, external review).** Fiscal
+  Dominance checklist grouped into transmission stages (fiscal pressure →
+  market sensitivity → financing & absorption → policy constraint) with a
+  per-stage stress tally under explicit rules, never a cross-stage score.
+  New rates decomposition under the Yield Curve card (curve-move label;
+  10y split into real vs. breakeven and path vs. term premium). Contextual
+  Indicators split into six groups by what they measure and how fast they
+  move. No new data. **Next candidate:** a Macro Regime Synthesis (growth /
+  inflation / liquidity / rates / fiscal / credit / positioning / stress
+  labels chosen by the LLM each run) — needs a `write_snapshot` schema
+  change, a migration and a `project-instructions.md` step.
+
+- **Fiscal Dominance Regime Checklist: auctions + Fed absorption
+  (2026-10-02, round 2).** Treasury auction demand (bid-to-cover, dealer
+  take-down, indirect share of original-issue 2y/5y/10y/30y coupons vs.
+  each tenor's prior 6; tails not computed, they need paid when-issued
+  data), Fed share of marketable Treasuries (`TREAST` ÷ MSPD total
+  marketable) with 13-week QT pace, and M2/GDP. New Treasury Fiscal Data
+  sources `auctions_query` and `mspd_table_1` (best-effort; they fail with
+  the field names actually returned if the API shape differs) and FRED
+  `TREAST`, `M2SL` — **needs a backfill run**.
+
+- **Fiscal Dominance Regime Checklist: debt dynamics (2026-10-02).** Four
+  new checks from an external review: average rate on marketable debt vs.
+  2y/5y/10y (new Treasury Fiscal Data source, `treasury.ts`, best-effort),
+  nominal and real r − g, the debt-stabilizing primary balance
+  d·(r−g)/(1+g) vs. the actual one with +50/+100bp scenarios, and 5y5y
+  forward inflation + term premium rising together. New FRED series
+  `GDPC1`, `GDPPOT`, `FYGFGDQ188S`, `DGS5`, `T5YIFR` — **needs a backfill
+  run**.
+
+- **Fiscal Dominance Regime Checklist: measurement fixes + trends
+  (2026-10-02).** External review of the card. (1) Net interest moved to
+  OMB fiscal-year NET interest (`FYOINT` ÷ `FYGDP` / ÷ `FYFR`) — the old
+  `A091RC1Q027SBEA` is BEA *gross* interest payments (incl. imputed pension
+  interest), reading ~3.9%/21% vs. ~3.2%/18.5% net; kept as a secondary
+  quarterly `nipa_gross_*` direction read. (2) Primary balance is now
+  `FYFSD` + `FYOINT` for the same fiscal year (was latest-quarter gross
+  interest + prior FY deficit, understating the primary deficit by
+  ~$300B). (3) Taylor Rule gap uses core PCE (`PCEPILFE`); the headline-CPI
+  version is returned alongside (it overstated looseness). (4) Every check
+  now shows a prior-period comparison. New FRED series `FYOINT`, `FYFR`,
+  `FYGDP`, `PCEPILFE` — **needs a backfill run** for the trend
+  comparisons; until then the Taylor gap falls back to CPI (labeled) and
+  the two fiscal-year cards appear after the first daily ingest without
+  trends.
+
 - **Fiscal Dominance Regime Checklist: 5th check added (2026-09-28), govt
   spending as % of GDP.** Prompted by an external research note ("Austerity
   Is a Sound Bite. Inflation Is the Plan.," Vasuki Research) arguing
