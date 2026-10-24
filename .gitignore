@@ -1,3 +1,7 @@
+# Claude Code local-only files (personal permissions, runtime session lock)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # Local-only, personal financial data — never commit.
 # See reference_docs/rules/crash-check-rules.md for the split-storage rationale.
 local_state/*
