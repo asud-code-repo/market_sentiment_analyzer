@@ -177,14 +177,15 @@ full history of what was built and how lives in project memory, not here.
   work will need regardless of when the shared-package refactor happens.
   Not started.
 
-- **Formal test suite.** Every change this project has made has been
-  verified with `tsc --noEmit` plus manual/throwaway scripts — real, but
-  not durable. Concrete scope already identified: threshold boundaries,
-  missing/stale series behavior, 2-day confirmation semantics, recovery
-  state transitions, wave-authorized-vs-observed-only states, cumulative
-  deployment logic, idempotent wave-execution recording, divergence-
-  direction logic, no-dollar-figure persistence guardrails. Buildable now,
-  doesn't need the hazard-model work first. Not started.
+- **Formal test suite — started 2026-10-24.** Vitest added to `rule_engine`
+  (`npm test`), with full coverage of `rules.ts`'s pure logic: band
+  threshold boundaries, wave authorization, the fast-panic/slow-bear wave
+  gates, and 2-day confirmation-window semantics (including the F07
+  same-date-revision regression). Still not covered, same reasons as
+  before (need DB/file I/O mocking, not pure functions): missing/stale
+  series behavior, cumulative deployment logic, idempotent wave-execution
+  recording, divergence-direction logic, no-dollar-figure persistence
+  guardrails — and `ingestion`/`mcp_server` have no Vitest setup yet.
 
 - **Allocation assumptions inside the crash-type layers — unexamined.**
   Surfaced 2026-08-17 via a refreshed investment-model review: the Stage 3

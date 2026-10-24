@@ -36,9 +36,11 @@ cd rule_engine && npm ci && npm run typecheck
 cd mcp_server && npm ci && npm run typecheck
 ```
 
-There is no test suite today (`tsc --noEmit` plus manual verification is
-the current practice — see `BACKLOG.md` for the known gap). Don't add a
-test runner, CI step, or linter as part of an unrelated change.
+`rule_engine` has a Vitest suite for its pure rule logic (`npm test`,
+covering `rules.ts`) — `ingestion` and `mcp_server` still rely on
+`tsc --noEmit` plus manual verification (see `BACKLOG.md` for the
+remaining gap). Not wired into GitHub Actions; run locally only. Don't
+add a CI step or linter as part of an unrelated change.
 
 All three packages require Node >=22 (`engines.node` in each
 `package.json`) — matches what `.github/workflows/*.yml` installs via
