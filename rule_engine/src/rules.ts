@@ -46,7 +46,12 @@ export function countReds(colors: Color[]): number {
   return colors.filter((c) => c === "RED").length;
 }
 
-/** Wave deployment is authorized when 3+ of the 6 indicators are RED. */
+/**
+ * Wave deployment is authorized when 3+ of the 6 indicators are RED.
+ * Mirrored in mcp_server/src/lib/supabase.ts's `waveAuthorized` calc
+ * (duplicated rather than shared, per this codebase's convention) — if you
+ * change this threshold, update that copy too.
+ */
 export function isWaveAuthorized(redCount: number): boolean {
   return redCount >= 3;
 }
