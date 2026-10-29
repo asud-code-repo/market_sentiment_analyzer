@@ -332,6 +332,19 @@
   .radar-legend .sw { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; }
   .radar-legend .sw.current { background: var(--neutral-blue); height: 3px; }
   .radar-legend .sw.prior { border-top: 2px dashed var(--text-muted); }
+  .radar-details { flex: 1; min-width: 360px; }
+  .radar-detail-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+  .radar-detail-table th, .radar-detail-table td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+  .radar-detail-table thead th { color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .radar-detail-table tbody th { width: 120px; color: var(--text-primary); font-weight: 500; }
+  .radar-detail-table .radar-score { width: 64px; font-variant-numeric: tabular-nums; }
+  .radar-detail-table .radar-anchor { color: var(--text-secondary); overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    .radar-details { min-width: 100%; }
+    .radar-detail-table th, .radar-detail-table td { padding: 7px 5px; }
+    .radar-detail-table tbody th { width: 92px; }
+    .radar-detail-table .radar-score { width: 42px; }
+  }
 
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
@@ -2383,9 +2396,20 @@ function radarPolygonPoints(scores) {
   }).join(" ");
 }
 
+function escapeRadarAnchor(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
 function renderRiskRadar(row, priorFullReport) {
   if (!row.risk_radar) return "";
   const priorRadar = priorFullReport?.risk_radar ?? null;
+  const anchors = row.risk_radar_anchors ?? {};
   return `
     <p class="caveat" style="margin: 0 0 10px;">
       Discretionary LLM estimate, same tier as the crash-probability estimate above — not a
@@ -2413,6 +2437,15 @@ function renderRiskRadar(row, priorFullReport) {
       <div class="radar-legend">
         <div><span class="sw current"></span>Current: ${RADAR_AXES.map((a) => `${a.label} ${row.risk_radar[a.key]}`).join(", ")}</div>
         ${priorRadar ? `<div><span class="sw prior"></span>Prior: ${RADAR_AXES.map((a) => `${a.label} ${priorRadar[a.key]}`).join(", ")}</div>` : ""}
+      </div>
+      <div class="radar-details">
+        <table class="radar-detail-table">
+          <thead><tr><th scope="col">Axis</th><th scope="col" class="radar-score">Score</th><th scope="col">Anchor</th></tr></thead>
+          <tbody>${RADAR_AXES.map((axis) => {
+            const anchor = anchors[axis.key];
+            return `<tr><th scope="row">${axis.label}</th><td class="radar-score">${row.risk_radar[axis.key]}</td><td class="radar-anchor">${anchor ? escapeRadarAnchor(anchor) : '<span class="loading">No anchor recorded for this report.</span>'}</td></tr>`;
+          }).join("")}</tbody>
+        </table>
       </div>
     </div>
   `;
@@ -3006,7 +3039,7 @@ async function main() {
     // 2026-09-19, F12) — the exact bug this same pagination already fixed
     // for data_points history further down.
     ALL_ROWS = await fetchAllFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status,risk_radar&order=run_at.asc",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status,risk_radar,risk_radar_anchors&order=run_at.asc",
     );
 
     if (ALL_ROWS.length === 0) {

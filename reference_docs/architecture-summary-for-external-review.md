@@ -1,5 +1,7 @@
 # Macro Market Stress Monitor — Architecture & Rules Summary (for external AI review)
 
+Last reviewed against the repository: 2026-10-29.
+
 This is a self-contained briefing for a fresh model/chat with no other context on this
 project. It covers system architecture, data flow, security model, prior external-review
 findings and their current status, and the full current rules (thresholds/bands/formulas)

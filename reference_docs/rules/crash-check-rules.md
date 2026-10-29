@@ -1124,6 +1124,15 @@ policy_fed, inflation, valuation, labor_market, earnings — each 0-100),
 required on every `write_snapshot` call, same cadence as
 `crash_probability_pct`. Surfaced on the public dashboard.
 
+Each axis also stores a concise factual `risk_radar_anchors` explanation
+(maximum 240 characters) beside its score. Anchors are supplied with the
+daily `write_snapshot`, persisted separately from the numeric scores, and
+shown in the public dashboard's Axis / Score / Anchor table. Cite the
+observed series/value/context when available; earnings remains
+narrative-only. Historical rows without anchors remain valid and display
+that no anchor was recorded. Do not include personal or account-specific
+information in these public explanations.
+
 **Why this exists alongside the private Portfolio Review's own risk_radar**:
 that one (`write_portfolio_review`) is Portfolio-Review-triggered, not
 daily, and has no documented scoring basis ("reflecting this run's own

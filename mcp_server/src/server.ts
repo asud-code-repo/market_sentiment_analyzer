@@ -330,7 +330,11 @@ server.registerTool(
       "Methodology' for the per-axis banded rubric (5 of the 6 axes anchor to real series already " +
       "tracked in this system, including geopolitical now -- see geopolitical_risk_index in " +
       "get_context_indicators's macro_regime_signals, added 2026-09-22; only earnings stays " +
-      "narrative-only, no free anchoring data exists for it). Discretionary like the scenario distribution -- never gates, never validated. " +
+      "narrative-only, no free anchoring data exists for it). Also include `risk_radar_anchors`, " +
+      "with one concise evidence/explanation string for each matching axis; these are displayed " +
+      "beside the scores on the public dashboard. Keep anchors factual and brief, cite the observed " +
+      "value/context, and use narrative-only wording for earnings. Discretionary like the scenario " +
+      "distribution -- never gates, never validated. " +
       "crash_probability_pct/low/high are NOT inputs to this tool (changed 2026-09-22) -- they are " +
       "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
       "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
@@ -348,6 +352,14 @@ server.registerTool(
         valuation: z.number().min(0).max(100),
         labor_market: z.number().min(0).max(100),
         earnings: z.number().min(0).max(100),
+      }),
+      risk_radar_anchors: z.object({
+        geopolitical: z.string().trim().min(1).max(240),
+        policy_fed: z.string().trim().min(1).max(240),
+        inflation: z.string().trim().min(1).max(240),
+        valuation: z.string().trim().min(1).max(240),
+        labor_market: z.string().trim().min(1).max(240),
+        earnings: z.string().trim().min(1).max(240),
       }),
       notes: z.string(),
       delta_log: z
