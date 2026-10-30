@@ -24,6 +24,9 @@ export const SECTOR_TICKERS: { ticker: string; label: string }[] = [
   { ticker: "GLD", label: "Gold" },
 ];
 
+// dashboard_site/index.html additionally shows a 5-trading-day, return-only
+// column (ROTATION_RETURN_ONLY_WINDOW) -- intentionally NOT mirrored here;
+// see that constant's comment for the measured reason.
 const LOOKBACK_WINDOWS_DAYS = [30, 90, 180, 365] as const;
 type LookbackWindow = (typeof LOOKBACK_WINDOWS_DAYS)[number];
 

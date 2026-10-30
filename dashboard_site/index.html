@@ -1892,6 +1892,17 @@ const SECTOR_ROTATION_TICKERS = [
   { symbol: "GLD", label: "Gold" },
 ];
 const ROTATION_WINDOWS = [30, 90, 180, 365];
+// Dashboard-only, return-only short window (added 2026-10-29) -- 5 TRADING
+// days (index-based, not calendar like ROTATION_WINDOWS), matching State
+// Street's own "5 Day" tab. Deliberately no flow/flowPct/scatter at 5d:
+// measured on ~100 non-overlapping weeks/ticker of real SSGA data, the 5d
+// flow sign persisted into the next week only 46-59% of the time and the
+// rotation quadrant changed 67-79% of weeks (75% = random), with single-week
+// mechanical outliers up to +14% of assets (XLB 2025-02-11). Price return
+// and return-vs-SPY at 5d are still meaningful. Not mirrored in
+// mcp_server/src/lib/sectorRotation.ts on purpose (token cost, and the
+// daily analysis shouldn't narrate 5-day moves as rotation).
+const ROTATION_RETURN_ONLY_WINDOW = 5;
 
 let rotationView = "return"; // table's metric toggle -- one of ROTATION_VIEWS' keys
 let rotationScatterWindow = 180; // scatter's single-window pick
@@ -2048,6 +2059,7 @@ function attachScatterInteractivity(bySymbol) {
 function renderRotationTable(bySymbol) {
   const columns = [
     { key: "symbol", label: "Sector" },
+    { key: ROTATION_RETURN_ONLY_WINDOW, label: "5d" },
     { key: 30, label: "30d" },
     { key: 90, label: "90d" },
     { key: 180, label: "180d" },
@@ -2108,6 +2120,7 @@ function renderRotationTable(bySymbol) {
       (r) => `
       <tr>
         <td class="ticker">${r.symbol} <span class="sub">${r.label}</span></td>
+        <td>${fmt(r.metrics[ROTATION_RETURN_ONLY_WINDOW])}</td>
         <td>${fmt(r.metrics[30])}</td>
         <td>${fmt(r.metrics[90])}</td>
         <td>${fmt(r.metrics[180])}</td>
@@ -3310,6 +3323,12 @@ async function main() {
               }
             }
           }
+          // 5 trading days back by index (see ROTATION_RETURN_ONLY_WINDOW)
+          // -- navReturn only, so flow/flowPct views show "—" for 5d.
+          const pastNavShort = navSeries[navSeries.length - 1 - ROTATION_RETURN_ONLY_WINDOW]?.value;
+          if (pastNavShort != null && pastNavShort !== 0) {
+            navReturn[ROTATION_RETURN_ONLY_WINDOW] = ((latestNav.value - pastNavShort) / pastNavShort) * 100;
+          }
         }
         // Institutional 13F tilt -- mirrors mcp_server/src/lib/
         // sectorRotation.ts's latestTwoPoints/QoQ math exactly. Quarterly
@@ -3341,7 +3360,7 @@ async function main() {
       for (const { symbol } of SECTOR_ROTATION_TICKERS) {
         const data = bySymbol.get(symbol);
         const vsSpy = {};
-        for (const windowDays of ROTATION_WINDOWS) {
+        for (const windowDays of [ROTATION_RETURN_ONLY_WINDOW, ...ROTATION_WINDOWS]) {
           if (data.navReturn[windowDays] != null && spyData?.navReturn[windowDays] != null) {
             vsSpy[windowDays] = data.navReturn[windowDays] - spyData.navReturn[windowDays];
           }
