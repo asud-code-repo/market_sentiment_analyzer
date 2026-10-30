@@ -15,6 +15,7 @@ import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
 import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
+import { computeMarketPositioning } from "./lib/positioning.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -448,7 +449,9 @@ server.registerTool(
       "creation/redemption flow (not a price proxy) for the 11 sector SPDRs + SPY + GLD, but only " +
       "at the ETF-vehicle level — see its own signal field for the full caveat. insider_activity " +
       "gives per-watchlist-ticker SEC Form 4 cluster-buy signals — see its own signal field for the " +
-      "filtering rules. " +
+      "filtering rules. market_positioning (added 2026-10-29) is whether big players are positioned for or " +
+      "against the market -- CFTC futures positioning, CBOE equity put/call and FINRA margin debt, each as a " +
+      "percentile of its own history; see its own signal field. " +
       "divergence_flags is computed once daily by the rule engine and persisted on the latest " +
       "crash_checks row (see crash-check-rules.md's Cross-Indicator Divergence section for what each " +
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
@@ -506,7 +509,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -559,6 +562,7 @@ server.registerTool(
         computeSeriesDelta("X:BTCUSD"),
         computeSectorRotation(),
         computeInsiderClusterSignals(),
+        computeMarketPositioning(),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -924,6 +928,18 @@ server.registerTool(
           "deliberately with no dollar figure and no bearish framing -- insider selling is dominated " +
           "by diversification/tax timing and carries far weaker signal than insider buying. " +
           "Informational only, Tier 2 -- never part of the 3-of-6 wave-authorization gate.",
+      },
+      market_positioning: {
+        measures: marketPositioning,
+        signal:
+          "Each measure is placed against its own history (percentile, 0-100); extreme = >=90th or <=10th, a " +
+          "first-cut cutoff, not backtested. Positioning extremes are CONTRARIAN, not directional: a crowd " +
+          "all-in one way is fragility, not confirmation. CFTC data is Tuesday positions published Friday " +
+          "(3-day lag); leveraged-fund shorts are often hedges or basis/arbitrage legs, not outright bets -- read " +
+          "the change and the extreme, not the sign. Put/call is a 10-trading-day average of CBOE's equity " +
+          "ratio. Margin debt is FINRA monthly (~3-4 week lag), as YoY growth vs. its full history since 1998. " +
+          "Report each measure on its own; do not net them into one score. Informational only, Tier 2 -- " +
+          "never part of the 3-of-6 wave-authorization gate.",
       },
       divergence_flags: divergenceFlags,
     });

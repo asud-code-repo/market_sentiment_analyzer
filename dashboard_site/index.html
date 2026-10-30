@@ -202,6 +202,25 @@
   #insider-wrap th:first-child, #insider-wrap td:first-child { text-align: left; }
   #insider-wrap th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
   #insider-wrap td.ticker { font-weight: 600; text-align: left; }
+
+  /* Market positioning table -- same shape/convention as insider-wrap,
+     plus a percentile bar whose shaded ends mark the <=10th / >=90th
+     extreme zones. */
+  #positioning-wrap { overflow-x: auto; }
+  #positioning-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #positioning-wrap th, #positioning-wrap td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; vertical-align: middle; }
+  #positioning-wrap th:first-child, #positioning-wrap td:first-child { text-align: left; }
+  #positioning-wrap th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  #positioning-wrap td.measure { font-weight: 600; }
+  #positioning-wrap td .sub { display: block; color: var(--text-muted); font-size: 11px; font-weight: 400; }
+  #positioning-wrap td.read { text-align: left; max-width: 280px; }
+  #positioning-wrap td.read .sub { margin-top: 3px; }
+  #positioning-wrap .pctile { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  #positioning-wrap .pctile-num { min-width: 82px; text-align: right; }
+  #positioning-wrap .pctile-track { position: relative; width: 90px; height: 8px; border-radius: 4px; flex-shrink: 0;
+    background: linear-gradient(to right, var(--warning-bg) 0 10%, var(--meter-track) 10% 90%, var(--warning-bg) 90% 100%); }
+  #positioning-wrap .pctile-marker { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; background: var(--neutral-blue); }
+  #positioning-wrap .pctile-marker.extreme { background: var(--warning); }
   #sector-rotation-wrap .view-toggle { display: flex; gap: 4px; margin-bottom: 10px; }
   #sector-rotation-wrap .view-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
   #sector-rotation-wrap .view-btn.active { background: var(--neutral-blue); color: white; border-color: var(--neutral-blue); }
@@ -427,6 +446,17 @@
       <div id="insider-body">
         <p class="context-note">SEC Form 4 open-market insider buys/sells for the BrokerageLink watchlist, filed within 2 business days of the trade. Filtered to transaction codes P/S only (grants, option exercises, gifts excluded) and to non-10b5-1 trades. Cluster buy = 2+ distinct officers/directors buying in the open market in the trailing 30 days — a single buy or sell is never flagged on its own.</p>
         <div id="insider-wrap"><p class="loading">Loading…</p></div>
+      </div>
+    </div>
+
+    <div class="card" id="section-positioning">
+      <div class="collapsible-head">
+        <p class="eyebrow" style="margin: 0;">Market Positioning — informational, not wave-gating</p>
+        <button class="collapse-toggle" id="positioning-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <div id="positioning-body">
+        <p class="context-note">Are big players positioned for or against the market? Each measure is shown as a percentile of its own history; the shaded ends of the bar are the extremes (≤10th / ≥90th, a first-cut cutoff, not backtested). Extremes are <b>contrarian</b>: a crowd all-in one way is fragility, not confirmation. Futures data is CFTC (Tuesday positions, published Friday); hedge-fund shorts are often hedges or arbitrage legs, not outright bets. Put/call is CBOE's equity ratio, 10-day average. Margin debt is FINRA monthly (~3–4 week lag).</p>
+        <div id="positioning-wrap"><p class="loading">Loading…</p></div>
       </div>
     </div>
   </div>
@@ -2292,6 +2322,118 @@ function renderInsiderActivity(signals) {
   </table>`;
 }
 
+// Mirrors mcp_server/src/lib/positioning.ts's POSITIONING_MEASURES and
+// computeMeasure exactly (duplicated, not shared across the package
+// boundary -- same convention as every other MCP-mirrored formula on this
+// page). Change both together.
+const POSITIONING_MEASURES = [
+  { seriesId: "COT_ES_ASSET_MGR_NET_PCT_OI", label: "S&P 500 futures", who: "Asset managers net", kind: "cot_weekly",
+    highRead: "Crowded long — little fresh buying left, more fuel for a selloff", lowRead: "Unusually light long — room to add exposure" },
+  { seriesId: "COT_ES_LEV_FUNDS_NET_PCT_OI", label: "S&P 500 futures", who: "Hedge funds net", kind: "cot_weekly",
+    highRead: "Unusually long — hedge funds leaning bullish", lowRead: "Unusually short — heavy hedging or bearish bets (can fuel a short-covering rally)" },
+  { seriesId: "COT_VIX_LEV_FUNDS_NET_PCT_OI", label: "VIX futures", who: "Hedge funds net", kind: "cot_weekly",
+    highRead: "Long volatility — hedge funds paying for protection", lowRead: "Heavily short volatility — complacency, vulnerable to a vol spike" },
+  { seriesId: "COT_TY_LEV_FUNDS_NET_PCT_OI", label: "10y Treasury futures", who: "Hedge funds net", kind: "cot_weekly",
+    highRead: "Unusually long", lowRead: "Unusually short — mostly the basis trade; crowding here was the 2020 'dash for cash' unwind risk" },
+  { seriesId: "CBOE_EQUITY_PC_RATIO", label: "Equity put/call", who: "10-day average", kind: "put_call_10d",
+    highRead: "Fearful — heavy put buying (historically a contrarian positive)", lowRead: "Complacent — heavy call buying" },
+  { seriesId: "FINRA_MARGIN_DEBIT_USD_MILLIONS", label: "Margin debt", who: "Year-over-year growth", kind: "margin_yoy",
+    highRead: "Leverage surging — fast growth preceded the 2000, 2007 and 2021 tops", lowRead: "Deleveraging — forced selling usually already under way" },
+];
+const POSITIONING_ONE_MONTH_BACK = { cot_weekly: 4, put_call_10d: 21, margin_yoy: 1 };
+
+function positioningDerivedSeries(kind, raw) {
+  if (kind === "put_call_10d") {
+    const out = [];
+    for (let i = 9; i < raw.length; i++) {
+      let sum = 0;
+      for (let j = i - 9; j <= i; j++) sum += raw[j].value;
+      out.push({ date: raw[i].date, value: sum / 10 });
+    }
+    return out;
+  }
+  if (kind === "margin_yoy") {
+    const byMonth = new Map(raw.map((p) => [p.date.slice(0, 7), p.value]));
+    return raw
+      .map((p) => {
+        const prior = byMonth.get(`${Number(p.date.slice(0, 4)) - 1}${p.date.slice(4, 7)}`);
+        return prior ? { date: p.date, value: ((p.value - prior) / prior) * 100 } : null;
+      })
+      .filter(Boolean);
+  }
+  return raw;
+}
+
+function computePositioningMeasure(def, raw) {
+  const series = positioningDerivedSeries(def.kind, raw);
+  const latest = series.at(-1);
+  if (!latest) return null;
+  const fullHistory = def.kind === "margin_yoy";
+  let windowStart = "";
+  if (!fullHistory) {
+    const d = new Date(`${latest.date}T00:00:00Z`);
+    d.setUTCFullYear(d.getUTCFullYear() - 5);
+    windowStart = d.toISOString().slice(0, 10);
+  }
+  const windowVals = series.filter((p) => p.date >= windowStart).map((p) => p.value);
+  const percentile = Math.round((windowVals.filter((v) => v <= latest.value).length / windowVals.length) * 100);
+  const monthAgo = series.at(-1 - POSITIONING_ONE_MONTH_BACK[def.kind]);
+  const extreme = percentile >= 90 ? "high" : percentile <= 10 ? "low" : null;
+  return {
+    ...def,
+    value: latest.value,
+    asOf: latest.date,
+    percentile,
+    windowLabel: fullHistory ? `since ${series[0].date.slice(0, 4)}` : "5y",
+    change1m: monthAgo ? latest.value - monthAgo.value : null,
+    extreme,
+    read: extreme === "high" ? def.highRead : extreme === "low" ? def.lowRead : "Within its normal range",
+    marginDebtUsdMillions: fullHistory ? raw.at(-1).value : null,
+  };
+}
+
+function renderMarketPositioning(measures) {
+  const wrap = document.getElementById("positioning-wrap");
+  if (measures.length === 0) {
+    wrap.innerHTML = `<p class="context-note">No positioning data yet — waiting on the first backfill.</p>`;
+    return;
+  }
+  // Deliberately uncolored: a net short or a falling reading isn't "bad"
+  // here (positioning extremes read contrarian), so green/red would mislead.
+  const signed = (v, digits, suffix = "") => `${v >= 0 ? "+" : ""}${v.toFixed(digits)}${suffix}`;
+  const fmtAsOf = (m) => (m.kind === "margin_yoy" ? m.asOf.slice(0, 7) : m.asOf);
+  const fmtValue = (m) => {
+    if (m.kind === "put_call_10d") return m.value.toFixed(2);
+    if (m.kind === "margin_yoy") {
+      return `${signed(m.value, 1, "%")}<span class="sub">$${(m.marginDebtUsdMillions / 1e6).toFixed(2)}T total</span>`;
+    }
+    return `${signed(m.value, 1, "%")}<span class="sub">of open interest</span>`;
+  };
+  const fmtChange = (m) => {
+    if (m.change1m == null) return "—";
+    if (m.kind === "put_call_10d") return signed(m.change1m, 2);
+    return signed(m.change1m, 1, " pts");
+  };
+  const rows = measures
+    .map((m) => `<tr>
+      <td class="measure">${m.label}<span class="sub">${m.who}</span></td>
+      <td>${fmtValue(m)}</td>
+      <td>
+        <div class="pctile">
+          <div class="pctile-track"><div class="pctile-marker${m.extreme ? " extreme" : ""}" style="left: ${m.percentile}%"></div></div>
+          <span class="pctile-num">${m.percentile}<span class="sub">vs ${m.windowLabel}</span></span>
+        </div>
+      </td>
+      <td>${fmtChange(m)}</td>
+      <td class="read">${m.extreme ? `<span class="pill warning">Extreme ${m.extreme}</span>` : `<span class="pill muted">Normal</span>`}<span class="sub">${m.extreme ? m.read : `As of ${fmtAsOf(m)}`}</span>${m.extreme ? `<span class="sub">As of ${fmtAsOf(m)}</span>` : ""}</td>
+    </tr>`)
+    .join("");
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Measure</th><th>Latest</th><th>Percentile</th><th>1-mo change</th><th style="text-align: left;">Read</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 function renderDivergenceFlags(flags) {
   if (!Array.isArray(flags) || flags.length === 0) return "";
   return `
@@ -2989,6 +3131,7 @@ setupCollapsible("bondYieldsExpanded", "bondyields-toggle", "bondyields-body", t
 setupCollapsible("fiscalDominanceExpanded", "fiscaldominance-toggle", "fiscaldominance-body", true);
 setupCollapsible("sectorRotationExpanded", "sector-toggle", "sector-body", true);
 setupCollapsible("insiderActivityExpanded", "insider-toggle", "insider-body", true);
+setupCollapsible("marketPositioningExpanded", "positioning-toggle", "positioning-body", true);
 setupCollapsible("crashProbChartExpanded", "charts-toggle", "charts-body", true);
 
 // Page-level tab switching -- same hidden-attribute + localStorage
@@ -3003,6 +3146,7 @@ const SECTION_TAB = {
   "section-context": "macro",
   "section-sector": "smartmoney",
   "section-insider": "smartmoney",
+  "section-positioning": "smartmoney",
 };
 const TAB_IDS = ["stressmonitor", "smartmoney", "macro"];
 const TAB_STORAGE_KEY = "activeTab";
@@ -3411,6 +3555,31 @@ async function main() {
       renderInsiderActivity(signals);
     } catch (err) {
       document.getElementById("insider-wrap").innerHTML = `<p class="loading">Failed to load insider activity: ${err.message}</p>`;
+    }
+
+    // Isolated: same independence rationale as the blocks above. COT and
+    // put/call need 5y plus lead-in (~1,300 daily put/call rows alone, past
+    // the 1000-row cap, so paginated); margin debt needs its full monthly
+    // history because its YoY percentile is full-window.
+    try {
+      const recentIds = POSITIONING_MEASURES.filter((m) => m.kind !== "margin_yoy").map((m) => m.seriesId);
+      const marginIds = POSITIONING_MEASURES.filter((m) => m.kind === "margin_yoy").map((m) => m.seriesId);
+      const cutoff = new Date();
+      cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 6);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const [recentRows, marginRows] = await Promise.all([
+        fetchAllFromSupabase(`data_points?select=series_id,observation_date,value&series_id=in.(${recentIds.join(",")})&observation_date=gte.${cutoffStr}&order=observation_date.asc,series_id.asc`),
+        fetchAllFromSupabase(`data_points?select=series_id,observation_date,value&series_id=in.(${marginIds.join(",")})&order=observation_date.asc,series_id.asc`),
+      ]);
+      const bySeries = new Map();
+      for (const row of [...recentRows, ...marginRows]) {
+        if (!bySeries.has(row.series_id)) bySeries.set(row.series_id, []);
+        bySeries.get(row.series_id).push({ date: row.observation_date, value: row.value });
+      }
+      const measures = POSITIONING_MEASURES.map((def) => computePositioningMeasure(def, bySeries.get(def.seriesId) ?? [])).filter(Boolean);
+      renderMarketPositioning(measures);
+    } catch (err) {
+      document.getElementById("positioning-wrap").innerHTML = `<p class="loading">Failed to load market positioning: ${err.message}</p>`;
     }
 
     document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));

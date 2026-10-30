@@ -5,7 +5,12 @@ name: One-time data_points backfill
 # ingestion/src/backfill.ts. Safe to re-run: upserts on
 # (series_id, observation_date).
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Leave empty for the full backfill, or 'positioning' for just CFTC/FINRA/CBOE"
+        required: false
+        default: ""
 
 jobs:
   backfill:
@@ -24,8 +29,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run backfill
+      - run: npm run backfill -- ${ONLY:+--only=$ONLY}
         env:
+          ONLY: ${{ inputs.only }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

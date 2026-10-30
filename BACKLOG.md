@@ -295,6 +295,13 @@ existing wave logic has strong precision even where its timing is weak.
   loss, false-alarm episodes/year, warning lead time). Explicitly agreed
   with the review's recommendation to keep COT/Z.1/sector-rotation out of
   this model — informational-tier signals, not validated inputs.
+- **Market-positioning extreme cutoffs are unvalidated.** `market_positioning`
+  (CFTC COT, CBOE equity put/call, FINRA margin debt; shipped 2026-10-29)
+  flags ≥90th/≤10th percentile as "extreme", a first cut. Not checked:
+  whether extremes on any of the six measures preceded drawdowns better
+  than chance (a quick look at end-2021 found none extreme). If it's ever
+  done, use forward drawdown after each extreme vs. the unconditional
+  rate, per measure, with the full CFTC history back to 2006.
 - **Crash-probability presentation: numeric % vs. categorical** — this
   question (previously an abstract external-review suggestion) now has
   real evidence behind one side of it: the hazard model's own isotonic

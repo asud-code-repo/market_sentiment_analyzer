@@ -4,6 +4,8 @@ import { fetchFred } from "./sources/fred.js";
 import { fetchYahoo } from "./sources/yahoo.js";
 import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
+import { fetchCftc } from "./sources/cftc.js";
+import { fetchFinraMargin } from "./sources/finra.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
 import { fetchMassive } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
@@ -53,11 +55,14 @@ async function main() {
     runSource("Yahoo", true, fetchYahoo),
     runSource("EIA", true, fetchEia),
     // CBOE is best-effort, not required: it's supplementary sentiment data,
-    // not one of the 6 canonical crash indicators, and its only known public
-    // CSV source turned out to be a frozen 2019 archive (see cboe.ts). Don't
-    // fail the whole run — and thus send a false-alarm email every day —
-    // over a source with no known live replacement yet.
+    // not one of the 6 canonical crash indicators. Don't fail the whole run
+    // — and thus send a false-alarm email — over a positioning signal.
     runSource("CBOE", false, fetchCboe),
+    // Same tier as CBOE: market-positioning context (see cftc.ts/finra.ts),
+    // never part of the 6-indicator wave gate. CFTC re-upserts the trailing
+    // 8 weeks; FINRA returns its full monthly history every run (like GPR).
+    runSource("CFTC", false, fetchCftc),
+    runSource("FINRA", false, fetchFinraMargin),
     runSource("Polymarket", false, fetchPolymarket),
     // Best-effort like CBOE/Polymarket: watchlist ticker prices are
     // supplementary to the crash-check core (not one of the 6 gating

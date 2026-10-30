@@ -6,6 +6,9 @@ import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
 import { fetchTreasuryAvgRates, fetchTreasuryAuctions, fetchTreasuryMarketableDebt } from "./sources/treasury.js";
+import { fetchCftcBackfill } from "./sources/cftc.js";
+import { fetchFinraMargin } from "./sources/finra.js";
+import { fetchCboeBackfill } from "./sources/cboe.js";
 
 // One-time historical backfill for data_points — NOT part of the daily
 // ingestion run (see ingest.ts), which only ever needs the latest reading.
@@ -15,7 +18,41 @@ import { fetchTreasuryAvgRates, fetchTreasuryAuctions, fetchTreasuryMarketableDe
 // need a full historical replay of classify.ts and has no source for fields
 // like fed_pivot_signal/Warsh classification that only exist as "carried
 // forward from the prior row" state.
+// Market-positioning sources (CFTC COT, FINRA margin debt, CBOE put/call),
+// added 2026-10-29. Each isolated like GPR/TIC below -- best-effort sources,
+// one failing shouldn't lose the others.
+async function backfillPositioning(): Promise<Awaited<ReturnType<typeof fetchCftcBackfill>>> {
+  const points: Awaited<ReturnType<typeof fetchCftcBackfill>> = [];
+  for (const [label, fn] of [
+    ["CFTC Traders in Financial Futures (2006-present)", fetchCftcBackfill],
+    ["FINRA margin debt (1997-present)", fetchFinraMargin],
+    ["CBOE put/call ratios (2019-10-07-present, ~1,800 daily files)", fetchCboeBackfill],
+  ] as const) {
+    try {
+      console.log(`Backfilling ${label}...`);
+      const pts = await fn();
+      console.log(`${label}: ${pts.length} total observations.`);
+      points.push(...pts);
+    } catch (err) {
+      console.error(`${label} backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return points;
+}
+
 async function main() {
+  // `--only=positioning` runs just the positioning sources -- lets a newly
+  // added source be backfilled without re-pulling every FRED series (and
+  // without one unrelated source's failure blocking the write, since
+  // everything below is written in one batch at the end).
+  if (process.argv.includes("--only=positioning")) {
+    const positioningPoints = await backfillPositioning();
+    console.log(`Writing ${positioningPoints.length} data points to Supabase...`);
+    await writeDataPoints(positioningPoints);
+    console.log("Positioning backfill complete.");
+    return;
+  }
+
   console.log("Backfilling FRED series (5yr)...");
   const fredPoints = await fetchFredBackfill();
   console.log(`FRED backfill: ${fredPoints.length} total observations.`);
@@ -79,7 +116,9 @@ async function main() {
     }
   }
 
-  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints];
+  const positioningPoints = await backfillPositioning();
+
+  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints, ...positioningPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
   await writeDataPoints(allPoints);
   console.log("Backfill complete.");
