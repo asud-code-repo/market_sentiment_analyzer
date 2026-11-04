@@ -17,7 +17,9 @@ import { supabase } from "./supabase.js";
 //
 // dashboard_site/index.html mirrors POSITIONING_MEASURES and this math
 // (duplicated, not shared across the package boundary -- same convention as
-// sectorRotation.ts). Change both together.
+// sectorRotation.ts). Change both together. Exception: the dashboard also
+// shows display-only 25/75 "low"/"high" bands, a per-band read sentence and
+// a "Today" summary; this tool deliberately keeps only the 90/10 extremes.
 
 type MeasureKind = "cot_weekly" | "put_call_10d" | "margin_yoy";
 

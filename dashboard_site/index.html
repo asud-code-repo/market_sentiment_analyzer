@@ -213,8 +213,37 @@
   #positioning-wrap th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
   #positioning-wrap td.measure { font-weight: 600; }
   #positioning-wrap td .sub { display: block; color: var(--text-muted); font-size: 11px; font-weight: 400; }
-  #positioning-wrap td.read { text-align: left; max-width: 280px; }
+  #positioning-wrap td.measure .what { display: block; color: var(--text-secondary); font-size: 11px; font-weight: 400; margin-top: 2px; max-width: 230px; line-height: 1.35; }
+  #positioning-wrap td.read { text-align: left; max-width: 300px; }
+  #positioning-wrap td.read .readtext { display: block; font-size: 12px; margin-top: 4px; line-height: 1.35; }
   #positioning-wrap td.read .sub { margin-top: 3px; }
+  #positioning-wrap td.val { white-space: nowrap; }
+  #positioning-wrap td .dir { display: block; color: var(--text-muted); font-size: 11px; }
+  #positioning-wrap td.pill-cell { display: none; }
+  /* Outlined amber = outside the typical range but short of an extreme. */
+  #positioning-wrap .pill.lean { background: none; color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
+  #positioning-summary { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 4px 0 10px; font-size: 13px; line-height: 1.5; }
+  #positioning-summary:empty { display: none; }
+  /* Phone: the 5-column table with sub-lines clips, so each measure stacks
+     into a mini-card (name + badge, read, value + change, percentile bar). */
+  @media (max-width: 640px) {
+    #positioning-wrap thead { display: none; }
+    #positioning-wrap table, #positioning-wrap tbody { display: block; }
+    #positioning-wrap tr { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
+    #positioning-wrap td { border: none; padding: 0; text-align: left; }
+    #positioning-wrap td.measure { grid-column: 1; grid-row: 1; }
+    #positioning-wrap tr td.pill-cell { display: block; grid-column: 2; grid-row: 1; text-align: right; }
+    #positioning-wrap td.read { grid-column: 1 / -1; grid-row: 2; max-width: none; }
+    #positioning-wrap td.read .pill { display: none; }
+    #positioning-wrap td.val { grid-column: 1; grid-row: 3; }
+    #positioning-wrap td.val .sub { display: inline; margin-left: 4px; }
+    #positioning-wrap td.chg { grid-column: 2; grid-row: 3; text-align: right; }
+    #positioning-wrap td.pc { grid-column: 1 / -1; grid-row: 4; }
+    #positioning-wrap td.pc .pctile { justify-content: flex-start; }
+    #positioning-wrap td.pc .pctile-track { width: 120px; }
+    #positioning-wrap td.pc .pctile-num { min-width: 0; text-align: left; }
+    #positioning-wrap td.pc .pctile-num .sub { display: inline; margin-left: 4px; }
+  }
   #positioning-wrap .pctile { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
   #positioning-wrap .pctile-num { min-width: 82px; text-align: right; }
   #positioning-wrap .pctile-track { position: relative; width: 90px; height: 8px; border-radius: 4px; flex-shrink: 0;
@@ -455,7 +484,8 @@
         <button class="collapse-toggle" id="positioning-toggle" aria-expanded="true">Hide</button>
       </div>
       <div id="positioning-body">
-        <p class="context-note">Are big players positioned for or against the market? Each measure is shown as a percentile of its own history; the shaded ends of the bar are the extremes (≤10th / ≥90th, a first-cut cutoff, not backtested). Extremes are <b>contrarian</b>: a crowd all-in one way is fragility, not confirmation. Futures data is CFTC (Tuesday positions, published Friday); hedge-fund shorts are often hedges or arbitrage legs, not outright bets. Put/call is CBOE's equity ratio, 10-day average. Margin debt is FINRA monthly (~3–4 week lag).</p>
+        <div id="positioning-summary"></div>
+        <p class="context-note">Are big players positioned for or against the market? Each measure is ranked against its own history; the shaded bar ends are extremes (≤10th / ≥90th, not backtested). Extremes read <b>contrarian</b>: a crowd all-in one way is fragility, not confirmation. Futures: CFTC weekly (Tuesday positions, published Friday). Margin debt: FINRA monthly, ~3–4 week lag.</p>
         <div id="positioning-wrap"><p class="loading">Loading…</p></div>
       </div>
     </div>
@@ -2326,21 +2356,65 @@ function renderInsiderActivity(signals) {
 // computeMeasure exactly (duplicated, not shared across the package
 // boundary -- same convention as every other MCP-mirrored formula on this
 // page). Change both together.
+// Each measure's `reads` is one sentence per percentile band (see
+// positioningBand): [extreme low, low, typical, high, extreme high]. The
+// extreme sentences match mcp_server/src/lib/positioning.ts's
+// lowRead/highRead; the middle three bands are dashboard-only -- the MCP
+// tool still reports "within its normal range" for anything 11th-89th and
+// leaves interpretation to Claude (deliberate, keeps the tool output lean).
+// `brief` is the same scale as short phrases for the "Today" summary
+// (null = typical, not mentioned). `up`/`down` describe what a rising /
+// falling 1-month change means; moves smaller than `flat` read "little
+// changed". `inSummary: false` keeps the Treasury basis-trade row out of
+// the stock-market summary.
 const POSITIONING_MEASURES = [
-  { seriesId: "COT_ES_ASSET_MGR_NET_PCT_OI", label: "S&P 500 futures", who: "Asset managers net", kind: "cot_weekly",
-    highRead: "Crowded long — little fresh buying left, more fuel for a selloff", lowRead: "Unusually light long — room to add exposure" },
-  { seriesId: "COT_ES_LEV_FUNDS_NET_PCT_OI", label: "S&P 500 futures", who: "Hedge funds net", kind: "cot_weekly",
-    highRead: "Unusually long — hedge funds leaning bullish", lowRead: "Unusually short — heavy hedging or bearish bets (can fuel a short-covering rally)" },
-  { seriesId: "COT_VIX_LEV_FUNDS_NET_PCT_OI", label: "VIX futures", who: "Hedge funds net", kind: "cot_weekly",
-    highRead: "Long volatility — hedge funds paying for protection", lowRead: "Heavily short volatility — complacency, vulnerable to a vol spike" },
-  { seriesId: "COT_TY_LEV_FUNDS_NET_PCT_OI", label: "10y Treasury futures", who: "Hedge funds net", kind: "cot_weekly",
-    highRead: "Unusually long", lowRead: "Unusually short — mostly the basis trade; crowding here was the 2020 'dash for cash' unwind risk" },
-  { seriesId: "CBOE_EQUITY_PC_RATIO", label: "Equity put/call", who: "10-day average", kind: "put_call_10d",
-    highRead: "Fearful — heavy put buying (historically a contrarian positive)", lowRead: "Complacent — heavy call buying" },
-  { seriesId: "FINRA_MARGIN_DEBIT_USD_MILLIONS", label: "Margin debt", who: "Year-over-year growth", kind: "margin_yoy",
-    highRead: "Leverage surging — fast growth preceded the 2000, 2007 and 2021 tops", lowRead: "Deleveraging — forced selling usually already under way" },
+  { seriesId: "COT_ES_ASSET_MGR_NET_PCT_OI", label: "S&P 500 futures", name: "asset managers' S&P futures", kind: "cot_weekly",
+    what: "Asset managers' net bet on US stocks (pension &amp; mutual funds)",
+    reads: ["Unusually light long — room to add exposure", "Lighter long than usual — cautious", "Typical long exposure",
+      "More long than usual, but not all-in", "Crowded long — little fresh buying left, more fuel for a selloff"],
+    brief: ["asset managers unusually light long", "asset managers lighter long than usual", null,
+      "asset managers more long than usual", "asset managers crowded long"],
+    up: "adding longs", down: "trimming longs", flat: 1 },
+  { seriesId: "COT_ES_LEV_FUNDS_NET_PCT_OI", label: "S&P 500 futures", name: "hedge funds' S&P futures", kind: "cot_weekly",
+    what: "Hedge funds' net position — usually short as a hedge on stock they own, not a pure crash bet",
+    reads: ["Unusually short — heavy hedging or bearish bets (can fuel a short-covering rally)", "More short than usual — extra hedging, not yet extreme",
+      "Typical net short (mostly hedges)", "Less short than usual — fewer hedges on", "Unusually long — hedge funds leaning bullish"],
+    brief: ["hedge funds unusually short", "hedge funds more short than usual", null,
+      "hedge funds less short than usual", "hedge funds unusually long"],
+    up: "covering shorts", down: "adding shorts", flat: 1 },
+  { seriesId: "COT_VIX_LEV_FUNDS_NET_PCT_OI", label: "VIX futures", name: "hedge funds' VIX futures", kind: "cot_weekly",
+    what: "Hedge funds' volatility bet — negative means betting markets stay calm",
+    reads: ["Heavily short volatility — complacency, vulnerable to a vol spike", "More short volatility than usual — leaning complacent",
+      "Typical volatility positioning", "Less short volatility than usual — some protection on", "Long volatility — hedge funds paying for protection"],
+    brief: ["hedge funds heavily short volatility", "hedge funds leaning complacent on volatility", null,
+      "hedge funds holding some volatility protection", "hedge funds paying for protection"],
+    up: "toward buying protection", down: "toward betting on calm", flat: 1 },
+  { seriesId: "COT_TY_LEV_FUNDS_NET_PCT_OI", label: "10y Treasury futures", name: "10y Treasury futures", kind: "cot_weekly",
+    what: "Mostly the cash-futures basis trade, not a view on rates", inSummary: false,
+    reads: ["Unusually short — mostly the basis trade; crowding here was the 2020 'dash for cash' unwind risk", "Larger basis-trade short than usual",
+      "Typical — mostly the basis trade", "Smaller basis-trade short than usual", "Unusually long"],
+    brief: [null, null, null, null, null],
+    up: "basis trade shrinking", down: "basis trade growing", flat: 1 },
+  { seriesId: "CBOE_EQUITY_PC_RATIO", label: "Equity put/call", name: "equity put/call", kind: "put_call_10d",
+    what: "Puts bought per call on single stocks, 10-day average — mostly retail",
+    reads: ["Complacent — heavy call buying", "Call-heavy — leaning optimistic", "Balanced — neither fear nor euphoria",
+      "Put-heavy — leaning fearful", "Fearful — heavy put buying (historically a contrarian positive)"],
+    brief: ["options traders complacent", "options traders leaning optimistic", null,
+      "options traders leaning fearful", "options traders fearful"],
+    up: "more put buying", down: "more call buying", flat: 0.02 },
+  { seriesId: "FINRA_MARGIN_DEBIT_USD_MILLIONS", label: "Margin debt", name: "margin debt", kind: "margin_yoy",
+    what: "Money investors borrow to buy stocks, growth vs a year ago",
+    reads: ["Deleveraging — forced selling usually already under way", "Leverage growing slower than usual", "Normal leverage growth",
+      "Leverage growing fast — worth watching", "Leverage surging — fast growth preceded the 2000, 2007 and 2021 tops"],
+    brief: ["investors deleveraging", "margin debt growing slower than usual", null,
+      "fast margin-debt growth", "margin debt surging"],
+    up: "accelerating", down: "slowing", flat: 1 },
 ];
 const POSITIONING_ONE_MONTH_BACK = { cot_weekly: 4, put_call_10d: 21, margin_yoy: 1 };
+// 0 extreme low (<=10), 1 low (11-25), 2 typical (26-74), 3 high (75-89), 4 extreme high (>=90).
+// The 90/10 extremes match the MCP tool; the 25/75 inner cutoffs are display-only.
+const positioningBand = (p) => (p <= 10 ? 0 : p <= 25 ? 1 : p < 75 ? 2 : p < 90 ? 3 : 4);
+const POSITIONING_BAND_PILLS = [["warning", "Extreme low"], ["lean", "Low"], ["muted", "Typical"], ["lean", "High"], ["warning", "Extreme high"]];
 
 function positioningDerivedSeries(kind, raw) {
   if (kind === "put_call_10d") {
@@ -2378,7 +2452,7 @@ function computePositioningMeasure(def, raw) {
   const windowVals = series.filter((p) => p.date >= windowStart).map((p) => p.value);
   const percentile = Math.round((windowVals.filter((v) => v <= latest.value).length / windowVals.length) * 100);
   const monthAgo = series.at(-1 - POSITIONING_ONE_MONTH_BACK[def.kind]);
-  const extreme = percentile >= 90 ? "high" : percentile <= 10 ? "low" : null;
+  const band = positioningBand(percentile);
   return {
     ...def,
     value: latest.value,
@@ -2386,10 +2460,37 @@ function computePositioningMeasure(def, raw) {
     percentile,
     windowLabel: fullHistory ? `since ${series[0].date.slice(0, 4)}` : "5y",
     change1m: monthAgo ? latest.value - monthAgo.value : null,
-    extreme,
-    read: extreme === "high" ? def.highRead : extreme === "low" ? def.lowRead : "Within its normal range",
+    band,
+    read: def.reads[band],
     marginDebtUsdMillions: fullHistory ? raw.at(-1).value : null,
   };
+}
+
+const ordinal = (n) => {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th");
+  return `${n}${s}`;
+};
+
+// Rule-built "Today" line: extremes first, then anything outside its
+// typical range, then the measure furthest from the 50th percentile.
+function positioningSummaryHtml(measures) {
+  const inScope = measures.filter((m) => m.inSummary !== false);
+  if (inScope.length === 0) return "";
+  const extremes = inScope.filter((m) => m.band === 0 || m.band === 4);
+  const leaning = inScope.filter((m) => m.band === 1 || m.band === 3);
+  const list = (ms) => ms.map((m) => m.brief[m.band]).join(", ").replace(/, ([^,]*)$/, ", and $1");
+  const parts = [];
+  parts.push(extremes.length === 0
+    ? "No measure at an extreme."
+    : `${extremes.length} at an extreme: ${list(extremes)}.`);
+  if (leaning.length > 0) {
+    parts.push(`${leaning.length} of ${inScope.length} stock-market measures sit outside their typical range: ${list(leaning)}.`);
+  } else if (extremes.length === 0) {
+    parts.push("Everything is within its typical range.");
+  }
+  const watch = inScope.reduce((a, b) => (Math.abs(b.percentile - 50) > Math.abs(a.percentile - 50) ? b : a));
+  const watchText = watch.band === 2 ? "" : ` <b>Watch:</b> ${watch.name} (${ordinal(watch.percentile)} percentile, furthest from normal).`;
+  return `<b>Today:</b> ${parts.join(" ")}${watchText}`;
 }
 
 function renderMarketPositioning(measures) {
@@ -2411,22 +2512,30 @@ function renderMarketPositioning(measures) {
   };
   const fmtChange = (m) => {
     if (m.change1m == null) return "—";
-    if (m.kind === "put_call_10d") return signed(m.change1m, 2);
-    return signed(m.change1m, 1, " pts");
+    const num = m.kind === "put_call_10d" ? signed(m.change1m, 2) : signed(m.change1m, 1, " pts");
+    const dir = Math.abs(m.change1m) < m.flat ? "little changed" : m.change1m > 0 ? m.up : m.down;
+    return `${num}<span class="dir">${dir}</span>`;
   };
+  document.getElementById("positioning-summary").innerHTML = positioningSummaryHtml(measures);
   const rows = measures
-    .map((m) => `<tr>
-      <td class="measure">${m.label}<span class="sub">${m.who}</span></td>
-      <td>${fmtValue(m)}</td>
-      <td>
+    .map((m) => {
+      const [pillClass, pillText] = POSITIONING_BAND_PILLS[m.band];
+      const pill = `<span class="pill ${pillClass}">${pillText}</span>`;
+      const isExtreme = m.band === 0 || m.band === 4;
+      return `<tr>
+      <td class="measure">${m.label}<span class="what">${m.what}</span></td>
+      <td class="val">${fmtValue(m)}</td>
+      <td class="pc">
         <div class="pctile">
-          <div class="pctile-track"><div class="pctile-marker${m.extreme ? " extreme" : ""}" style="left: ${m.percentile}%"></div></div>
+          <div class="pctile-track"><div class="pctile-marker${isExtreme ? " extreme" : ""}" style="left: ${m.percentile}%"></div></div>
           <span class="pctile-num">${m.percentile}<span class="sub">vs ${m.windowLabel}</span></span>
         </div>
       </td>
-      <td>${fmtChange(m)}</td>
-      <td class="read">${m.extreme ? `<span class="pill warning">Extreme ${m.extreme}</span>` : `<span class="pill muted">Normal</span>`}<span class="sub">${m.extreme ? m.read : `As of ${fmtAsOf(m)}`}</span>${m.extreme ? `<span class="sub">As of ${fmtAsOf(m)}</span>` : ""}</td>
-    </tr>`)
+      <td class="chg">${fmtChange(m)}</td>
+      <td class="pill-cell">${pill}</td>
+      <td class="read">${pill}<span class="readtext">${m.read}</span><span class="sub">As of ${fmtAsOf(m)}</span></td>
+    </tr>`;
+    })
     .join("");
   wrap.innerHTML = `<table>
     <thead><tr><th>Measure</th><th>Latest</th><th>Percentile</th><th>1-mo change</th><th style="text-align: left;">Read</th></tr></thead>
