@@ -77,20 +77,24 @@ function previousWeekday(dateStr: string): string {
  * business days behind is a genuinely missed update. Holidays aren't modeled, so a
  * post-holiday day may still flag conservatively. A monthly series
  * (Sahm Rule, sourced from BLS employment data) is dated to the 1st of the
- * observed month and released alongside the following month's BLS jobs
- * report (~first Friday of month M+2) — e.g. the August reading
- * (2026-08-01) isn't superseded until early October, a ~62-day gap between
- * releases even when nothing is actually stale. A same daily-age bar would
- * incorrectly flag every monthly series as stale for most of each month, so
- * it gets a wider allowance that comfortably covers that real release
- * cadence without treating a genuinely months-stale reading (a broken feed)
- * as current.
+ * observed month and published with that month's BLS jobs report (~first
+ * Friday of month M+1). So the newest available reading is dated two months
+ * back until the next jobs report lands — e.g. on 2026-11-04 the latest is
+ * still the September reading (2026-09-01, 64 days old) because the October
+ * report isn't out until Fri 2026-11-06. That gap reaches ~68 days when the
+ * first Friday falls on the 7th, and BLS occasionally slips a few days more.
+ * The previous 62-day bar flagged a healthy feed as stale for several days
+ * every month (false positive 2026-11-04 blocked the scheduled run). 75 days
+ * covers the real cadence plus a short BLS delay, while a reading a full
+ * month overdue (~92+ days, a broken feed) still flags.
  */
+const MONTHLY_MAX_AGE_DAYS = 75;
+
 function isSeriesFresh(cadence: "daily" | "monthly", observationDate: string, now: Date): boolean {
   if (cadence === "daily") {
     return observationDate >= previousWeekday(previousWeekday(mostRecentWeekday(easternDateString(now))));
   }
-  return daysBetween(observationDate, easternDateString(now)) <= 62;
+  return daysBetween(observationDate, easternDateString(now)) <= MONTHLY_MAX_AGE_DAYS;
 }
 
 /**
