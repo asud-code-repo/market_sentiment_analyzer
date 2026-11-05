@@ -37,7 +37,10 @@ cd mcp_server && npm ci && npm run typecheck
 ```
 
 `rule_engine` has a Vitest suite for its pure rule logic (`npm test`,
-covering `rules.ts`) — `ingestion` and `mcp_server` still rely on
+covering `rules.ts`); `mcp_server` has a small `node:test` suite (`npm
+test`, no framework dependency) covering the deployment-instrument
+registry, readiness/fire drill, trading limits, the filing classifier
+and role-fit math (pure functions only; no network). `ingestion` and the rest of `mcp_server` still rely on
 `tsc --noEmit` plus manual verification (see `BACKLOG.md` for the
 remaining gap). Not wired into GitHub Actions; run locally only. Don't
 add a CI step or linter as part of an unrelated change.

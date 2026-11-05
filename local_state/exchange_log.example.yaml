@@ -1,0 +1,12 @@
+# Template for local_state/exchange_log.yaml (the real file is gitignored).
+# Every 401k exchange actually submitted — wave or not — so plan
+# excessive-trading limits ("N exchange days per quarter") can be counted.
+# record_wave_deployment and record_exchange append here; hand edits are fine.
+# One multi-fund transaction = one entry. Fund names as shown in the plan site.
+# An entry with no bought/sold funds counts against every trading restriction.
+
+exchanges:
+  - date: "YYYY-MM-DD"
+    bought: ["EXAMPLE TARGET DATE FUND"]
+    sold: ["EXAMPLE STABLE VALUE FUND"]
+    reason: "WAVE_2"           # or free text, e.g. "rebalance"

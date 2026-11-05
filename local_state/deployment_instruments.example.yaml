@@ -1,0 +1,69 @@
+# Template for local_state/deployment_instruments.yaml (the real file is
+# gitignored — it holds your plan's actual fund menu). Copy, rename, and fill in.
+#
+# Maps every slot that mcp_server/src/lib/waveDeployment.ts deploys into to a
+# primary and a backup instrument. Stores no percentages — see
+# crash-check-rules.md "Deployment Instrument Selection" for the policy.
+# get_deployment_plan reports a missing slot as a registry error; the full list
+# is RULE_SLOTS in waveDeployment.ts:
+#   healthcare_equity, real_asset_fund, intl_equity, target_date,
+#   us_large_cap_value, tips, energy_etf, gold_etf, energy_single_1,
+#   lng_single, ai_tech_single, infra_single
+
+schema_version: 1
+verification_max_age_days: 90     # older verified_on -> UNVERIFIED
+last_full_review: "YYYY-MM-DD"
+
+routes:
+  in_plan:
+    description: "Exchange between plan funds"
+    status: ok                    # ok | pending | blocked
+  brokeragelink:
+    description: "Transfer into the brokerage window, then trade"
+    status: pending
+    # constraint: "..."           # required when status is blocked
+    open_questions:
+      - "Example: transfer restrictions not yet confirmed"
+
+slots:
+  healthcare_equity:
+    used_by: [wave_1, type_c, type_e]
+    role: "Defensive equity — healthcare sector"
+    role_fit:                     # optional; report-only (get_role_fit_metrics)
+      benchmark: XHBM             # ticker, or a blend like {VTI: 0.6, VXUS: 0.4}
+      # compare_to: QQQ           # optional second correlation
+      # breakeven_series: T10YIE  # optional (TIPS-type slots)
+      # manual_only: "why"        # skip metrics entirely
+      proposed_bands: {corr_benchmark: ">= 0.85"}   # shown, never graded
+    primary:
+      name: "Example Health Care Fund"
+      plan_name: "EXAMPLE HEALTHCARE"
+      proxy_ticker: XHCFX         # public share class of the same portfolio (plan-only classes)
+      route: in_plan
+      vehicle: mutual_fund
+      availability: open          # open | limited | closed
+      expense_ratio_pct: null
+      verified_on: "YYYY-MM-DD"   # quote it
+      trade_restrictions:         # optional plan excessive-trading limit
+        policy: "Example: 1 day of exchanges per quarter"
+        exchange_days_per_quarter: 1
+        period_months: 12
+        start: null               # "YYYY-MM-DD" or null (null = assumed in force)
+        end: null
+        covered_funds: TBC        # or a list of plan fund names
+    backup:
+      name: "Example Health Care ETF"
+      ticker: XHLT
+      route: brokeragelink
+      vehicle: etf
+      verified_on: null
+
+  lng_single:
+    used_by: [type_a]
+    role: "Example single-name slot"
+    primary: {name: "Example Corp", ticker: EXCO, route: brokeragelink, vehicle: stock, verified_on: null}
+    backup: {ref: energy_etf.primary}   # reuse another slot's instrument
+
+  # ...one entry per remaining slot listed above.
+
+unassigned_watchlist: []

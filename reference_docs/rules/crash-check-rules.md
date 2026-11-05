@@ -501,6 +501,216 @@ actually on.
 | 5 | Add/complete defensive-equity and real-asset positions to long-term target weights. |
 | 6 | Arrive at long-term target allocation (see `local_state/portfolio.yaml` for the account's specific target %). |
 
+## Deployment Instrument Selection
+
+*Added 2026-11-04 (phase 1). Implemented in `mcp_server/src/lib/instruments.ts`;
+each wave split and Stage 3 line carries a `slot` id in
+`mcp_server/src/lib/waveDeployment.ts`.*
+
+The waves and the crash-type layers decide **how much** goes where, by
+category. This section decides **which instrument** fills each category,
+and how that choice is kept current. The mapping itself lives in
+`local_state/deployment_instruments.yaml` (gitignored); this section is the
+policy it must follow.
+
+### Principles
+
+1. **Instruments are chosen in calm markets, never when a wave fires.**
+   When a wave fires, the only live decisions are the mechanical checks
+   below. No new names, no swaps beyond the pre-named backup.
+2. **The registry fixes the instrument, not the outcome.** A named fund in
+   a tidy table is not a forecast. It records a considered choice so that
+   nothing has to be decided under stress.
+3. **One source of truth per fact.** Percentages stay in this document and
+   `waveDeployment.ts`. The registry maps slots to instruments and stores nothing
+   about amounts.
+4. **Prefer breadth when a slot only needs beta.** At −16 / −24 / −35%
+   market drawdowns most of the payoff comes from owning the exposure
+   cheaply. A single name must be a clearly better expression of the
+   slot's role than its ETF to keep its place.
+5. **Prefer in-plan routes.** An in-plan exchange settles fastest and
+   carries no transfer restrictions. A BrokerageLink route is used only
+   where the menu has no equivalent (currently TIPS, gold, energy, and
+   single names).
+
+### Selection criteria
+
+Each slot gets a **primary** and a **backup**. A primary is replaced only
+when it fails one of these criteria, never because of recent returns.
+
+**Plan funds**, in order:
+1. *Role fit* — the holdings deliver the exposure the slot assumes.
+2. *Cost and structure* — net expense ratio; index vs. active; collective
+   trust vs. mutual fund.
+3. *Crash behavior* — drawdown and recovery vs. its benchmark in 2008,
+   2020 and 2022, where history exists.
+4. *Fund risks* — persistent outflows, closure to new money, manager or
+   strategy change, mergers.
+5. *Overlap* — duplication with current holdings, the SIP, or other slots.
+
+**BrokerageLink ETFs**:
+1. *Role fit*, including duration for bond ETFs.
+2. *Expense ratio.*
+3. *Liquidity* — assets and typical bid-ask spread.
+4. *Tracking* — physical backing for commodities; tracking error.
+
+**Single names** — phase 1: kept only if the thesis is re-underwritten as
+intact at wave time; otherwise the slot's money goes to its backup ETF.
+Phase 2 will replace this with quality, relative-value and thesis gates
+and retire fixed dollar targets.
+
+### When a wave fires
+
+`get_deployment_plan` returns, for each line of the authorized plan:
+slot, primary instrument, backup, route, dollar amount, and verification
+status. Before any trade:
+
+1. **Verification age.** Any instrument whose `verified_on` is older than
+   `verification_max_age_days` (90) is shown as UNVERIFIED. Re-check it
+   before trading; do not silently fall back.
+2. **Route status.** A line whose route is `pending` is shown with its
+   open questions; a line whose route is `blocked` is shown with the
+   constraint that blocks it. Resolve both before the wave, not during it.
+   The tool flags a blocked route; it does not decide where that line's
+   money goes instead.
+3. **Primary check.** If the primary has closed to new money, been merged,
+   or (single names) failed its thesis check, use the backup.
+4. **Record.** After trades are placed, `record_wave_deployment` with the
+   funds bought and sold. This also logs the exchange day (see Trading
+   restrictions). If a backup was used, note which and why.
+
+The registry never changes percentages, wave authorization, or
+cumulative-deployment behavior.
+
+### Readiness and fire drill
+
+Every slot gets a **readiness grade** that answers one question: if a wave
+fired today, could this slot's money actually get there? It is not a
+judgment of the instrument's returns.
+
+- **GREEN** — primary can be bought today and is verified.
+- **AMBER** — buyable, but only via the backup, or the primary is
+  UNVERIFIED, `limited` (soft-closed) to new money, or has an unreviewed
+  structural fund filing (see Fund-filing watch). A primary whose plan
+  trading limit is used up this quarter routes to the backup.
+- **RED** — neither primary nor backup can be bought today (route blocked or
+  pending, fund closed, or the backup is "hold in stable value").
+
+`get_portfolio_snapshot` reports the grade counts, RED slots and review due
+date on every daily run, so problems show up in calm markets, when they
+can still be fixed. `run_deployment_fire_drill` rehearses the whole plan
+through a chosen wave (plus an optional crash-type layer) as if it fired
+today, and reports which instrument each line would buy and what share of
+the money can't move. It is read-only and never records a deployment. The
+drill runs as part of every portfolio review.
+
+### Trading restrictions and the exchange log
+
+A plan fund can carry an excessive-trading limit (for example, one day of
+exchanges per quarter for a restriction period). The registry records it
+per instrument (`trade_restrictions`: policy, exchange days per quarter,
+period, start/end, covered funds or `TBC`). Every exchange actually
+submitted is recorded in a local exchange log, either by
+`record_wave_deployment` or, for exchanges that aren't waves, by
+`record_exchange`. If a restricted primary's exchange day for the quarter
+is already used, readiness routes that slot to the backup.
+
+The fire drill treats each wave, and then the crash-type layer, as a
+separate exchange day in the same quarter. This is the worst case for a
+per-quarter limit: two waves that both buy the same restricted fund will
+send the second wave's purchase to the backup. Working assumptions, each
+to be confirmed with the plan and repeated in the tool output: quarter
+means calendar quarter; one multi-fund exchange submitted as one
+transaction uses one exchange day; while covered funds are `TBC`, only
+exchanges that involve the restricted fund count (a worst-case switch
+counts every plan exchange); a restriction with no start/end date is
+treated as in force.
+
+### Fund-filing watch
+
+`check_fund_filings` scans EDGAR for prospectus supplements (forms 497 and
+497K) filed for each instrument's own fund series (via its ticker, or a
+public share class of the same portfolio for plan-only classes). A filing
+counts only if its header lists that series and the document is a short
+supplement ("Supplement dated … to the Prospectus"). Annual SAIs,
+summary prospectuses and sibling funds in the same trust are routine,
+because they mention mergers and liquidation as boilerplate.
+
+- **Structural** (merger, reorganization, liquidation, closure): the
+  instrument is AMBER until the event is reviewed and acknowledged
+  (`acknowledge_fund_filing`). An actual closure is then recorded by hand
+  as `availability: closed`.
+- **Fee or manager change:** review flag only; readiness is unchanged.
+
+Collective trusts and grantor trusts file no 497s and are listed for the
+manual quarterly check instead.
+
+### Role fit (report-only until the 2027-02-02 review)
+
+`get_role_fit_metrics` asks whether each instrument still behaves the way
+its slot assumes. It never asks whether the instrument has done well.
+Each slot's spec in the registry (`role_fit`) names a benchmark, an
+optional comparison (for example, a real-estate fund's correlation to
+tech), or a breakeven-inflation series (TIPS). The report shows, over one
+year of daily data:
+
+- correlation to the benchmark;
+- beta to the S&P 500;
+- annualized volatility;
+- the 30-day return gap to the benchmark;
+- breakeven sensitivity, where configured;
+- how the instrument fell compared with its benchmark in each S&P 500
+  drawdown of 10% or more in the last five years.
+
+Plan-only funds use a public share class of the same portfolio, flagged
+as a proxy. The two index collective trusts are manual-only.
+
+The slot roles are fixed (2026-11-05): healthcare is the defensive slot;
+real asset means real estate and inflation, not infrastructure. **No
+bands are adopted yet.** The readings are reported for one quarter, and
+the bands are set at the 2027-02-02 quarterly review from what the
+readings show. After that, a confirmed breach raises a review flag only
+and never changes readiness. The one exception is a closure, merger or
+liquidation, which is handled by the fund-filing watch above.
+
+### Quarterly review
+
+Due `verification_max_age_days` after `last_full_review` (reported as
+`DUE_SOON` in the final 14 days, then `OVERDUE`), and run inside the
+portfolio review. Once a quarter, and whenever an instrument flag appears, re-check every
+primary and backup against its criteria and update `verified_on`. The
+review uses the fire drill, the fund-filing watch (plus the manual list),
+and the role-fit report. A swap
+is a human edit to the registry with a one-line reason, never an automatic
+change. The review also lists any watchlist ticker without a slot
+(`unassigned_watchlist`) for a keep-or-drop decision.
+
+### Known gaps (2026-11-04)
+
+- The BrokerageLink route is `blocked` (confirmed 2026-11-05): the stable-value
+  fund's equity-wash rule bars direct exchange into competing funds,
+  including the brokerage window, until money has sat 90 days in a
+  non-competing fund. Every BrokerageLink line (TIPS, gold, energy, single
+  names) therefore can't be executed at wave time as things stand. Which
+  plan funds count as competing, and whether to pre-stage a brokerage cash
+  sleeve, are open decisions.
+- BrokerageLink's own restrictions (max % of balance, minimums, settlement)
+  are still unconfirmed.
+- Expense ratios for several plan funds (the collective trusts and two
+  share classes) still need the plan's fee disclosure.
+- Single-name entries carry the watchlist's last update (2026-07-16) and
+  will show as UNVERIFIED until re-underwritten.
+- Open decision: one TIPS slot (short duration) or separate short and
+  broad TIPS slots by crash type.
+- Open decision: whether single names stay in the waves at all (phase 2).
+- A plan excessive-trading limit (one exchange day per quarter) applies to
+  at least the target-date fund (seen 2026-11-05). Its start and end dates
+  and the funds it covers are TBC, so the counting rules above are
+  assumptions. The same exchange preview showed no competing-fund warning,
+  which is weak evidence only, since the check may run at submit.
+- Role-fit bands are not set (report-only until 2027-02-02). Breakeven
+  sensitivity is the TIPS slot's role-fit measure.
+
 ## Warsh Fed Classification — HAWKISH / MODERATE / DOVISH
 
 > **Gap flagged, not invented:** the source doc documents the criteria that

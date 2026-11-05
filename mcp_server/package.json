@@ -7,7 +7,8 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "usage-report": "tsx src/scripts/tokenUsageReport.ts"
+    "usage-report": "tsx src/scripts/tokenUsageReport.ts",
+    "test": "tsx --test src/lib/*.test.ts"
   },
   "engines": {
     "node": ">=22"

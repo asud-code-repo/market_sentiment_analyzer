@@ -349,6 +349,32 @@ existing wave logic has strong precision even where its timing is weak.
 
 ## Process & content
 
+- **Deployment-instrument registry — built through role fit (2026-11-05),
+  rest open.** Built: slot -> primary/backup registry (local, gitignored),
+  per-slot readiness grades, `run_deployment_fire_drill`, quarterly-review
+  due date surfaced daily via `get_portfolio_snapshot`, plan trading-limit
+  tracking (`trade_restrictions` + local exchange log), EDGAR fund-filing
+  watch (`check_fund_filings`), report-only role-fit metrics
+  (`get_role_fit_metrics`, computed on demand from Yahoo + Supabase, nothing
+  persisted). See `crash-check-rules.md` "Deployment Instrument Selection".
+  Open:
+  - **Role-fit bands** — set at the 2027-02-02 review from a quarter of
+    readings; until then report-only. Breakeven sensitivity (TIPS) was not
+    verified live at build time (needs Supabase creds, which only the
+    Claude Desktop config has).
+  - **Trading-limit facts** — covered funds, start/end, whether "quarter" is
+    calendar, whether one multi-fund transaction = one exchange day. All
+    are modeled as stated assumptions until confirmed.
+  - **Route decisions** (project chat): which plan funds count as
+    "competing" under the stable-value fund's equity-wash rule; whether to
+    pre-stage a brokerage cash sleeve. Until then every brokerage-window
+    slot grades RED.
+  - **Slot decisions** (project chat): one TIPS slot vs. short/broad by
+    crash type; whether single names stay in the waves (phase 2 gates).
+  - **Push alert** for a slot turning RED or the review going OVERDUE — the
+    ntfy notifier runs in GitHub Actions, which can't read local_state, so
+    this needs a local trigger.
+
 - **External public-report review (2026-09-15) — three larger items
   deliberately deferred, not built.**
   - **Evidence-grouping framework**: guidance for grouping ~20 contextual

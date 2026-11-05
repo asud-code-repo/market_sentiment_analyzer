@@ -6,6 +6,13 @@ import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWaveDeploymentState, recordWaveDeployment } from "./lib/waveDeploymentState.js";
+import { loadInstrumentRegistry, compactReadiness } from "./lib/deploymentInstruments.js";
+import { runFireDrill } from "./lib/fireDrill.js";
+import { appendExchange } from "./lib/exchangeLog.js";
+import { checkFundFilings, acknowledgeFiling } from "./lib/fundFilings.js";
+import { computeRoleFit, tickersNeeded, type PriceSeries } from "./lib/roleFit.js";
+import { fetchYahooDaily, fetchSeriesHistory } from "./lib/roleFitData.js";
+import { resolveInstruments } from "./lib/instruments.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
@@ -191,20 +198,24 @@ server.registerTool(
       "macro data, not the resulting personal figure). rate_reset_trigger.status ('fired'/'pending') " +
       "is a plain date comparison, already evaluated here — use it directly in get_trigger_status/" +
       "write_snapshot rather than recomputing the date comparison yourself, which has repeatedly " +
-      "produced wrong results in practice.",
+      "produced wrong results in practice. deployment_readiness summarizes whether each " +
+      "deployment slot could be bought today and when the instrument review is due — report " +
+      "review_status DUE_SOON/OVERDUE and any red_slots in the crash readiness summary.",
   },
   withLogging("get_portfolio_snapshot", async () => {
     const portfolio = readPortfolio();
     const rateResetTrigger = computeRateResetTriggerStatus(portfolio);
+    const deploymentReadiness = compactReadiness(loadInstrumentRegistry(new Date()).health);
+    const extras = { rate_reset_trigger: rateResetTrigger, deployment_readiness: deploymentReadiness };
     const dexcaus = await getLatestDataPoint("DEXCAUS");
     if (!dexcaus) {
       // No live rate available yet (e.g. ingestion hasn't run since this
       // series was added) — fall back to the file's hardcoded snapshot
       // rather than failing the whole tool call.
-      return json({ ...(portfolio as object), rate_reset_trigger: rateResetTrigger });
+      return json({ ...(portfolio as object), ...extras });
     }
     const withFx = applyLiveFxRate(portfolio, dexcaus.value, dexcaus.observation_date);
-    return json({ ...(withFx as object), rate_reset_trigger: rateResetTrigger });
+    return json({ ...(withFx as object), ...extras });
   }),
 );
 
@@ -967,7 +978,10 @@ server.registerTool(
       "wave_deployment_state, set only via record_wave_deployment). Deployment is cumulative across " +
       "not-yet-executed waves (see crash-check-rules.md's Wave Deployment section) — read this " +
       "tool's output directly rather than computing dollar amounts by hand. Fund descriptions are " +
-      "generic; cross-reference get_portfolio_snapshot for actual fund names, and never persist " +
+      "generic; each line's `instruments` gives the pre-named primary/backup from the local " +
+      "instrument registry with route and verification status — surface its warnings (UNVERIFIED, " +
+      "blocked/pending route) before any trade, and never substitute an instrument the registry " +
+      "doesn't name. instrument_registry reports registry health on every call. Never persist " +
       "dollar figures via write_snapshot. Call record_wave_deployment only after trades are placed.",
   },
   withLogging("get_deployment_plan", async () => {
@@ -976,12 +990,20 @@ server.registerTool(
       return json({ error: "No crash_checks rows exist yet — has the rule engine (Stage 3) run?" });
     }
 
+    // Validated on every call — even with no wave active — so a broken
+    // registry surfaces in a calm market, not mid-crash. Never blocks the
+    // dollar plan: amounts come from waveDeployment.ts, not the registry.
+    const today = new Date();
+    const registryLoad = loadInstrumentRegistry(today);
+    const instrumentRegistry = registryLoad.health;
+
     const waveActive = latest.wave_active as Wave | "NONE" | null;
     const waveActiveReason = latest.wave_active_reason;
     if (!waveActive || waveActive === "NONE") {
       return json({
         wave_active: "NONE",
         message: "No wave currently active — nothing to deploy. Dry powder stays fully in stable value.",
+        instrument_registry: instrumentRegistry,
       });
     }
 
@@ -994,6 +1016,7 @@ server.registerTool(
           `${waveActive}'s S&P drawdown/VIX threshold has been observed but is not yet authorized — ` +
           "fewer than 3 of 6 indicators are confirmed RED (see get_indicator_panel's confirmed_red_count). " +
           "No deployment plan until wave_authorized is true.",
+        instrument_registry: instrumentRegistry,
       });
     }
 
@@ -1013,10 +1036,18 @@ server.registerTool(
       });
     }
 
-    const wavePlans = pendingWaves.map((w) => ({ wave: w, ...computeWaveDeployment(w, dryPowderUsd) }));
+    // Instruments are attached only after authorization, and only alongside
+    // the existing fields — pct/usd are never touched by the registry.
+    const withInstruments = <L extends { slot: string | null }>(lines: L[]) =>
+      registryLoad.ok ? resolveInstruments(lines, registryLoad.registry, today, registryLoad.exchangeCtx) : lines;
+
+    const wavePlans = pendingWaves.map((w) => {
+      const plan = computeWaveDeployment(w, dryPowderUsd);
+      return { wave: w, ...plan, splits: withInstruments(plan.splits) };
+    });
 
     const crashType = latest.crash_type as CrashType | null;
-    const crashTypeLayer = crashType ? computeCrashTypeLayer(crashType, dryPowderUsd) : null;
+    const crashTypeLayer = crashType ? withInstruments(computeCrashTypeLayer(crashType, dryPowderUsd)) : null;
 
     return json({
       wave_active: waveActive,
@@ -1034,7 +1065,120 @@ server.registerTool(
         : {}),
       crash_type: crashType,
       crash_type_layer: crashTypeLayer,
+      instrument_registry: instrumentRegistry,
       hard_rules: HARD_RULES,
+    });
+  }),
+);
+
+server.registerTool(
+  "run_deployment_fire_drill",
+  {
+    description:
+      "SIMULATION — rehearses the deployment plan through a given wave (plus an optional crash-type " +
+      "layer) as if it fired today, regardless of current wave status or executed waves. Returns each " +
+      "line's readiness grade (GREEN/AMBER/RED), which instrument would actually be bought (primary or " +
+      "backup), why, and the % of the money that can't move today. Read-only: never records a " +
+      "deployment. Each wave (then the crash-type layer) is simulated as its own exchange day in the " +
+      "current quarter, so per-quarter trading limits show up as lines rerouted to the backup. " +
+      "all_plan_exchanges_count=true is the worst case (every plan exchange uses the limited day). " +
+      "Use in the portfolio review and the quarterly instrument review; chat-only, never persist its " +
+      "dollar amounts.",
+    inputSchema: {
+      through_wave: z.enum(["WAVE_1", "WAVE_2", "WAVE_3"]),
+      crash_type: z.enum(["A_STAGFLATION", "B_RECESSION", "C_CREDIT", "D_AI_BUBBLE", "E_HYBRID"]).optional(),
+      all_plan_exchanges_count: z.boolean().optional(),
+    },
+  },
+  withLogging("run_deployment_fire_drill", async (input) => {
+    const today = new Date();
+    const load = loadInstrumentRegistry(today);
+    if (!load.ok) return json({ instrument_registry: load.health, error: "Registry invalid — fix it before drilling." });
+    const drill = runFireDrill(
+      input.through_wave,
+      input.crash_type ?? null,
+      readDryPowderUsd(),
+      load.registry,
+      today,
+      load.exchangeLog,
+      input.all_plan_exchanges_count ?? false,
+      load.filingEvents,
+    );
+    return json({ ...drill, instrument_registry: load.health });
+  }),
+);
+
+server.registerTool(
+  "check_fund_filings",
+  {
+    description:
+      "EDGAR watch for the deployment-instrument registry's funds/ETFs: prospectus supplements (497/" +
+      "497K) for each instrument's own fund series that mention a merger, reorganization, liquidation " +
+      "or closure (structural — keeps that instrument's readiness AMBER until acknowledged) or a fee/" +
+      "manager change (review flag only). Annual SAIs/prospectuses and sibling funds in the same trust " +
+      "are filtered out as routine. Collective/grantor trusts can't be watched and come back in " +
+      "manual_check. Caches results locally. Run in the portfolio review; report events as-is.",
+    inputSchema: { lookback_days: z.number().int().min(7).max(730).optional() },
+  },
+  withLogging("check_fund_filings", async (input) => {
+    const load = loadInstrumentRegistry(new Date());
+    if (!load.ok) return json({ instrument_registry: load.health, error: "Registry invalid — fix it first." });
+    return json(await checkFundFilings(load.registry, new Date(), input.lookback_days ?? 100));
+  }),
+);
+
+server.registerTool(
+  "acknowledge_fund_filing",
+  {
+    description:
+      "Marks a check_fund_filings event as reviewed (by its url) with a one-line note, clearing its " +
+      "readiness downgrade. Only after the user has looked at the filing and agreed it needs no " +
+      "registry change (or the change was made).",
+    inputSchema: { url: z.string().url(), note: z.string().min(1) },
+  },
+  withLogging("acknowledge_fund_filing", async (input) => {
+    const ev = acknowledgeFiling(input.url, input.note);
+    return json(ev ? { acknowledged: ev } : { error: "No cached event with that url — run check_fund_filings first." });
+  }),
+);
+
+server.registerTool(
+  "get_role_fit_metrics",
+  {
+    description:
+      "REPORT-ONLY role-fit readings for each deployment slot (from the registry's role_fit specs): " +
+      "1-year correlation to the slot benchmark, beta to SPY, annualized volatility, 30-day return " +
+      "gap vs benchmark, optional comparison correlation, breakeven-inflation sensitivity for TIPS, " +
+      "and behavior in past SPY drawdowns of 10%+. Plan-only funds use a public share class of the " +
+      "same portfolio (proxy: true). Bands are NOT adopted (until the 2027-02-02 review): never call " +
+      "a reading a pass/fail, never recommend a swap from it, never judge on returns. Chat-only.",
+  },
+  withLogging("get_role_fit_metrics", async () => {
+    const load = loadInstrumentRegistry(new Date());
+    if (!load.ok) return json({ instrument_registry: load.health, error: "Registry invalid — fix it first." });
+    const errors: string[] = [];
+    const prices = new Map<string, PriceSeries>();
+    for (const t of tickersNeeded(load.registry)) {
+      try {
+        prices.set(t, await fetchYahooDaily(t));
+      } catch (err) {
+        errors.push((err as Error).message);
+      }
+    }
+    const breakevens = new Map<string, PriceSeries>();
+    for (const s of new Set(Object.values(load.registry.slots).flatMap((x) => (x.role_fit?.breakeven_series ? [x.role_fit.breakeven_series] : [])))) {
+      try {
+        breakevens.set(s, await fetchSeriesHistory(s));
+      } catch (err) {
+        errors.push((err as Error).message);
+      }
+    }
+    return json({
+      report_only: true,
+      bands_adopted: false,
+      window: "252 trading days (stress episodes: up to 5y)",
+      slots: computeRoleFit(load.registry, prices, breakevens),
+      errors,
     });
   }),
 );
@@ -1044,16 +1188,48 @@ server.registerTool(
   {
     description:
       "Records that a wave's deployment plan was actually executed in the brokerage — persists to " +
-      "the local wave_deployment_state file so get_deployment_plan stops re-proposing it. Call this " +
-      "only after the user confirms trades were actually placed, never speculatively.",
+      "the local wave_deployment_state file so get_deployment_plan stops re-proposing it, and appends " +
+      "the exchange to the local exchange log (used to count plan trading-limit exchange days). Pass " +
+      "bought/sold as fund names as shown on the plan website; if omitted, the exchange counts against " +
+      "every trading restriction. Call this only after the user confirms trades were actually placed, " +
+      "never speculatively.",
     inputSchema: {
       wave: z.enum(["WAVE_1", "WAVE_2", "WAVE_3"]),
-      executed_date: z.string(),
+      executed_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      bought: z.array(z.string()).optional(),
+      sold: z.array(z.string()).optional(),
     },
   },
   withLogging("record_wave_deployment", async (input) => {
     const state = recordWaveDeployment(input.wave, input.executed_date);
-    return json({ deployment_state: state });
+    appendExchange({
+      date: input.executed_date,
+      bought: input.bought?.length ? input.bought : input.sold?.length ? [] : ["UNKNOWN"],
+      sold: input.sold ?? [],
+      reason: input.wave,
+    });
+    return json({ deployment_state: state, exchange_logged: true });
+  }),
+);
+
+server.registerTool(
+  "record_exchange",
+  {
+    description:
+      "Logs a non-wave 401k exchange (rebalance, fund swap, etc.) to the local exchange log so plan " +
+      "trading limits (e.g. 1 exchange day per quarter) are counted. One multi-fund transaction = one " +
+      "entry. Fund names as shown on the plan website. Only after the user confirms it was submitted. Wave " +
+      "exchanges go through record_wave_deployment instead.",
+    inputSchema: {
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      bought: z.array(z.string()),
+      sold: z.array(z.string()),
+      reason: z.string(),
+    },
+  },
+  withLogging("record_exchange", async (input) => {
+    const log = appendExchange({ date: input.date, bought: input.bought, sold: input.sold, reason: input.reason });
+    return json({ exchanges_logged: log.length, latest: log[log.length - 1] });
   }),
 );
 
