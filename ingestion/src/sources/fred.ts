@@ -381,19 +381,28 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
     throw new Error("FRED returned no usable SP500 observations");
   }
 
-  const latest = valid[valid.length - 1];
   const ath = valid.reduce((max, o) => (Number(o.value) > Number(max.value) ? o : max), valid[0]);
 
+  // Write the trailing ~30 observations, not just the latest. FRED sometimes
+  // publishes SP500 a day late, so a 10am-ET run can see two new closes at
+  // once; writing only the latest left permanent holes (6 found Oct-Nov
+  // 2026). Holes matter downstream: getTradingDayAnchor() counts SP500 rows
+  // as trading days and the hazard model's realized vol uses consecutive
+  // rows, so a missing day silently shifts the 5/20-day deltas. Upserts on
+  // (series_id, observation_date) are idempotent, so re-writing recent days
+  // is a no-op except where it fills a gap.
+  const recent = valid.slice(-30);
+
   return [
-    {
+    ...recent.map((o) => ({
       series_id: "SP500",
       source: "FRED",
       source_series_code: "SP500",
-      observation_date: latest.date,
-      value: Number(latest.value),
+      observation_date: o.date,
+      value: Number(o.value),
       unit: "index",
-      raw_payload: latest,
-    },
+      raw_payload: o,
+    })),
     {
       // Derived, not a distinct FRED series — observation_date here is the
       // date the ATH was actually set, not today. Upserts idempotently on
