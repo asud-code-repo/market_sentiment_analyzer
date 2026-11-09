@@ -394,6 +394,23 @@
     .radar-detail-table .radar-score { width: 42px; }
   }
 
+  .analyst-card { margin-top: 12px; }
+  .analyst-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .analyst-head h2 { font-size: 17px; margin: 0; }
+  .analyst-role { font-size: 12px; color: var(--text-muted); }
+  .analyst-lens { font-size: 13px; color: var(--text-secondary); margin: 6px 0 4px; }
+  .analyst-asof { font-size: 11px; color: var(--text-muted); margin: 0 0 4px; }
+  .analyst-asof.stale { color: var(--warning); font-weight: 600; }
+  .analyst-row { border-top: 1px solid var(--grid); padding: 12px 0 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+  .analyst-row .row-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+  .analyst-row .row-head strong { font-size: 13px; }
+  .analyst-row .col-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 2px; }
+  .analyst-row .col { font-size: 13px; line-height: 1.45; }
+  .analyst-row .col a { color: var(--neutral-blue); font-size: 11px; }
+  .analyst-row .gap-note { grid-column: 1 / -1; font-size: 12px; color: var(--text-muted); }
+  .pill.differs { background: none; color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
+  @media (max-width: 640px) { .analyst-row { grid-template-columns: 1fr; } }
+
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
 </style>
@@ -414,6 +431,7 @@
     <button class="tab-btn" data-tab="stressmonitor">Stress Monitor</button>
     <button class="tab-btn" data-tab="smartmoney">Smart Money</button>
     <button class="tab-btn" data-tab="macro">Macro &amp; Context</button>
+    <button class="tab-btn" data-tab="analysts">Analyst Views</button>
   </div>
 
   <div class="tab-panel" id="tab-stressmonitor">
@@ -527,6 +545,20 @@
         <div id="context-grid"><p class="loading">Loading…</p></div>
       </div>
     </div>
+  </div>
+
+  <!-- Analyst Views (added 2026-11-09). Content lives in analyst_views.json
+       (human-reviewed paraphrases with links + dates); the "this system
+       today" side and the verdicts are computed live from data this page
+       already loads. Frameworks compared, not a scorecard of who's right --
+       deliberately no overall agreement score. -->
+  <div class="tab-panel" id="tab-analysts" hidden>
+    <div class="card">
+      <p class="eyebrow">How this system's data lines up with well-known macro views</p>
+      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right: their views are often about years, this system's about weeks to months.</p>
+      <p class="context-note" style="margin:0;">Views are short paraphrases of public statements, linked to the source and dated. Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
+    </div>
+    <div id="analysts-wrap"><p class="loading">Loading…</p></div>
   </div>
 </div>
 
@@ -1887,6 +1919,7 @@ stage: "Financing & absorption", stress: m2QYearAgo != null && gdpYearAgo ? m2Q 
       }
     }
 
+    resolveFiscalChecks(cards); // shared with the Analyst Views tab
     if (cards.length === 0) {
       wrap.innerHTML = '<p class="loading">No data yet — run the backfill workflow to populate history for these series.</p>';
       return;
@@ -1927,6 +1960,7 @@ stage: "Financing & absorption", stress: m2QYearAgo != null && gdpYearAgo ? m2Q 
       <p class="context-note" style="margin-top:10px;">Report each check on its own — do not average these into a single "fiscal dominance score." None individually proves the regime either way.</p>
     `;
   } catch (err) {
+    resolveFiscalChecks([]);
     wrap.innerHTML = `<p class="loading">Failed to load fiscal dominance checklist: ${err.message}</p>`;
   }
 }
@@ -3271,7 +3305,7 @@ const SECTION_TAB = {
   "section-insider": "smartmoney",
   "section-positioning": "smartmoney",
 };
-const TAB_IDS = ["stressmonitor", "smartmoney", "macro"];
+const TAB_IDS = ["stressmonitor", "smartmoney", "macro", "analysts"];
 const TAB_STORAGE_KEY = "activeTab";
 
 function activateTab(tabId) {
@@ -3306,6 +3340,197 @@ function setupTabs() {
   activateTab(initialTab);
 }
 setupTabs();
+
+// ---- Analyst Views tab --------------------------------------------------
+// Live inputs shared with other cards: resolved by
+// renderFiscalDominanceChecklist() and the positioning block in main(), so
+// this tab never re-fetches what the page already computed.
+let resolveFiscalChecks, resolvePositioning;
+const FISCAL_CHECKS = new Promise((r) => (resolveFiscalChecks = r));
+const POSITIONING_READY = new Promise((r) => (resolvePositioning = r));
+const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise((r) => setTimeout(() => r(fallback), ms))]);
+const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Each check compares one analyst claim against this system's live data.
+// Returns { reading, supports } -- supports: true (data shows it),
+// "partial", false (data doesn't show it yet), or null (no data).
+// Thresholds are the system's own existing bands/rules, not tuned to agree
+// or disagree with anyone.
+const ANALYST_CHECKS = {
+  fiscal_pressure: async ({ fiscal }) => {
+    const c = fiscal.filter((x) => x.stage === "Fiscal pressure" && x.stress != null);
+    if (c.length === 0) return { reading: "Fiscal checks unavailable.", supports: null };
+    const n = c.filter((x) => x.stress).length;
+    return {
+      reading: `${n} of ${c.length} fiscal-pressure checks point to stress (see the Fiscal Dominance checklist on the Macro &amp; Context tab).`,
+      supports: n / c.length >= 0.5 ? true : n > 0 ? "partial" : false,
+    };
+  },
+  long_yields_pressure: async ({ row, latest }) => {
+    if (row?.treasury_10y_pct == null) return { reading: "10-year yield unavailable.", supports: null };
+    const y30 = await latest("DGS30");
+    const color = row.treasury_10y_color;
+    return {
+      reading: `10-year yield ${Number(row.treasury_10y_pct).toFixed(2)}%, ${color === "GREEN" ? "normal" : color === "AMBER" ? "elevated" : "high"} on this system's 4.3% / 5.0% bands${y30 ? `; 30-year ${Number(y30.value).toFixed(2)}%` : ""}.`,
+      supports: color === "GREEN" ? false : true,
+    };
+  },
+  gold_decoupling: async ({ fiscal }) => {
+    const c = fiscal.find((x) => x.label.startsWith("Gold"));
+    if (!c || c.stress == null) return { reading: "Gold/real-yield check unavailable.", supports: null };
+    return {
+      reading: c.stress
+        ? `Gold's usual inverse link to real yields has broken down (180-day correlation ${c.value}): it's trading like a hedge against the currency, not a rate asset.`
+        : `Gold still trades like a normal rate-sensitive asset (180-day correlation with real yields ${c.value}), so no debasement signal yet.`,
+      supports: c.stress,
+    };
+  },
+  policy_loose: async ({ fiscal }) => {
+    const c = fiscal.find((x) => x.stage === "Policy constraint");
+    if (!c || c.stress == null) return { reading: "Taylor Rule check unavailable.", supports: null };
+    return {
+      reading: `Fed funds vs. the Taylor Rule: ${c.value}. ${c.stress ? "Policy is looser than inflation and unemployment alone justify, the risk he describes." : "Policy is not looser than the rule prescribes."}`,
+      supports: c.stress,
+    };
+  },
+  economy_healthy: async ({ row }) => sahmCheck(row, { GREEN: true, AMBER: "partial", RED: false }),
+  economy_weakening: async ({ row }) => sahmCheck(row, { GREEN: false, AMBER: "partial", RED: true }),
+  dollar_weakening: async ({ history }) => {
+    const h = await history("DTWEXBGS", 300);
+    if (h.length < 200) return { reading: "Dollar index history unavailable.", supports: null };
+    const last = h[0];
+    const yearAgo = h.find((r) => r.observation_date <= shiftDays(last.observation_date, 365));
+    const avg200 = h.slice(0, 200).reduce((a, r) => a + r.value, 0) / 200;
+    const belowYear = yearAgo ? last.value < yearAgo.value : null;
+    const belowAvg = last.value < avg200;
+    const chg = yearAgo ? (last.value / yearAgo.value - 1) * 100 : null;
+    return {
+      reading: `Broad trade-weighted dollar ${Number(last.value).toFixed(1)}${chg != null ? `, ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% vs. a year ago` : ""}; ${belowAvg ? "below" : "above"} its 200-day average.`,
+      supports: belowYear && belowAvg ? true : belowYear || belowAvg ? "partial" : false,
+    };
+  },
+  inflation_sticky: async ({ history, latest }) => {
+    const h = await history("CPIAUCSL", 14);
+    if (h.length < 13) return { reading: "CPI unavailable.", supports: null };
+    const yoy = (h[0].value / h[12].value - 1) * 100;
+    const be = await latest("T10YIE");
+    return {
+      reading: `CPI inflation ${yoy.toFixed(1)}% year over year${be ? `; markets price about ${Number(be.value).toFixed(2)}% a year over the next decade (10y breakeven)` : ""}.`,
+      supports: yoy >= 3 ? true : yoy >= 2.5 ? "partial" : false,
+    };
+  },
+  equity_correction_risk: async ({ row }) => {
+    if (!row) return { reading: "No crash-check data.", supports: null };
+    if (row.hazard_10pct_status === "ALREADY_BREACHED") {
+      return { reading: "The S&amp;P is already more than 10% below its high.", supports: true };
+    }
+    const band = row.hazard_10pct_band;
+    const confirmed = row.confirmed_red_count ?? 0;
+    const hz = band
+      ? `hazard model ${HAZARD_BAND_LABELS[band] || band}${HAZARD_BAND_HIT_RATE[band] ? ` (historically ~${HAZARD_BAND_HIT_RATE[band]} odds of a 10% drop within a month)` : ""}`
+      : "hazard model unavailable";
+    return {
+      reading: `${confirmed} of 6 crash indicators confirmed RED; ${hz}.`,
+      supports: band === "HIGH" || confirmed >= 2 ? true : band === "TRANSITIONING" || (row.red_count ?? 0) >= 1 ? "partial" : false,
+    };
+  },
+  margin_debt_high: async ({ positioning }) => {
+    const m = positioning.find((x) => x.kind === "margin_yoy");
+    if (!m) return { reading: "Margin-debt data unavailable.", supports: null };
+    return {
+      reading: `Margin-debt growth ranks at the ${ordinal(m.percentile)} percentile of its history: ${m.read.charAt(0).toLowerCase() + m.read.slice(1)}.`,
+      supports: m.percentile >= 75,
+    };
+  },
+};
+
+function sahmCheck(row, map) {
+  if (row?.sahm_rule_value == null) return { reading: "Sahm Rule unavailable.", supports: null };
+  const c = row.sahm_rule_color;
+  return {
+    reading: `Sahm Rule recession indicator ${Number(row.sahm_rule_value).toFixed(2)}: ${c === "GREEN" ? "normal range, no recession signal" : c === "AMBER" ? "elevated, an early warning" : "a recession signal"}.`,
+    supports: map[c] ?? null,
+  };
+}
+
+function shiftDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Not RAG colors: "Differs" isn't bad and "Agrees" isn't good.
+const ANALYST_VERDICT = {
+  true: ["info", "Agrees"],
+  partial: ["muted", "Partly"],
+  false: ["differs", "Differs"],
+  null: ["muted", "No data"],
+};
+const ANALYST_STALE_DAYS = 90;
+
+async function renderAnalystViews(row) {
+  const wrap = document.getElementById("analysts-wrap");
+  try {
+    const res = await fetch("analyst_views.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const content = await res.json();
+    const [fiscal, positioning] = await Promise.all([
+      withTimeout(FISCAL_CHECKS, 30000, []),
+      withTimeout(POSITIONING_READY, 30000, []),
+    ]);
+    const cache = new Map();
+    const history = (id, n) => {
+      const key = `${id}:${n}`;
+      if (!cache.has(key)) {
+        cache.set(key, fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${encodeURIComponent(id)}&order=observation_date.desc&limit=${n}`).catch(() => []));
+      }
+      return cache.get(key);
+    };
+    const latest = async (id) => (await history(id, 1))[0] ?? null;
+    const ctx = { row, fiscal, positioning, history, latest };
+    const today = new Date().toISOString().slice(0, 10);
+
+    const cards = await Promise.all(content.analysts.map(async (a) => {
+      const ageDays = Math.round((Date.parse(today) - Date.parse(a.views_as_of)) / 86400000);
+      const stale = ageDays > ANALYST_STALE_DAYS;
+      const rows = await Promise.all(a.themes.map(async (t) => {
+        let verdictHtml, systemHtml, gapHtml = "";
+        if (!t.check) {
+          verdictHtml = `<span class="pill muted">Different horizon</span>`;
+          systemHtml = escHtml(t.note || "");
+        } else {
+          const fn = ANALYST_CHECKS[t.check];
+          const r = fn
+            ? await fn(ctx).catch(() => ({ reading: "Check failed to load.", supports: null }))
+            : { reading: "Unknown check.", supports: null };
+          const [cls, label] = ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
+          verdictHtml = `<span class="pill ${cls}">${label}</span>`;
+          systemHtml = r.reading;
+          if (r.supports !== true && r.supports !== null && t.if_differs) {
+            gapHtml = `<div class="gap-note"><b>What would need to change:</b> ${escHtml(t.if_differs)}</div>`;
+          }
+        }
+        return `
+          <div class="analyst-row">
+            <div class="row-head">${verdictHtml}<strong>${escHtml(t.theme)}</strong></div>
+            <div class="col"><span class="col-label">Their view</span>${escHtml(t.view)}<br><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)}, ${escHtml(t.source.date)} ↗</a></div>
+            <div class="col"><span class="col-label">This system today</span>${systemHtml}</div>
+            ${gapHtml}
+          </div>`;
+      }));
+      return `
+        <div class="card analyst-card">
+          <div class="analyst-head"><h2>${escHtml(a.name)}</h2><span class="analyst-role">${escHtml(a.role)}</span></div>
+          <p class="analyst-lens">${escHtml(a.lens)}</p>
+          <p class="analyst-asof${stale ? " stale" : ""}">Views as of ${escHtml(a.views_as_of)}${stale ? ` (over ${ANALYST_STALE_DAYS} days old, may be out of date)` : ""} · this system's side updates live</p>
+          ${rows.join("")}
+        </div>`;
+    }));
+    wrap.innerHTML = cards.join("");
+  } catch (err) {
+    wrap.innerHTML = `<p class="loading">Failed to load analyst views: ${escHtml(err.message)}</p>`;
+  }
+}
 
 async function main() {
   try {
@@ -3484,6 +3709,7 @@ async function main() {
     renderYieldCurveChart();
     renderFiscalDominanceChecklist();
     renderRatesDecomposition();
+    renderAnalystViews(ALL_ROWS[ALL_ROWS.length - 1]);
 
     // Isolated: a sector-rotation fetch failure shouldn't take down date
     // navigation, trend charts, or the contextual-indicators card above,
@@ -3700,8 +3926,10 @@ async function main() {
         bySeries.get(row.series_id).push({ date: row.observation_date, value: row.value });
       }
       const measures = POSITIONING_MEASURES.map((def) => computePositioningMeasure(def, bySeries.get(def.seriesId) ?? [])).filter(Boolean);
+      resolvePositioning(measures); // shared with the Analyst Views tab
       renderMarketPositioning(measures);
     } catch (err) {
+      resolvePositioning([]);
       document.getElementById("positioning-wrap").innerHTML = `<p class="loading">Failed to load market positioning: ${err.message}</p>`;
     }
 
