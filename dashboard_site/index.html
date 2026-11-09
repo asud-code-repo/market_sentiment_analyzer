@@ -407,6 +407,7 @@
   .analyst-row .col-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 2px; }
   .analyst-row .col { font-size: 13px; line-height: 1.45; }
   .analyst-row .col a { color: var(--neutral-blue); font-size: 11px; }
+  .analyst-row .since-note { display: block; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
   .analyst-row .gap-note { grid-column: 1 / -1; font-size: 12px; color: var(--text-muted); }
   .pill.differs { background: none; color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
   @media (max-width: 640px) { .analyst-row { grid-template-columns: 1fr; } }
@@ -555,7 +556,7 @@
   <div class="tab-panel" id="tab-analysts" hidden>
     <div class="card">
       <p class="eyebrow">How this system's data lines up with well-known macro views</p>
-      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right: their views are often about years, this system's about weeks to months. Rows built on a long-standing principle rather than a forecast say what that principle implies today instead.</p>
+      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right. Each view is measured over a window that matches it: today's reading for near-term calls, the past 12 months for calls about direction, and multi-year averages for long-term ones (the column heading says which).Rows built on a long-standing principle rather than a forecast say what that principle implies today instead.</p>
       <p class="context-note" style="margin:0;">Views are short paraphrases of public statements, linked to the source and dated. Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
     </div>
     <div id="analysts-wrap"><p class="loading">Loading…</p></div>
@@ -3356,47 +3357,105 @@ const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<":
 // "partial", false (data doesn't show it yet), or null (no data).
 // Thresholds are the system's own existing bands/rules, not tuned to agree
 // or disagree with anyone.
+//
+// Horizon matching (2026-11-09): each theme in analyst_views.json carries a
+// horizon -- "near" (weeks to months: today's reading), "direction" (is it
+// rising or falling: 12-month change), or "structural" (years: multi-year
+// averages/trends). A check measures over the window its claim is about, so
+// a multi-year call is never judged by the crash-warning bands, which are
+// built for near-term stress. Checks may also return `since`: how the main
+// measure has moved since the view was published.
 const ANALYST_CHECKS = {
-  fiscal_pressure: async ({ fiscal }) => {
+  // Long-term (Dalio): the fiscal checklist's pressure checks plus the
+  // 5-year trend in net interest as a share of GDP -- the debt-service
+  // burden his crisis call is about.
+  fiscal_pressure: async ({ fiscal, history }) => {
     const c = fiscal.filter((x) => x.stage === "Fiscal pressure" && x.stress != null);
-    if (c.length === 0) return { reading: "Fiscal checks unavailable.", supports: null };
-    const n = c.filter((x) => x.stress).length;
+    const [oint, gdp] = await Promise.all([history("FYOINT", 8), history("FYGDP", 8)]);
+    const gdpBy = new Map(gdp.map((r) => [r.observation_date, r.value]));
+    // FYOINT is $millions, FYGDP $billions (same as the fiscal checklist).
+    const share = oint
+      .filter((r) => gdpBy.get(r.observation_date))
+      .map((r) => ({ fy: r.observation_date.slice(0, 4), pct: (r.value / 1000 / gdpBy.get(r.observation_date)) * 100 }));
+    const last = share[0], five = share[5];
+    const rising = last && five ? last.pct > five.pct : null;
+    const total = c.length + (rising != null ? 1 : 0);
+    if (total === 0) return { reading: "Fiscal checks unavailable.", supports: null };
+    const n = c.filter((x) => x.stress).length + (rising ? 1 : 0);
+    const trend = rising != null ? `Net interest has gone from ${five.pct.toFixed(1)}% of GDP (FY${five.fy}) to ${last.pct.toFixed(1)}% (FY${last.fy}). ` : "";
     return {
-      reading: `${n} of ${c.length} fiscal-pressure checks point to stress (see the Fiscal Dominance checklist on the Macro &amp; Context tab).`,
-      supports: n / c.length >= 0.5 ? true : n > 0 ? "partial" : false,
+      reading: `${trend}${n} of ${total} fiscal-pressure checks point to stress (the Fiscal Dominance checklist on the Macro &amp; Context tab, plus this 5-year trend).`,
+      supports: n / total >= 0.5 ? true : n > 0 ? "partial" : false,
     };
   },
-  long_yields_pressure: async ({ row, latest }) => {
-    if (row?.treasury_10y_pct == null) return { reading: "10-year yield unavailable.", supports: null };
-    const y30 = await latest("DGS30");
-    const color = row.treasury_10y_color;
+  // Direction (Jain: "long yields are revolting"): the 12-month change in
+  // the 30- and 10-year yields. A quarter point counts as a real move.
+  long_yields_rising: async (ctx) => {
+    const [y30, y10] = await Promise.all([yearChange(ctx, "DGS30"), yearChange(ctx, "DGS10")]);
+    if (!y30 || !y10) return { reading: "Treasury yield history unavailable.", supports: null };
+    const up = [y30, y10].filter((c) => c.change >= 0.25).length;
     return {
-      reading: `10-year yield ${Number(row.treasury_10y_pct).toFixed(2)}%, ${color === "GREEN" ? "normal" : color === "AMBER" ? "elevated" : "high"} on this system's 4.3% / 5.0% bands${y30 ? `; 30-year ${Number(y30.value).toFixed(2)}%` : ""}.`,
-      supports: color === "GREEN" ? false : true,
+      reading: `30-year yield ${y30.now.toFixed(2)}%, ${movePts(y30.change)} over 12 months; 10-year ${y10.now.toFixed(2)}%, ${movePts(y10.change)}.`,
+      supports: up === 2 ? true : up === 1 ? "partial" : false,
+      since: await sinceView(ctx, "DGS30", "30-year yield", "pts"),
     };
   },
-  gold_decoupling: async ({ fiscal }) => {
-    const c = fiscal.find((x) => x.label.startsWith("Gold"));
-    if (!c || c.stress == null) return { reading: "Gold/real-yield check unavailable.", supports: null };
+  // Long-term (Dalio: weaker demand for US debt forces rates higher): the
+  // past year's average 10-year yield against its 10-year average, plus the
+  // term premium -- the extra yield investors demand to hold long bonds, the
+  // most direct read on demand for them.
+  long_yields_structural: async (ctx) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const [avgYear, avgDecade, tp] = await Promise.all([
+      ctx.avgBetween("DGS10", shiftDays(today, 365), today),
+      ctx.avgBetween("DGS10", shiftDays(today, 3652), today),
+      yearChange(ctx, "THREEFYTP10"),
+    ]);
+    if (avgYear == null || avgDecade == null) return { reading: "10-year yield history unavailable.", supports: null };
+    const higher = avgYear > avgDecade;
+    const tpUp = tp ? tp.change > 0 : null;
     return {
-      reading: c.stress
-        ? `Gold's usual inverse link to real yields has broken down (180-day correlation ${c.value}): it's trading like a hedge against the currency, not a rate asset.`
-        : `Gold still trades like a normal rate-sensitive asset (180-day correlation with real yields ${c.value}), so no debasement signal yet.`,
-      supports: c.stress,
+      reading: `The 10-year yield averaged ${avgYear.toFixed(2)}% over the past year, ${higher ? "above" : "below"} its 10-year average of ${avgDecade.toFixed(2)}%.${tp ? ` The term premium (the extra yield investors demand to hold long bonds) is ${tp.now.toFixed(2)} points, ${movePts(tp.change)} over 12 months.` : ""}`,
+      supports: higher && tpUp ? true : higher || tpUp ? "partial" : false,
+      since: await sinceView(ctx, "DGS10", "10-year yield", "pts"),
+    };
+  },
+  // Long-term (both): gold's return against inflation over the history we
+  // have (GLD starts Sep 2024, so ~2 years), plus whether it has stopped
+  // trading like a normal rate asset (the fiscal checklist's correlation).
+  gold_decoupling: async (ctx) => {
+    const c = ctx.fiscal.find((x) => x.label.startsWith("Gold"));
+    const g = await annualized(ctx, "GLD", 2);
+    const cpi = g ? await annualized(ctx, "CPIAUCSL", g.years) : null;
+    const decoupled = c && c.stress != null ? c.stress : null;
+    const real = g && cpi ? g.pct - cpi.pct : null;
+    if (decoupled == null && real == null) return { reading: "Gold data unavailable.", supports: null };
+    const parts = [];
+    if (real != null) parts.push(`Gold has returned ${g.pct.toFixed(0)}% a year over the past ${g.years.toFixed(1)} years, ${Math.abs(real).toFixed(0)} points a year ${real >= 0 ? "ahead of" : "behind"} inflation.`);
+    if (decoupled != null) {
+      parts.push(decoupled
+        ? `Its usual inverse link to real yields has broken down (180-day correlation ${c.value}), the hedge-against-the-currency pattern.`
+        : `It still trades like a normal rate-sensitive asset (180-day correlation with real yields ${c.value}).`);
+    }
+    const hits = [decoupled, real != null ? real > 0 : null].filter((x) => x === true).length;
+    return {
+      reading: parts.join(" "),
+      supports: hits === 2 ? true : hits === 1 ? "partial" : false,
+      since: await sinceView(ctx, "GLD", "gold", "pct"),
     };
   },
   policy_loose: async ({ fiscal }) => {
     const c = fiscal.find((x) => x.stage === "Policy constraint");
     if (!c || c.stress == null) return { reading: "Taylor Rule check unavailable.", supports: null };
     return {
-      reading: `Fed funds vs. the Taylor Rule: ${c.value}. ${c.stress ? "Policy is looser than inflation and unemployment alone justify, the risk he describes." : "Policy is not looser than the rule prescribes."}`,
+      reading: `Fed funds vs. the Taylor Rule: ${c.value}${c.trend ? ` (${c.trend})` : ""}. ${c.stress ? "Policy is looser than inflation and unemployment alone justify, the risk he describes." : "Policy is not looser than the rule prescribes."}`,
       supports: c.stress,
     };
   },
   economy_healthy: async ({ row }) => sahmCheck(row, { GREEN: true, AMBER: "partial", RED: false }),
   economy_weakening: async ({ row }) => sahmCheck(row, { GREEN: false, AMBER: "partial", RED: true }),
-  dollar_weakening: async ({ history }) => {
-    const h = await history("DTWEXBGS", 300);
+  dollar_weakening: async (ctx) => {
+    const h = await ctx.history("DTWEXBGS", 300);
     if (h.length < 200) return { reading: "Dollar index history unavailable.", supports: null };
     const last = h[0];
     const yearAgo = h.find((r) => r.observation_date <= shiftDays(last.observation_date, 365));
@@ -3407,16 +3466,22 @@ const ANALYST_CHECKS = {
     return {
       reading: `Broad trade-weighted dollar ${Number(last.value).toFixed(1)}${chg != null ? `, ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% vs. a year ago` : ""}; ${belowAvg ? "below" : "above"} its 200-day average.`,
       supports: belowYear && belowAvg ? true : belowYear || belowAvg ? "partial" : false,
+      since: await sinceView(ctx, "DTWEXBGS", "dollar index", "pct"),
     };
   },
-  inflation_sticky: async ({ history, latest }) => {
-    const h = await history("CPIAUCSL", 14);
-    if (h.length < 13) return { reading: "CPI unavailable.", supports: null };
-    const yoy = (h[0].value / h[12].value - 1) * 100;
-    const be = await latest("T10YIE");
+  // Long-term (Jain: inflation settles at 3-4%): the 3-year average rate,
+  // not one month's year-over-year figure, plus what markets expect for
+  // the five years starting five years out (5y5y forward).
+  inflation_sticky: async (ctx) => {
+    const [cpi, core, fwd] = await Promise.all([annualized(ctx, "CPIAUCSL", 3), annualized(ctx, "PCEPILFE", 3), ctx.latest("T5YIFR")]);
+    if (!cpi) return { reading: "CPI history unavailable.", supports: null };
     return {
-      reading: `CPI inflation ${yoy.toFixed(1)}% year over year${be ? `; markets price about ${Number(be.value).toFixed(2)}% a year over the next decade (10y breakeven)` : ""}.`,
-      supports: yoy >= 3 ? true : yoy >= 2.5 ? "partial" : false,
+      reading: `CPI inflation has averaged ${cpi.pct.toFixed(1)}% a year over the past 3 years${core ? ` (core PCE, the Fed's measure, ${core.pct.toFixed(1)}%)` : ""}${fwd ? `; markets expect about ${Number(fwd.value).toFixed(2)}% a year for the five years starting five years from now` : ""}.`,
+      // His claim is about where inflation settles, so the past 3 years
+      // alone isn't enough: Agrees needs markets pricing it too (5y5y at
+      // 2.5%+, the top of its usual ~2-2.5% range).
+      supports: cpi.pct >= 3 && fwd?.value >= 2.5 ? true : cpi.pct >= 2.5 || fwd?.value >= 2.5 ? "partial" : false,
+      since: await sinceView(ctx, "T5YIFR", "long-run market inflation expectation", "pts"),
     };
   },
   equity_correction_risk: async ({ row }) => {
@@ -3487,6 +3552,43 @@ function shiftDays(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+const movePts = (d) => `${d >= 0 ? "up" : "down"} ${Math.abs(d).toFixed(2)} points`;
+
+// Latest value and its change vs. the value a year earlier.
+async function yearChange(ctx, id) {
+  const now = await ctx.latest(id);
+  if (!now) return null;
+  const then = await ctx.onOrBefore(id, shiftDays(now.observation_date, 365));
+  return then ? { now: Number(now.value), change: now.value - then.value } : null;
+}
+
+// Compound annual % change over roughly `years`, using the actual dates found.
+async function annualized(ctx, id, years) {
+  const now = await ctx.latest(id);
+  if (!now) return null;
+  const then = await ctx.onOrBefore(id, shiftDays(now.observation_date, Math.round(365.25 * years)));
+  if (!then || then.value <= 0 || then.observation_date >= now.observation_date) return null;
+  const span = (Date.parse(now.observation_date) - Date.parse(then.observation_date)) / (365.25 * 86400000);
+  return { pct: (Math.pow(now.value / then.value, 1 / span) - 1) * 100, years: span };
+}
+
+// How a measure has moved since the view's source date ("pts" = level
+// change, "pct" = % change). Null if the view is newer than the data.
+async function sinceView(ctx, id, name, kind) {
+  if (!ctx.viewDate) return null;
+  const [then, now] = await Promise.all([ctx.onOrBefore(id, ctx.viewDate), ctx.latest(id)]);
+  if (!then || !now || then.observation_date >= now.observation_date) return null;
+  const d = kind === "pct" ? (now.value / then.value - 1) * 100 : now.value - then.value;
+  return `${name} ${d >= 0 ? "+" : ""}${d.toFixed(kind === "pct" ? 1 : 2)}${kind === "pct" ? "%" : " points"}`;
+}
+
+// The "this system" column is labeled with the window the check used.
+const HORIZON_LABEL = {
+  near: "This system today",
+  direction: "This system · past 12 months",
+  structural: "This system · multi-year trend",
+};
+
 // Not RAG colors: "Differs" isn't bad and "Agrees" isn't good.
 const ANALYST_VERDICT = {
   true: ["info", "Agrees"],
@@ -3515,7 +3617,18 @@ async function renderAnalystViews(row) {
       return cache.get(key);
     };
     const latest = async (id) => (await history(id, 1))[0] ?? null;
-    const ctx = { row, fiscal, positioning, history, latest };
+    const memo = (key, f) => {
+      if (!cache.has(key)) cache.set(key, f());
+      return cache.get(key);
+    };
+    const enc = encodeURIComponent;
+    const onOrBefore = (id, date) => memo(`ob:${id}:${date}`, () =>
+      fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${enc(id)}&observation_date=lte.${date}&order=observation_date.desc&limit=1`)
+        .then((r) => r[0] ?? null).catch(() => null));
+    const avgBetween = (id, from, to) => memo(`avg:${id}:${from}:${to}`, () =>
+      fetchAllFromSupabase(`data_points?select=value&series_id=eq.${enc(id)}&observation_date=gte.${from}&observation_date=lte.${to}`)
+        .then((r) => (r.length ? r.reduce((a, x) => a + x.value, 0) / r.length : null)).catch(() => null));
+    const ctx = { row, fiscal, positioning, history, latest, onOrBefore, avgBetween };
     const today = new Date().toISOString().slice(0, 10);
 
     const cards = await Promise.all(content.analysts.map(async (a) => {
@@ -3523,17 +3636,18 @@ async function renderAnalystViews(row) {
       const stale = ageDays > ANALYST_STALE_DAYS;
       const rows = await Promise.all(a.themes.map(async (t) => {
         let verdictHtml, systemHtml, gapHtml = "";
+        const colLabel = t.check ? HORIZON_LABEL[t.horizon] || HORIZON_LABEL.near : "This system";
         if (!t.check) {
           verdictHtml = `<span class="pill muted">${escHtml(t.label || "Different horizon")}</span>`;
           systemHtml = escHtml(t.note || "");
         } else {
           const fn = ANALYST_CHECKS[t.check];
           const r = fn
-            ? await fn(ctx).catch(() => ({ reading: "Check failed to load.", supports: null }))
+            ? await fn({ ...ctx, viewDate: t.source?.date }).catch(() => ({ reading: "Check failed to load.", supports: null }))
             : { reading: "Unknown check.", supports: null };
           const [cls, label] = r.label ? [r.cls || "muted", r.label] : ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
           verdictHtml = `<span class="pill ${cls}">${label}</span>`;
-          systemHtml = r.reading;
+          systemHtml = r.reading + (r.since ? `<span class="since-note">Since they said it (${escHtml(t.source.date)}): ${escHtml(r.since)}.</span>` : "");
           if (r.supports !== true && r.supports !== null && t.if_differs) {
             gapHtml = `<div class="gap-note"><b>What would need to change:</b> ${escHtml(t.if_differs)}</div>`;
           }
@@ -3542,7 +3656,7 @@ async function renderAnalystViews(row) {
           <div class="analyst-row">
             <div class="row-head">${verdictHtml}<strong>${escHtml(t.theme)}</strong></div>
             <div class="col"><span class="col-label">Their view</span>${escHtml(t.view)}<br><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)}, ${escHtml(t.source.date)} ↗</a></div>
-            <div class="col"><span class="col-label">This system today</span>${systemHtml}</div>
+            <div class="col"><span class="col-label">${colLabel}</span>${systemHtml}</div>
             ${gapHtml}
           </div>`;
       }));
