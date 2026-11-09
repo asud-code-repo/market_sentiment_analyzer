@@ -555,7 +555,7 @@
   <div class="tab-panel" id="tab-analysts" hidden>
     <div class="card">
       <p class="eyebrow">How this system's data lines up with well-known macro views</p>
-      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right: their views are often about years, this system's about weeks to months.</p>
+      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right: their views are often about years, this system's about weeks to months. Rows built on a long-standing principle rather than a forecast say what that principle implies today instead.</p>
       <p class="context-note" style="margin:0;">Views are short paraphrases of public statements, linked to the source and dated. Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
     </div>
     <div id="analysts-wrap"><p class="loading">Loading…</p></div>
@@ -3434,6 +3434,34 @@ const ANALYST_CHECKS = {
       supports: band === "HIGH" || confirmed >= 2 ? true : band === "TRANSITIONING" || (row.red_count ?? 0) >= 1 ? "partial" : false,
     };
   },
+  // Principle rows (Buffett) return their own label instead of
+  // Agrees/Differs: a rule like "be fearful when others are greedy" isn't a
+  // claim the data can agree with, so the row says what the rule implies today.
+  crowd_sentiment: async ({ positioning }) => {
+    const by = Object.fromEntries(positioning.map((m) => [m.seriesId, m]));
+    const greedy = [], fearful = [];
+    const pc = by.CBOE_EQUITY_PC_RATIO, margin = by.FINRA_MARGIN_DEBIT_USD_MILLIONS, vix = by.COT_VIX_LEV_FUNDS_NET_PCT_OI;
+    if (pc) (pc.band <= 1 ? greedy : pc.band >= 3 ? fearful : []).push(`options traders ${pc.band <= 1 ? "call-heavy" : "put-heavy"}`);
+    if (margin) (margin.band >= 3 ? greedy : margin.band === 0 ? fearful : []).push(`margin debt ${margin.band >= 3 ? "growing fast" : "shrinking"}`);
+    if (vix) (vix.band <= 1 ? greedy : vix.band === 4 ? fearful : []).push(`hedge funds ${vix.band <= 1 ? "short volatility" : "buying protection"}`);
+    const checked = [pc, margin, vix].filter(Boolean).length;
+    if (checked === 0) return { reading: "Positioning data unavailable.", supports: null };
+    const list = (a) => a.join(", ");
+    if (greedy.length >= 2 && fearful.length === 0) {
+      return { label: "Crowd leaning greedy", cls: "differs", reading: `${greedy.length} of ${checked} crowd gauges lean greedy (${list(greedy)}). By his rule, a time for caution rather than eagerness.` };
+    }
+    if (fearful.length >= 2 && greedy.length === 0) {
+      return { label: "Crowd leaning fearful", cls: "info", reading: `${fearful.length} of ${checked} crowd gauges lean fearful (${list(fearful)}). By his rule, the kind of moment he looks to buy.` };
+    }
+    return {
+      label: "No clear crowd mood", cls: "muted",
+      reading: `Crowd gauges are mixed or typical${greedy.length ? `; greedy: ${list(greedy)}` : ""}${fearful.length ? `; fearful: ${list(fearful)}` : ""}. Neither extreme his rule acts on.`,
+    };
+  },
+  risk_context: async (ctx) => {
+    const r = await ANALYST_CHECKS.equity_correction_risk(ctx);
+    return { label: "Context", cls: "muted", reading: `For comparison, this system: ${r.reading.charAt(0).toLowerCase() + r.reading.slice(1)}` };
+  },
   margin_debt_high: async ({ positioning }) => {
     const m = positioning.find((x) => x.kind === "margin_yoy");
     if (!m) return { reading: "Margin-debt data unavailable.", supports: null };
@@ -3496,14 +3524,14 @@ async function renderAnalystViews(row) {
       const rows = await Promise.all(a.themes.map(async (t) => {
         let verdictHtml, systemHtml, gapHtml = "";
         if (!t.check) {
-          verdictHtml = `<span class="pill muted">Different horizon</span>`;
+          verdictHtml = `<span class="pill muted">${escHtml(t.label || "Different horizon")}</span>`;
           systemHtml = escHtml(t.note || "");
         } else {
           const fn = ANALYST_CHECKS[t.check];
           const r = fn
             ? await fn(ctx).catch(() => ({ reading: "Check failed to load.", supports: null }))
             : { reading: "Unknown check.", supports: null };
-          const [cls, label] = ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
+          const [cls, label] = r.label ? [r.cls || "muted", r.label] : ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
           verdictHtml = `<span class="pill ${cls}">${label}</span>`;
           systemHtml = r.reading;
           if (r.supports !== true && r.supports !== null && t.if_differs) {

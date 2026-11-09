@@ -110,6 +110,43 @@
           "if_differs": "Margin-debt growth would need to rank in the top quarter of its own history."
         }
       ]
+    },
+    {
+      "id": "buffett",
+      "name": "Warren Buffett",
+      "role": "Chairman, Berkshire Hathaway (CEO until end of 2025)",
+      "lens": "Business value versus price: buy good businesses when they're cheap, never try to predict the market, and use other investors' fear and greed rather than share it. He doesn't make market forecasts, so these rows compare his principles and Berkshire's actions, not predictions.",
+      "views_as_of": "2026-11-07",
+      "themes": [
+        {
+          "theme": "Fear and greed",
+          "view": "His long-standing rule: \"we simply attempt to be fearful when others are greedy and to be greedy only when others are fearful.\"",
+          "source": { "title": "Berkshire Hathaway 1986 shareholder letter", "url": "https://www.berkshirehathaway.com/letters/1986.html", "date": "1987-02-27" },
+          "check": "crowd_sentiment"
+        },
+        {
+          "theme": "Stock prices today",
+          "view": "In his last letter as CEO: \"Because of Berkshire's size and because of market levels, ideas are few – but not zero.\"",
+          "source": { "title": "Buffett's Thanksgiving letter to shareholders", "url": "https://www.berkshirehathaway.com/news/nov1025.pdf", "date": "2025-11-10" },
+          "check": null,
+          "label": "Not measured",
+          "note": "This system doesn't track stock valuations (no price-to-earnings or market-value-to-GDP measure), so it can't test whether prices are high. Its crash indicators measure stress, not value."
+        },
+        {
+          "theme": "What Berkshire is doing",
+          "view": "Under CEO Greg Abel, Berkshire bought back about $9.6 billion of its own stock in Q3 2026, which it only does when the price is judged \"below Berkshire's intrinsic value, conservatively determined.\" It has been a net buyer of stocks this year ($41.8B bought, $30.6B sold through September) while holding about $373 billion in cash and Treasury bills.",
+          "source": { "title": "Berkshire Hathaway Q3 2026 quarterly report", "url": "https://www.berkshirehathaway.com/qtrly/3rdqtr26.pdf", "date": "2026-11-07" },
+          "check": "risk_context"
+        },
+        {
+          "theme": "Timing the market",
+          "view": "On market fear and greed: \"we never try to anticipate the arrival or departure\" of either. And on Berkshire's own shares: \"Don't despair; America will come back and so will Berkshire shares.\"",
+          "source": { "title": "1986 letter and 2025 Thanksgiving letter", "url": "https://www.berkshirehathaway.com/news/nov1025.pdf", "date": "2025-11-10" },
+          "check": null,
+          "label": "Different approach",
+          "note": "This system does what he avoids: it watches for near-term market stress. Read it as a risk monitor, not a timing tool, and his view as a reminder that long-term owners can ride out the drops it flags."
+        }
+      ]
     }
   ]
 }
