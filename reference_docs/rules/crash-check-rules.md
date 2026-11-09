@@ -1152,6 +1152,23 @@ documented but unverified, not as an established fact, until a full rebuild
 simple baselines — a substantial standalone project, not a quick check) is
 actually done.
 
+**In-sample replay (2026-11-09) — the calibrated percentages are wrong**: the
+frozen model was replayed over every scorable day 1994-02 to 2026-10 (5,058
+days; base rate of a ≥10% drawdown within 21 trading days: 11.8%), using
+`data_points` plus Yahoo `^GSPC` for pre-2016 S&P history. Measured hit
+rate by band vs. what the calibration claims: **LOW 3.3%** (claims ~24%),
+**TRANSITIONING 16%** (claims ~60%), **HIGH 54%** (claims ~93%). Ranking is
+real but modest: AUC 0.889 vs. 0.825 for drawdown depth alone and 0.834 for
+drawdown + VIX; as an alert, HIGH is 54% precision / 66% recall vs. 38% /
+68% for "drawdown ≥5%". 32 of 65 HIGH stretches were false alarms, and
+before sudden crashes (2015, Feb 2018, 2020, 2025) it turned HIGH only 2-4
+trading days ahead — it mostly detects a market already sliding. All of
+this is in-sample with revised (not point-in-time) data, so it flatters the
+model. Consequence: the dashboard and `get_indicator_panel` now report the
+band plus its measured hit rate (3/16/54%), never the calibrated % as odds.
+The bands themselves are unchanged — they still rank risk monotonically.
+The full rebuild above was judged not worth it for an advisory-only card.
+
 **Why it's shown as a band, not a percentage**: the isotonic calibration
 curve is steppy, not smooth — two wide flat plateaus (~22-24% for any raw
 model score below ~15%, ~93% for any raw score from ~26% up to ~83%), with

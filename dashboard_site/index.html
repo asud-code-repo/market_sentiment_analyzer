@@ -2587,6 +2587,13 @@ function renderDivergenceFlags(flags) {
 // isotonic calibration curve is steppy with two wide flat plateaus, so nearby
 // raw scores inside one plateau aren't meaningfully different probabilities.
 const HAZARD_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Transitioning", HIGH: "High" };
+// Measured hit rate per band: share of days in that band followed by a >=10%
+// drawdown within 21 trading days, from a 2026-11-09 replay of the frozen
+// model over 1994-02..2026-10 (5,058 scorable days, base rate 11.8%). The
+// model's own isotonic "calibrated" % badly overstates these (LOW ~24%,
+// HIGH ~93% claimed), so display these instead. In-sample — optimistic.
+// Duplicated in mcp_server/src/server.ts; keep the two in sync.
+const HAZARD_BAND_HIT_RATE = { LOW: "3%", TRANSITIONING: "16%", HIGH: "54%" };
 // Deliberately non-RAG for all three bands (info/muted only, never
 // good/warning/critical) — this is a different signal system from the
 // 6-indicator gate, and reusing RAG colors here risks a HIGH reading being
@@ -2616,27 +2623,29 @@ function renderHazardModel(row) {
     <div class="indicator notable">
       <div class="notable-tag">● Statistical model — separate from the discretionary estimate above</div>
       <div class="value"><span class="pill ${HAZARD_BAND_PILL[row.hazard_10pct_band] || "muted"}">${HAZARD_BAND_LABELS[row.hazard_10pct_band] || row.hazard_10pct_band}</span></div>
-      <div class="signal">How likely is the S&amp;P 500 to fall 10% or more below its all-time high within the next ~month (21 trading days)? As of ${row.hazard_10pct_as_of}.</div>
+      <div class="signal">How likely is the S&amp;P 500 to fall 10% or more below its all-time high within the next ~month (21 trading days)? As of ${row.hazard_10pct_as_of}.${HAZARD_BAND_HIT_RATE[row.hazard_10pct_band] ? ` Historically, about <strong>${HAZARD_BAND_HIT_RATE[row.hazard_10pct_band]}</strong> of ${HAZARD_BAND_LABELS[row.hazard_10pct_band]} readings were followed by one (vs ~12% on a typical day).` : ""}</div>
       <div class="indicator-info">
-        <strong>What the band means:</strong> Low (&lt;35%) · Transitioning (35–90%) · High (&ge;90%) — the
-        historical share of similar setups that went on to a 10% drawdown within a month. High means
-        today's mix of conditions looks like the ones that usually preceded one; it's not a forecast of
-        how deep a fall would go.
+        <strong>What the band means:</strong> how often past readings in each band were followed by a 10%
+        drop within a month, 1994–2026: Low ~3% · Transitioning ~16% · High ~54%. High means today's
+        conditions look like ones that often preceded a drop; it's not a forecast of how deep a fall would go.
         <br><br>
         <strong>How it's calculated:</strong> 18 market and economic inputs — how far the S&amp;P is below
         its high, volatility (VIX and realized), credit spreads, financial-stress indices, the yield curve,
         jobless claims and recession indicators, plus their 1-week and 1-month changes — are combined into
-        one score (logistic regression), then mapped to how often similar scores were followed by a 10%
-        drop in past data (calibration). Only scored while the S&amp;P is still less than 10% off its high.
+        one risk score (logistic regression), which is then sorted into a band. Only scored while the S&amp;P
+        is still less than 10% off its high.
         <br><br>
         <strong>How to use it:</strong> context, not a trigger — it doesn't count toward the 3-of-6
-        wave-authorization gate, and the original back-testing can't be independently re-verified (see
-        project docs). It also asks a different question than the crash estimate above (fixed 10% / ~1-month
-        target vs. open-ended), so don't compare or average the two.
+        wave-authorization gate. It mostly picks up a market that's already sliding: before sudden crashes
+        (2015, 2018, 2020, 2025) it turned High only 2–4 days ahead, and about half of past High stretches
+        were false alarms. It also asks a different question than the crash estimate above (fixed 10% /
+        ~1-month target vs. open-ended), so don't compare or average the two.
         <br><br>
-        <em>Detail: calibrated ${row.hazard_10pct_calibrated_pct}% (raw score ${row.hazard_10pct_raw_pct}%).
-        Shown as a band because the calibration has wide flat steps — nearby raw scores land on the same
-        historical odds, so the exact % isn't more precise than the band.</em>
+        <em>Detail: the model's own "calibrated" figure is ${row.hazard_10pct_calibrated_pct}% (raw score
+        ${row.hazard_10pct_raw_pct}%). A replay over 1994–2026 (Nov 2026) found these built-in percentages
+        overstate the real odds — e.g. High claims ~93% but was right ~54% of the time — so rely on the band
+        and the historical rates above, not this number. Rates are measured on data the model likely learned
+        from, so real-world odds are probably somewhat lower still.</em>
       </div>
     </div>
   `;

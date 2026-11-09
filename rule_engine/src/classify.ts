@@ -276,7 +276,7 @@ export async function classify(): Promise<void> {
       `Wave authorized: ${waveAuthorized}. Active wave: ${waveActive}${waveActiveReason ? ` (${waveActiveReason})` : ""}. ` +
       `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
       `Recovery confirmed: ${recoveryConfirmed}. ` +
-      `Hazard model (10% target): ${hazard ? `${hazard.band} (${(hazard.calibrated_probability * 100).toFixed(1)}% calibrated)` : hazardStatus}.`,
+      `Hazard model (10% target): ${hazard ? `${hazard.band} (raw score ${(hazard.raw_probability * 100).toFixed(1)}%)` : hazardStatus}.`,
   );
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);

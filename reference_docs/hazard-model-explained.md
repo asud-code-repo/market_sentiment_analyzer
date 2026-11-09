@@ -277,7 +277,10 @@ Band: 92.7% ≥ 90%, so the day is flagged **HIGH**.
 This is exactly the calibration behavior described above in practice: a
 raw score that looks like a coin flip (50%) still lands on the model's 93%
 plateau, because that whole raw-score range historically preceded a 10%+
-drawdown at roughly that same high rate.
+drawdown at roughly that same high rate — or so the original calibration
+claimed. The 2026-11-09 replay (see Known Limitations) found HIGH days were
+actually followed by a 10% drop ~54% of the time, so this example would be
+reported as "High — historically ~54%", not "92.7%".
 
 ## Known Limitations (Documented On Purpose)
 
@@ -294,6 +297,14 @@ drawdown at roughly that same high rate.
   FRED/SPY reconstruction, refitting, and a leakage-safe backtest against
   simple baselines — not a recovery of existing work. Treat this model's
   validation status as documented, not established, until that happens.
+- **The calibrated percentages overstate the real odds.** A 2026-11-09
+  replay over 1994-2026 measured how often each band was actually followed
+  by a 10% drop within a month: Low ~3% (calibration claims ~24%),
+  Transitioning ~16% (claims ~60%), High ~54% (claims ~93%), against an
+  11.8% base rate. The band still ranks risk correctly, so the dashboard and
+  MCP now show the band with these measured rates instead of the calibrated
+  %. See `crash-check-rules.md`'s "In-sample replay" paragraph for the
+  baseline comparison.
 - **One feature has confirmed data leakage.** `RECPROUSM156N` (the
   third-party smoothed recession-probability series) gets revised after
   the fact using information that wasn't available at the time —

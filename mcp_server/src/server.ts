@@ -146,12 +146,21 @@ server.registerTool(
         band: latest.hazard_10pct_band,
         raw_pct: latest.hazard_10pct_raw_pct,
         as_of: latest.hazard_10pct_as_of,
+        // Measured share of days in each band followed by a >=10% drawdown
+        // within 21 trading days (2026-11-09 replay, 1994-2026, in-sample).
+        // Duplicated in dashboard_site/index.html (HAZARD_BAND_HIT_RATE).
+        historical_hit_rate_pct:
+          latest.hazard_10pct_band == null
+            ? null
+            : ({ LOW: 3, TRANSITIONING: 16, HIGH: 54 } as Record<string, number>)[latest.hazard_10pct_band] ?? null,
         signal:
-          "Rule-engine-computed and calibrated — distinct from crash_probability_pct (derived from " +
+          "Rule-engine-computed — distinct from crash_probability_pct (derived from " +
           "the scenario distribution, which is 100% LLM judgment, see write_snapshot). Report the " +
-          "BAND, never a re-derived percentage or a blend with your own estimate (see crash-check-" +
-          "rules.md's Statistical Hazard Model section for " +
-          "why: steppy calibration curve, plateau structure). Check status before reporting a band: " +
+          "BAND plus historical_hit_rate_pct (e.g. 'High — historically ~54% of High readings were " +
+          "followed by a 10% drawdown within a month, vs ~12% base rate'). Do NOT quote calibrated_pct " +
+          "as odds: a 2026-11 replay over 1994-2026 found the model's built-in calibration badly " +
+          "overstates them (High claims ~93%, actual ~54%; Low claims ~24%, actual ~3%). Never blend " +
+          "with your own estimate. Check status before reporting a band: " +
           "ALREADY_BREACHED means live drawdown is already >=10%, so the model's target (a FUTURE " +
           "breach conditional on not already being past it) doesn't apply — say the threshold is " +
           "already breached, not a fresh-breach percentage. UNAVAILABLE means this run's computation " +
