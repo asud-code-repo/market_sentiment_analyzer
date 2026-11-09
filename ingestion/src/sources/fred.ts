@@ -1,4 +1,5 @@
 import type { DataPoint } from "../lib/supabase.js";
+import { fetchYahooDailyCloses } from "./yahoo.js";
 
 // FRED API is stable and well documented: https://fred.stlouisfed.org/docs/api/fred/
 // Series IDs below match the exact list in reference_docs/archive/crash-check-system-build-spec.md
@@ -381,8 +382,6 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
     throw new Error("FRED returned no usable SP500 observations");
   }
 
-  const ath = valid.reduce((max, o) => (Number(o.value) > Number(max.value) ? o : max), valid[0]);
-
   // Write the trailing ~30 observations, not just the latest. FRED sometimes
   // publishes SP500 a day late, so a 10am-ET run can see two new closes at
   // once; writing only the latest left permanent holes (6 found Oct-Nov
@@ -391,18 +390,62 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
   // rows, so a missing day silently shifts the 5/20-day deltas. Upserts on
   // (series_id, observation_date) are idempotent, so re-writing recent days
   // is a no-op except where it fills a gap.
-  const recent = valid.slice(-30);
+  const recent: DataPoint[] = valid.slice(-30).map((o) => ({
+    series_id: "SP500",
+    source: "FRED",
+    source_series_code: "SP500",
+    observation_date: o.date,
+    value: Number(o.value),
+    unit: "index",
+    raw_payload: o,
+  }));
+
+  // Same-day freshness: FRED's SP500 can lag 2-3 trading days (2026-11-09:
+  // Friday's close still unposted at Monday noon ET). Yahoo's ^GSPC carries
+  // the identical S&P DJI close (cross-checked exactly against FRED for
+  // 2016-2026) with no lag, so it FILLS dates FRED hasn't posted yet —
+  // completed sessions only (see fetchYahooDailyCloses). FRED stays
+  // authoritative: where both have a date, FRED's value is written, and a
+  // Yahoo-filled day is overwritten by FRED's row (same series_id +
+  // observation_date key, so never a duplicate) once FRED catches up.
+  // Yahoo is best-effort here — if it fails, this degrades to FRED-only,
+  // exactly the previous behavior, rather than failing the FRED source.
+  const fredByDate = new Map(recent.map((p) => [p.observation_date, p.value]));
+  const windowStart = recent[0].observation_date;
+  try {
+    const yahoo = await fetchYahooDailyCloses("^GSPC", "range=3mo");
+    for (const y of yahoo) {
+      if (y.date < windowStart) continue;
+      const fredValue = fredByDate.get(y.date);
+      if (fredValue !== undefined) {
+        if (Math.abs(y.close / fredValue - 1) > 0.001) {
+          console.warn(`  SP500 ${y.date}: Yahoo ^GSPC ${y.close} differs from FRED ${fredValue} by >0.1% — keeping FRED`);
+        }
+        continue;
+      }
+      recent.push({
+        series_id: "SP500",
+        source: "YAHOO",
+        source_series_code: "^GSPC",
+        observation_date: y.date,
+        value: y.close,
+        unit: "index",
+        raw_payload: { ...y, filled_because: "not yet published on FRED" },
+      });
+    }
+  } catch (err) {
+    console.warn(`  SP500: Yahoo ^GSPC fill skipped, FRED-only this run — ${err instanceof Error ? err.message : String(err)}`);
+  }
+  recent.sort((a, b) => a.observation_date.localeCompare(b.observation_date));
+
+  // ATH over FRED's full window plus any Yahoo-filled days, so a new high
+  // set on a day FRED hasn't posted yet is picked up immediately.
+  let ath = { date: valid[0].date, value: Number(valid[0].value) };
+  for (const o of valid) if (Number(o.value) > ath.value) ath = { date: o.date, value: Number(o.value) };
+  for (const p of recent) if (p.value > ath.value) ath = { date: p.observation_date, value: p.value };
 
   return [
-    ...recent.map((o) => ({
-      series_id: "SP500",
-      source: "FRED",
-      source_series_code: "SP500",
-      observation_date: o.date,
-      value: Number(o.value),
-      unit: "index",
-      raw_payload: o,
-    })),
+    ...recent,
     {
       // Derived, not a distinct FRED series — observation_date here is the
       // date the ATH was actually set, not today. Upserts idempotently on
@@ -412,9 +455,9 @@ async function fetchSp500LevelAndAth(apiKey: string): Promise<DataPoint[]> {
       source: "FRED_DERIVED",
       source_series_code: "SP500",
       observation_date: ath.date,
-      value: Number(ath.value),
+      value: ath.value,
       unit: "index",
-      raw_payload: { computed_from: "SP500 series max, 2010-present window", observation: ath },
+      raw_payload: { computed_from: "SP500 series max, 2010-present FRED window + Yahoo-filled recent days", observation: ath },
     },
   ];
 }

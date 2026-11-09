@@ -17,11 +17,12 @@ import type { DataPoint } from "../lib/supabase.js";
 // shape or start rate-limiting without notice; if it ever does, VIX is
 // still one of the 6 gating indicators, so it's wired as `required: true`
 // in ingest.ts (a broken VIX feed should fail loudly, not silently degrade).
-const YAHOO_VIX_SYMBOL = "%5EVIX"; // ^VIX, URL-encoded
+const YAHOO_VIX_SYMBOL = "^VIX";
 
 interface YahooChartResult {
   chart: {
     result?: {
+      meta?: { currentTradingPeriod?: { regular?: { start: number; end: number } } };
       timestamp: number[];
       indicators: { quote: { close: (number | null)[] }[] };
     }[];
@@ -60,53 +61,82 @@ function toObservationDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
 }
 
-async function fetchVixSeries(rangeOrPeriod: string): Promise<{ date: string; close: number }[]> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${YAHOO_VIX_SYMBOL}?${rangeOrPeriod}&interval=1d`;
+// Settle buffer after the regular session ends before a same-day bar is
+// treated as a final close (VIX's own official close prints at 4:15pm ET,
+// 15 minutes after the equity close).
+const CLOSE_SETTLE_SECONDS = 30 * 60;
+
+/**
+ * Daily bars from Yahoo's chart API, COMPLETED SESSIONS ONLY.
+ *
+ * While the market is open, Yahoo's last daily bar is the in-progress
+ * session, and its "close" is just the latest intraday price. The 10am-ET
+ * ingest used to store that bar as the day's close and never correct it:
+ * a 2026-11-09 audit found 22 of 40 VIXCLS rows since the switch to Yahoo
+ * were morning snapshots (e.g. 2026-11-05 stored 24.31 vs a 28.18 close).
+ * So any bar whose session hasn't ended (plus a settle buffer) is dropped.
+ * The rule engine, the 6-indicator bands and the hazard model all assume
+ * closes, and the scheduled 2pm-ET analysis runs mid-session anyway, so
+ * the previous session's close is the freshest real close available.
+ */
+export async function fetchYahooDailyCloses(
+  symbol: string,
+  rangeOrPeriod: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): Promise<{ date: string; close: number }[]> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${rangeOrPeriod}&interval=1d`;
   const res = await fetchWithRetry(url);
   if (!res.ok) {
-    throw new Error(`Yahoo VIX request failed: HTTP ${res.status} ${await res.text()}`);
+    throw new Error(`Yahoo ${symbol} request failed: HTTP ${res.status} ${await res.text()}`);
   }
 
   const body = (await res.json()) as YahooChartResult;
   if (body.chart.error) {
-    throw new Error(`Yahoo VIX request returned an error: ${body.chart.error.description}`);
+    throw new Error(`Yahoo ${symbol} request returned an error: ${body.chart.error.description}`);
   }
   const result = body.chart.result?.[0];
   if (!result) {
-    throw new Error("Yahoo VIX request returned no usable result");
+    throw new Error(`Yahoo ${symbol} request returned no usable result`);
   }
+
+  // The current/most recent session's window. If it hasn't finished
+  // (plus settle buffer), the bar stamped inside it is still in progress.
+  const session = result.meta?.currentTradingPeriod?.regular;
+  if (!session) {
+    throw new Error(`Yahoo ${symbol} response is missing currentTradingPeriod — can't tell a final close from an intraday bar`);
+  }
+  const sessionOpen = nowSeconds < session.end + CLOSE_SETTLE_SECONDS;
 
   const closes = result.indicators.quote[0]?.close ?? [];
   const points: { date: string; close: number }[] = [];
   for (let i = 0; i < result.timestamp.length; i++) {
     const close = closes[i];
     if (close === null || close === undefined) continue; // holiday/partial-bar gap
+    if (sessionOpen && result.timestamp[i] >= session.start) continue; // in-progress session
     points.push({ date: toObservationDate(result.timestamp[i]), close });
   }
   return points;
 }
 
 export async function fetchYahoo(): Promise<DataPoint[]> {
-  // Last 10 calendar days is plenty of margin to guarantee at least one
-  // real trading day is present regardless of weekends/holidays; only the
-  // latest is kept, matching fetchFred's "latest observation" pattern.
-  const series = await fetchVixSeries("range=10d");
+  // Trailing ~3 months of completed closes, not just the latest: re-writing
+  // recent days is an idempotent upsert on (series_id, observation_date),
+  // and it overwrites any intraday snapshot stored before the
+  // completed-sessions-only fix (see fetchYahooDailyCloses).
+  const series = await fetchYahooDailyCloses(YAHOO_VIX_SYMBOL, "range=3mo");
   if (series.length === 0) {
-    throw new Error("Yahoo VIX request returned no observations in the last 10 days");
+    throw new Error("Yahoo VIX request returned no completed sessions in the last 3 months");
   }
-  const latest = series[series.length - 1];
 
-  return [
-    {
-      series_id: "VIXCLS",
-      source: "YAHOO",
-      source_series_code: "^VIX",
-      observation_date: latest.date,
-      value: latest.close,
-      unit: "index",
-      raw_payload: latest,
-    },
-  ];
+  return series.map((obs) => ({
+    series_id: "VIXCLS",
+    source: "YAHOO",
+    source_series_code: "^VIX",
+    observation_date: obs.date,
+    value: obs.close,
+    unit: "index",
+    raw_payload: obs,
+  }));
 }
 
 export async function fetchYahooBackfill(): Promise<DataPoint[]> {
@@ -116,7 +146,7 @@ export async function fetchYahooBackfill(): Promise<DataPoint[]> {
   // Yahoo's range=max/5y shorthand silently buckets old history down to a
   // sparser cadence instead, which would leave big backfill gaps.
   const period2 = Math.floor(Date.now() / 1000);
-  const series = await fetchVixSeries(`period1=0&period2=${period2}`);
+  const series = await fetchYahooDailyCloses(YAHOO_VIX_SYMBOL, `period1=0&period2=${period2}`);
   console.log(`  Yahoo backfill: VIXCLS — ${series.length} observations since ${series[0]?.date ?? "n/a"}`);
 
   return series.map((obs) => ({
