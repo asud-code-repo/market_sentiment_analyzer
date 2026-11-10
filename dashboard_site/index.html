@@ -432,7 +432,7 @@
     <button class="tab-btn" data-tab="stressmonitor">Stress Monitor</button>
     <button class="tab-btn" data-tab="smartmoney">Smart Money</button>
     <button class="tab-btn" data-tab="macro">Macro &amp; Context</button>
-    <button class="tab-btn" data-tab="analysts">Analyst Views</button>
+    <button class="tab-btn" data-tab="analysts">Notable Views</button>
   </div>
 
   <div class="tab-panel" id="tab-stressmonitor">
@@ -548,14 +548,14 @@
     </div>
   </div>
 
-  <!-- Analyst Views (added 2026-11-09). Content lives in analyst_views.json
+  <!-- Notable Views tab (added 2026-11-09 as "Analyst Views"). Content lives in analyst_views.json
        (human-reviewed paraphrases with links + dates); the "this system
        today" side and the verdicts are computed live from data this page
        already loads. Frameworks compared, not a scorecard of who's right --
        deliberately no overall agreement score. -->
   <div class="tab-panel" id="tab-analysts" hidden>
     <div class="card">
-      <p class="eyebrow">How this system's data lines up with well-known macro views</p>
+      <p class="eyebrow">Notable Views: how well-known investors' public views compare with this system's live data</p>
       <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right. Each view is measured over a window that matches it: today's reading for near-term calls, the past 12 months for calls about direction, and multi-year averages for long-term ones (the column heading says which).Rows built on a long-standing principle rather than a forecast say what that principle implies today instead.</p>
       <p class="context-note" style="margin:0;">Views are short paraphrases of public statements, linked to the source and dated. Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
     </div>
@@ -3670,7 +3670,7 @@ async function renderAnalystViews(row) {
     }));
     wrap.innerHTML = cards.join("");
   } catch (err) {
-    wrap.innerHTML = `<p class="loading">Failed to load analyst views: ${escHtml(err.message)}</p>`;
+    wrap.innerHTML = `<p class="loading">Failed to load notable views: ${escHtml(err.message)}</p>`;
   }
 }
 
