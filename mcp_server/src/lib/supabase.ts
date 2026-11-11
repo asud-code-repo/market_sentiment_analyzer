@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift, computeRateResetTriggerStatus } from "./portfolio.js";
 import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./watchlist.js";
+import { attachNextScheduledEvents } from "./economicCalendar.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -363,7 +364,11 @@ export async function writeSnapshot(qualitative: {
         return trigger;
       })
     : resolvedTriggerStatus;
-  const triggerStatus = Array.isArray(triggerStatusRaw) ? pruneStaleTriggerEntries(triggerStatusRaw) : triggerStatusRaw;
+  // Then attach each fired Fed/CPI entry's next scheduled event from the
+  // calendar, so the dashboard can lead with what's coming (2026-11-11).
+  const triggerStatus = Array.isArray(triggerStatusRaw)
+    ? attachNextScheduledEvents(pruneStaleTriggerEntries(triggerStatusRaw), today)
+    : triggerStatusRaw;
 
   const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
   const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);

@@ -403,6 +403,10 @@ server.registerTool(
             date: z.string(),
             status: z.enum(["fired", "approaching", "pending"]),
             note: z.string().nullable().optional(),
+            // Filled in server-side from economicCalendar.ts for fired
+            // Fed/CPI entries; any value passed here is overwritten.
+            next_date: z.string().optional(),
+            next_label: z.string().optional(),
           }),
         )
         .optional(),

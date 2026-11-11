@@ -152,3 +152,27 @@ export function computeFedEventTrigger(today?: string): EconomicEventTrigger {
 export function computeInflationPrintTrigger(today?: string): EconomicEventTrigger {
   return toTriggerShape(resolveCalendarEvents(CPI_RELEASES, today));
 }
+
+/**
+ * Attaches the next scheduled meeting/release to each fed-event /
+ * inflation-print trigger entry whose own date has passed, so the public
+ * dashboard can lead with the upcoming event the way the chat report does
+ * (added 2026-11-11). Stored entries record the LAST event and its assessed
+ * outcome; the dashboard has no calendar of its own. Pure date lookup from
+ * the same calendar above -- "next after this entry's date," not "next after
+ * today," so a stale entry can't be paired with the wrong follow-on event.
+ * Other entries pass through untouched. Overwrites any caller-supplied
+ * next_date/next_label (mechanical, never trusted from the caller).
+ */
+export function attachNextScheduledEvents(entries: unknown[], today: string = new Date().toISOString().slice(0, 10)): unknown[] {
+  return entries.map((raw) => {
+    const entry = raw as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.toLowerCase() : "";
+    const date = typeof entry.date === "string" ? entry.date : null;
+    const calendar = name.startsWith("fed-event") ? FOMC_MEETINGS : name.startsWith("inflation-print") ? CPI_RELEASES : null;
+    if (!calendar || !date || date > today) return raw;
+    const { next_date: _d, next_label: _l, ...rest } = entry;
+    const next = resolveCalendarEvents(calendar, date).next_upcoming;
+    return next ? { ...rest, next_date: next.date, next_label: next.label } : rest;
+  });
+}

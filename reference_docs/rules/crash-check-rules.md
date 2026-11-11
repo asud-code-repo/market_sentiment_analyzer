@@ -823,6 +823,16 @@ for an upcoming date is a genuine judgment call this doesn't override. The
 qualitative content of `note` (was the release/meeting hawkish/dovish,
 in-line or a beat/miss) stays 100% LLM-judged, unchanged.
 
+**Next scheduled event (added 2026-11-11).** For a fired Fed-event or
+inflation-print entry, `write_snapshot` also attaches `next_date` and
+`next_label` from the same FOMC/CPI calendar (`economicCalendar.ts`). These
+are the first meeting or release after the entry's own date, and any value
+the caller passes is overwritten. The public dashboard uses them to lead
+with the upcoming event: "Approaching" if it's within 30 days, otherwise
+"Upcoming", with the last event's outcome shown underneath. That label is a
+plain date rule for display only. It doesn't change the stored `status`,
+and it doesn't replace the run's approaching-vs-pending judgment.
+
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 
 - VIX below 18 in an elevated-macro-risk regime = flag complacency (Tier 1 series, informational use)

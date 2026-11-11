@@ -296,8 +296,11 @@
   /* Trigger list */
   .trigger-list { display: flex; flex-direction: column; gap: 10px; }
   .trigger-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
-  .trigger-item .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-  .trigger-item .desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .trigger-item .pill { flex-shrink: 0; white-space: nowrap; }
+  .trigger-item .kicker { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  .trigger-item .title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .trigger-item .desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+  .trigger-item .next { font-size: 13px; font-weight: 600; margin-top: 6px; }
 
   .divergence-list { display: flex; flex-direction: column; gap: 10px; }
   .divergence-item { padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
@@ -2844,6 +2847,74 @@ document.getElementById("report-view").addEventListener("click", (e) => {
   }
 });
 
+// ---- Trigger list ----
+// Upcoming first (soonest date first), then past events (most recent first).
+// "Fired" only means the event has happened and been assessed, so it isn't
+// shown in red -- alarm levels live in the indicator cards, not here.
+const TRIGGER_STATUS = {
+  approaching: { order: 0, cls: "warning", label: "Approaching" },
+  pending: { order: 0, cls: "info", label: "Pending" },
+  fired: { order: 1, cls: "muted", label: "Fired" },
+};
+// Fired Fed/CPI entries carry next_date/next_label (attached by the MCP
+// server from its FOMC/CPI calendar). Those lead with the upcoming event:
+// "Approaching" within 30 days, otherwise "Upcoming" -- a plain date
+// rule, so it isn't the run's own approaching/pending judgment.
+const TRIGGER_SOON_DAYS = 30;
+function triggerView(t) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (t.status === "fired" && typeof t.next_date === "string" && t.next_date > today) {
+    const soon = (Date.parse(t.next_date) - Date.parse(today)) / 86400000 <= TRIGGER_SOON_DAYS;
+    return { upcoming: true, order: 0, date: t.next_date, pill: soon ? { cls: "warning", label: "Approaching" } : { cls: "info", label: "Upcoming" } };
+  }
+  const s = TRIGGER_STATUS[t.status];
+  return { upcoming: false, order: s?.order ?? 2, date: t.date, pill: s ?? { cls: "muted", label: String(t.status ?? "") } };
+}
+function compareTriggers(a, b) {
+  const va = triggerView(a), vb = triggerView(b);
+  if (va.order !== vb.order) return va.order - vb.order;
+  const byDate = String(va.date).localeCompare(String(vb.date));
+  return va.order === 1 ? -byDate : byDate; // past events: most recent first
+}
+function formatTriggerDate(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  const opts = { month: "short", day: "numeric", timeZone: "UTC" };
+  if (d.getUTCFullYear() !== new Date().getUTCFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("en-US", opts);
+}
+function renderTriggerItem(t) {
+  const v = triggerView(t);
+  // Stored names look like "Fed-event trigger (October 2026 FOMC meeting
+  // (Oct 27-28))": show the event as the title, the trigger type above it.
+  const m = /^(.*?)\s+trigger\s*\((.*)\)\s*$/i.exec(t.name ?? "");
+  const type = m ? m[1].replace(/-/g, " ") : "";
+  const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+  const eventName = m ? cap(m[2]) : t.name ?? "";
+  // A trailing "Next: ..." sentence in the note gets its own line -- or is
+  // dropped when the item already leads with the upcoming event.
+  let note = t.note ?? "", next = "";
+  const n = /(?:^|\.\s+)Next:\s*(.+?)\.?\s*$/.exec(note);
+  if (n) {
+    next = n[1];
+    note = note.slice(0, n.index + (n[0].startsWith(".") ? 1 : 0)).trim();
+  }
+  const title = v.upcoming ? t.next_label : eventName;
+  const kicker = [type, formatTriggerDate(v.date)].filter(Boolean).join(" · ");
+  const body = v.upcoming
+    ? `<div class="desc"><b>Last: ${escHtml(eventName)}${/\([A-Z][a-z]{2} \d/.test(eventName) ? "" : `, ${escHtml(formatTriggerDate(t.date))}`}.</b> ${escHtml(note)}</div>`
+    : `${note ? `<div class="desc">${escHtml(note)}</div>` : ""}${next ? `<div class="next">Next: ${escHtml(next)}</div>` : ""}`;
+  return `
+    <div class="trigger-item">
+      <span class="pill ${v.pill.cls}">${escHtml(v.pill.label)}</span>
+      <div>
+        <div class="kicker">${escHtml(kicker)}</div>
+        <div class="title">${escHtml(title)}</div>
+        ${body}
+      </div>
+    </div>`;
+}
+
 function renderReport(row, priorFullReport, priorAnyRow) {
   const el = document.getElementById("report-view");
   if (!row) {
@@ -2911,15 +2982,7 @@ function renderReport(row, priorFullReport, priorAnyRow) {
     if (triggers.length > 0) {
       triggerSection = `
         <div class="trigger-list">
-          ${triggers
-            .map(
-              (t) => `
-            <div class="trigger-item">
-              <span class="pill ${t.status === "fired" ? "critical" : t.status === "approaching" ? "warning" : "muted"}">${t.status}</span>
-              <div><div class="title">${t.name} — ${t.date}</div>${t.note ? `<div class="desc">${t.note}</div>` : ""}</div>
-            </div>`,
-            )
-            .join("")}
+          ${[...triggers].sort(compareTriggers).map(renderTriggerItem).join("")}
         </div>
       `;
     }
