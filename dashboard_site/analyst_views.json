@@ -1,16 +1,26 @@
 {
-  "_readme": "Content for the dashboard's Notable Views tab. Each 'view' is a short paraphrase of a public statement, with a link to where it was said and the date. Every entry must be checked against its source by a human before publishing. 'check' names a live comparison in dashboard_site/index.html (ANALYST_CHECKS); null means the view isn't something this system's data can test. Refresh roughly quarterly; the page flags any analyst whose views_as_of is more than 90 days old. 'horizon' says which window the check measures over, matching how far ahead the view looks: 'near' (today's reading), 'direction' (12-month change), 'structural' (multi-year averages/trends).",
-  "last_reviewed": "2026-11-09",
+  "_readme": "Content for the dashboard's Notable Views tab. Each 'view' is a short paraphrase of a public statement (quotes are verbatim), with a link to where it was said and the date. Every entry must be checked against its source by a human before publishing. Views are grouped on the page by 'topic' (ids from the topics list). 'check' names a live comparison in dashboard_site/index.html (ANALYST_CHECKS); views on the same check within a topic share one data reading. 'horizon' says which window the check measures over, matching how far ahead the view looks: 'near' (today's reading), 'direction' (12-month change), 'structural' (multi-year averages/trends). the page flags any person whose views_as_of is more than 60 days old. Refresh cadence: the day after each FOMC meeting (views often expire with the meeting).",
+  "last_reviewed": "2026-11-11",
+  "topics": [
+    { "id": "debt", "title": "US debt and deficits", "question": "Is the government's debt becoming a real problem?" },
+    { "id": "rates", "title": "Long-term interest rates", "question": "Where are long-term bond yields headed?" },
+    { "id": "fed", "title": "The Fed", "question": "Is the Fed's policy too loose?" },
+    { "id": "inflation", "title": "Inflation", "question": "Is inflation coming down?" },
+    { "id": "economy", "title": "Economy and jobs", "question": "Is a recession on the way?" },
+    { "id": "markets", "title": "Stocks and credit", "question": "How much risk are markets pricing in?" },
+    { "id": "hard_assets", "title": "Gold and the dollar", "question": "Are hard assets winning against the dollar?" }
+  ],
   "analysts": [
     {
       "id": "dalio",
       "name": "Ray Dalio",
+      "initials": "RD",
       "role": "Founder, Bridgewater Associates",
       "lens": "Long-term debt cycles: when government debt outgrows the ability to service it, the endgame is higher rates or money printing, and hard assets like gold outperform.",
       "views_as_of": "2026-08-21",
       "themes": [
         {
-          "theme": "US debt and fiscal path",
+          "topic": "debt",
           "view": "Says the government's finances are \"at an inflection point\" and a debt crisis could come in about three years, \"give or take two,\" if the course isn't changed.",
           "source": { "title": "CNBC, on his LinkedIn post", "url": "https://www.cnbc.com/2026/08/21/ray-dalio-bessent-debt-crisis-bitcoin-gold.html", "date": "2026-08-21" },
           "check": "fiscal_pressure",
@@ -18,7 +28,7 @@
           "if_differs": "Most fiscal-pressure checks, including the 5-year trend in interest costs as a share of GDP, would need to point to stress."
         },
         {
-          "theme": "Treasury bonds and long-term rates",
+          "topic": "rates",
           "view": "Recommends underweighting bonds. Argues weakening demand for US debt could force rates higher, or force the Fed to print money to buy it.",
           "source": { "title": "CoinDesk, summarizing his post", "url": "https://www.coindesk.com/markets/2026/08/24/ray-dalio-says-investors-should-own-a-bit-of-bitcoin-as-u-s-debt-risks-rise", "date": "2026-08-24" },
           "check": "long_yields_structural",
@@ -26,15 +36,7 @@
           "if_differs": "The 10-year yield would need to run above its 10-year average while the term premium (the extra yield investors demand to hold long bonds) rises."
         },
         {
-          "theme": "Gold as a hedge against money printing",
-          "view": "Suggests holding 10–15% in gold (and \"a bit\" of bitcoin), because non-government money should do well if currencies are devalued.",
-          "source": { "title": "CNBC", "url": "https://www.cnbc.com/2026/08/21/ray-dalio-bessent-debt-crisis-bitcoin-gold.html", "date": "2026-08-21" },
-          "check": "gold_decoupling",
-          "horizon": "structural",
-          "if_differs": "Gold would need to beat inflation over the past two years and stop trading like a normal interest-rate asset (its usual inverse link to real yields breaking down)."
-        },
-        {
-          "theme": "Fed pushing rates down",
+          "topic": "fed",
           "view": "Warns \"it would be very bad if the Federal Reserve unnaturally forced interest rates down.\"",
           "source": { "title": "CNBC", "url": "https://www.cnbc.com/2026/08/21/ray-dalio-bessent-debt-crisis-bitcoin-gold.html", "date": "2026-08-21" },
           "check": "policy_loose",
@@ -42,7 +44,7 @@
           "if_differs": "This system's Taylor Rule check would need to show the Fed funds rate below what inflation and unemployment alone justify."
         },
         {
-          "theme": "The economy right now",
+          "topic": "economy",
           "view": "Urges fixing the deficit now, while the economy is still healthy, since a recession would require more government spending (CNBC's summary).",
           "source": { "title": "CNBC", "url": "https://www.cnbc.com/2026/08/21/ray-dalio-bessent-debt-crisis-bitcoin-gold.html", "date": "2026-08-21" },
           "check": "economy_healthy",
@@ -50,23 +52,25 @@
           "if_differs": "The Sahm Rule recession indicator would need to be back in its normal range."
         },
         {
-          "theme": "Timing",
-          "view": "His crisis window is one to five years out, depending on events like military conflict or political change.",
+          "topic": "hard_assets",
+          "view": "Suggests holding 10–15% in gold (and \"a bit\" of bitcoin), because non-government money should do well if currencies are devalued.",
           "source": { "title": "CNBC", "url": "https://www.cnbc.com/2026/08/21/ray-dalio-bessent-debt-crisis-bitcoin-gold.html", "date": "2026-08-21" },
-          "check": null,
-          "note": "This system looks weeks to months ahead. It can't confirm or rule out a multi-year call; it would only register one once the stress reaches markets."
+          "check": "gold_decoupling",
+          "horizon": "structural",
+          "if_differs": "Gold would need to beat inflation over the past two years and stop trading like a normal interest-rate asset (its usual inverse link to real yields breaking down)."
         }
       ]
     },
     {
       "id": "jain",
       "name": "Ritesh Jain",
+      "initials": "RJ",
       "role": "Founder, Pinetree Macro",
       "lens": "Global liquidity and capital flows: financial repression keeps rates below inflation, the dollar weakens, and real assets beat financial ones.",
       "views_as_of": "2026-08-18",
       "themes": [
         {
-          "theme": "Long-term bond yields",
+          "topic": "rates",
           "view": "\"Long yields are revolting earlier than I expected.\" Calls long-duration Western government bonds \"certificates of confiscation\" under financial repression.",
           "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
           "check": "long_yields_rising",
@@ -74,23 +78,7 @@
           "if_differs": "The 30- and 10-year yields would both need to be up at least a quarter point over the past 12 months."
         },
         {
-          "theme": "US dollar",
-          "view": "Says financial repression plus re-industrialization \"naturally weakens the dollar\"; in March, said the trade-weighted dollar had broken its multi-year uptrend.",
-          "source": { "title": "Pinetree Macro — Nothing Stops This Train", "url": "https://pinetreemacroresearch.substack.com/p/nothing-stops-this-train", "date": "2026-03-17" },
-          "check": "dollar_weakening",
-          "horizon": "direction",
-          "if_differs": "The broad trade-weighted dollar would need to be below both its level a year ago and its 200-day average."
-        },
-        {
-          "theme": "Gold",
-          "view": "Structurally bullish — central banks now hold more gold than Treasuries — but trades it on China's liquidity impulse: cut to about 3% in February, rebuilt as that impulse resumed.",
-          "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
-          "check": "gold_decoupling",
-          "horizon": "structural",
-          "if_differs": "Gold would need to beat inflation over the past two years and stop trading like a normal interest-rate asset (its usual inverse link to real yields breaking down)."
-        },
-        {
-          "theme": "Inflation",
+          "topic": "inflation",
           "view": "Expects US inflation to settle at 3–4% rather than below 2% — \"a view rather than something anyone can verify today.\"",
           "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
           "check": "inflation_sticky",
@@ -98,15 +86,7 @@
           "if_differs": "CPI inflation would need to average 3% or more a year over three years, and markets' long-run inflation expectation (the 5-year rate starting five years out) would need to reach 2.5% or more."
         },
         {
-          "theme": "Stock market correction",
-          "view": "Said in November 2025 a correction \"could be ten per cent or more\" (reprinted in August 2026). Calls today's market a \"rolling bubble\" that deflates rather than bursts.",
-          "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
-          "check": "equity_correction_risk",
-          "horizon": "near",
-          "if_differs": "This system would need confirmed crash indicators turning RED, or its hazard model moving to High."
-        },
-        {
-          "theme": "US economy",
+          "topic": "economy",
           "view": "\"I expect the economy to weaken from the fourth quarter\" of 2026, as tax and tariff support fades.",
           "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
           "check": "economy_weakening",
@@ -114,51 +94,195 @@
           "if_differs": "The Sahm Rule recession indicator would need to rise out of its normal range (0.3 or higher)."
         },
         {
-          "theme": "Leverage",
+          "topic": "markets",
+          "view": "Said in November 2025 a correction \"could be ten per cent or more\" (reprinted in August 2026). Calls today's market a \"rolling bubble\" that deflates rather than bursts.",
+          "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
+          "check": "equity_correction_risk",
+          "horizon": "near",
+          "if_differs": "This system would need confirmed crash indicators turning RED, or its hazard model moving to High."
+        },
+        {
+          "topic": "markets",
           "view": "Flags record US margin debt — $1.53 trillion in June, up more than 50% year over year.",
           "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
           "check": "margin_debt_high",
           "horizon": "direction",
           "if_differs": "Margin-debt growth would need to rank in the top quarter of its own history."
+        },
+        {
+          "topic": "hard_assets",
+          "view": "Structurally bullish on gold — central banks now hold more gold than Treasuries — but trades it on China's liquidity impulse: cut to about 3% in February, rebuilt as that impulse resumed.",
+          "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
+          "check": "gold_decoupling",
+          "horizon": "structural",
+          "if_differs": "Gold would need to beat inflation over the past two years and stop trading like a normal interest-rate asset (its usual inverse link to real yields breaking down)."
+        },
+        {
+          "topic": "hard_assets",
+          "view": "Says financial repression plus re-industrialization \"naturally weakens the dollar\"; in March, said the trade-weighted dollar had broken its multi-year uptrend.",
+          "source": { "title": "Pinetree Macro — Nothing Stops This Train", "url": "https://pinetreemacroresearch.substack.com/p/nothing-stops-this-train", "date": "2026-03-17" },
+          "check": "dollar_weakening",
+          "horizon": "direction",
+          "if_differs": "The broad trade-weighted dollar would need to be below both its level a year ago and its 200-day average."
         }
       ]
     },
     {
-      "id": "buffett",
-      "name": "Warren Buffett",
-      "role": "Chairman, Berkshire Hathaway (CEO until end of 2025)",
-      "lens": "Business value versus price: buy good businesses when they're cheap, never try to predict the market, and use other investors' fear and greed rather than share it. He doesn't make market forecasts, so these rows compare his principles and Berkshire's actions, not predictions.",
-      "views_as_of": "2026-11-07",
+      "id": "marks",
+      "name": "Howard Marks",
+      "initials": "HM",
+      "role": "Co-founder, Oaktree Capital Management",
+      "lens": "Credit and market cycles: how much risk investors are taking, and whether they're being paid for it.",
+      "views_as_of": "2026-11-11",
       "themes": [
         {
-          "theme": "Fear and greed",
-          "view": "His long-standing rule: \"we simply attempt to be fearful when others are greedy and to be greedy only when others are fearful.\"",
-          "source": { "title": "Berkshire Hathaway 1986 shareholder letter", "url": "https://www.berkshirehathaway.com/letters/1986.html", "date": "1987-02-27" },
-          "check": "crowd_sentiment",
+          "topic": "debt",
+          "view": "\"The U.S. displays a total lack of fiscal discipline\": a deficit near 6% of GDP even with unemployment at only 4%, and an interest bill that is \"growing rapidly.\"",
+          "source": { "title": "Oaktree memo — Shall We Repeal the Laws of Economics, Part III", "url": "https://www.oaktreecapital.com/insights/memo/shall-we-repeal-the-laws-of-economics---part-iii", "date": "2026-09-22" },
+          "check": "fiscal_pressure",
+          "horizon": "structural",
+          "if_differs": "Most fiscal-pressure checks, including the 5-year trend in interest costs as a share of GDP, would need to point to stress."
+        },
+        {
+          "topic": "rates",
+          "view": "Heavy government borrowing and the demand for capital to build AI keep pressure on yields, \"arguing against the likelihood of a decline in interest rates anytime soon.\"",
+          "source": { "title": "Oaktree memo — Shall We Repeal the Laws of Economics, Part III", "url": "https://www.oaktreecapital.com/insights/memo/shall-we-repeal-the-laws-of-economics---part-iii", "date": "2026-09-22" },
+          "check": "long_yields_structural",
+          "horizon": "structural",
+          "if_differs": "The 10-year yield would need to run above its 10-year average while the term premium rises."
+        },
+        {
+          "topic": "inflation",
+          "view": "\"Inflation is stubbornly higher than is desirable,\" citing PCE inflation of 3.7% in July against the Fed's 2% target.",
+          "source": { "title": "Oaktree memo — Shall We Repeal the Laws of Economics, Part III", "url": "https://www.oaktreecapital.com/insights/memo/shall-we-repeal-the-laws-of-economics---part-iii", "date": "2026-09-22" },
+          "check": "inflation_not_easing",
+          "horizon": "direction",
+          "if_differs": "Core inflation over the last three months would need to run at 3% a year or more, or above its 12-month rate."
+        },
+        {
+          "topic": "markets",
+          "view": "Markets are \"heavily reliant on a single factor: the success of AI.\" Lenders \"will have to be exceptionally vigilant regarding the creditworthiness of the borrowers they back.\"",
+          "source": { "title": "Oaktree memo — A Layman Thinks About AI", "url": "https://www.oaktreecapital.com/insights/memo/a-layman-thinks-about-ai", "date": "2026-11-11" },
+          "check": "credit_pricing",
           "horizon": "near"
+        }
+      ]
+    },
+    {
+      "id": "sahm",
+      "name": "Claudia Sahm",
+      "initials": "CS",
+      "role": "Macroeconomist; creator of the Sahm Rule; former Federal Reserve economist",
+      "lens": "The labor market and recessions: what the jobs data says about where the economy is headed, and what the Fed should do about it.",
+      "views_as_of": "2026-11-02",
+      "themes": [
+        {
+          "topic": "fed",
+          "view": "Agrees with the two October dissenters who wanted a rate hike, and says a gradual approach \"should translate into a quarter-point hike in December.\"",
+          "source": { "title": "Stay-At-Home Macro — Interrogating confusion at the Fed", "url": "https://stayathomemacro.substack.com/p/interrogating-confusion-at-the-fed", "date": "2026-11-02" },
+          "check": "policy_loose",
+          "horizon": "near",
+          "if_differs": "This system's Taylor Rule check would need to show the Fed funds rate below what inflation and unemployment alone justify."
         },
         {
-          "theme": "Stock prices today",
-          "view": "In his last letter as CEO: \"Because of Berkshire's size and because of market levels, ideas are few – but not zero.\"",
-          "source": { "title": "Buffett's Thanksgiving letter to shareholders", "url": "https://www.berkshirehathaway.com/news/nov1025.pdf", "date": "2025-11-10" },
-          "check": null,
-          "label": "Not measured",
-          "note": "This system doesn't track stock valuations (no price-to-earnings or market-value-to-GDP measure), so it can't test whether prices are high. Its crash indicators measure stress, not value."
+          "topic": "inflation",
+          "view": "Expected energy and tariff effects to fade early this year, but \"by the end of the summer, I was much less confident.\" Notes core CPI rose at an annualized rate of about 4% in September.",
+          "source": { "title": "Stay-At-Home Macro — What will it take to be confident about inflation?", "url": "https://stayathomemacro.substack.com/p/what-will-it-take-to-be-confident", "date": "2026-10-21" },
+          "check": "inflation_not_easing",
+          "horizon": "direction",
+          "if_differs": "Core inflation over the last three months would need to run at 3% a year or more, or above its 12-month rate."
         },
         {
-          "theme": "What Berkshire is doing",
-          "view": "Under CEO Greg Abel, Berkshire bought back about $9.6 billion of its own stock in Q3 2026, which it only does when the price is judged \"below Berkshire's intrinsic value, conservatively determined.\" It has been a net buyer of stocks this year ($41.8B bought, $30.6B sold through September) while holding about $373 billion in cash and Treasury bills.",
-          "source": { "title": "Berkshire Hathaway Q3 2026 quarterly report", "url": "https://www.berkshirehathaway.com/qtrly/3rdqtr26.pdf", "date": "2026-11-07" },
-          "check": "risk_context",
-          "horizon": "near"
+          "topic": "economy",
+          "view": "\"The labor market has remained in balance\": \"unemployment is low and stable.\"",
+          "source": { "title": "Stay-At-Home Macro — What will it take to be confident about inflation?", "url": "https://stayathomemacro.substack.com/p/what-will-it-take-to-be-confident", "date": "2026-10-21" },
+          "check": "labor_balanced",
+          "horizon": "near",
+          "if_differs": "Unemployment would need to be within about a third of a point of its level a year ago, with the Sahm Rule in its normal range."
+        }
+      ]
+    },
+    {
+      "id": "yardeni",
+      "name": "Ed Yardeni",
+      "initials": "EY",
+      "role": "President, Yardeni Research",
+      "lens": "Earnings-led optimism: strong profits and productivity can keep the economy growing and stocks rising, with selloffs as buying opportunities.",
+      "views_as_of": "2026-11-10",
+      "themes": [
+        {
+          "topic": "rates",
+          "view": "Comfortable with the 10-year yield back in its 4%–5% \"old normal\" range.",
+          "source": { "title": "Yardeni QuickTakes — S&P 500 Valuation Dives As Earnings Soar", "url": "https://www.yardeniquicktakes.com/us-markets-call-s-p-500-valuation-dives-as-earnings-soar/", "date": "2026-11-07" },
+          "check": "ten_year_in_range",
+          "horizon": "near",
+          "if_differs": "The 10-year yield would need to be between 4% and 5%."
         },
         {
-          "theme": "Timing the market",
-          "view": "On market fear and greed: \"we never try to anticipate the arrival or departure\" of either. And on Berkshire's own shares: \"Don't despair; America will come back and so will Berkshire shares.\"",
-          "source": { "title": "1986 letter and 2025 Thanksgiving letter", "url": "https://www.berkshirehathaway.com/news/nov1025.pdf", "date": "2025-11-10" },
-          "check": null,
-          "label": "Different approach",
-          "note": "This system does what he avoids: it watches for near-term market stress. Read it as a risk monitor, not a timing tool, and his view as a reminder that long-term owners can ride out the drops it flags."
+          "topic": "fed",
+          "view": "Expects the Fed to raise rates by half a point in December (his note: \"Fed Likely To Hike By 50bps In December\").",
+          "source": { "title": "Yardeni Research QuickTakes", "url": "https://yardeni.com/research/quicktakes/2026/11/10/fed-likely-to-hike-by-50bps-in-december", "date": "2026-11-10" },
+          "check": "policy_loose",
+          "horizon": "near",
+          "if_differs": "This system's Taylor Rule check would need to show the Fed funds rate below what inflation and unemployment alone justify."
+        },
+        {
+          "topic": "economy",
+          "view": "\"The economy shows no sign of a recession anytime soon.\"",
+          "source": { "title": "Yardeni QuickTakes — S&P 500 Valuation Dives As Earnings Soar", "url": "https://www.yardeniquicktakes.com/us-markets-call-s-p-500-valuation-dives-as-earnings-soar/", "date": "2026-11-07" },
+          "check": "economy_healthy",
+          "horizon": "near",
+          "if_differs": "The Sahm Rule recession indicator would need to be back in its normal range."
+        },
+        {
+          "topic": "markets",
+          "view": "\"This remains an earnings-led bull market.\" Sees the AI selloff as \"another speed bump, not a roadblock,\" and is sticking with a 7,900 year-end S&P 500 target.",
+          "source": { "title": "Yardeni QuickTakes — S&P 500 Valuation Dives As Earnings Soar", "url": "https://www.yardeniquicktakes.com/us-markets-call-s-p-500-valuation-dives-as-earnings-soar/", "date": "2026-11-07" },
+          "check": "equity_resilient",
+          "horizon": "near",
+          "if_differs": "No crash indicator confirmed RED, the hazard model out of High, and the S&P 500 less than 10% below its high."
+        }
+      ]
+    },
+    {
+      "id": "alden",
+      "name": "Lyn Alden",
+      "initials": "LA",
+      "role": "Founder, Lyn Alden Investment Strategy",
+      "lens": "Fiscal dominance: when deficits drive the economy, central banks lose control of inflation, and profitable companies, commodities and hard money beat long bonds.",
+      "views_as_of": "2026-09-30",
+      "themes": [
+        {
+          "topic": "debt",
+          "view": "\"US fiscal deficits will continue to run hot for the foreseeable future.\"",
+          "source": { "title": "Lyn Alden — June 2026 Newsletter: The Wild West", "url": "https://www.lynalden.com/june-2026-newsletter/", "date": "2026-06-04" },
+          "check": "fiscal_pressure",
+          "horizon": "structural",
+          "if_differs": "Most fiscal-pressure checks, including the 5-year trend in interest costs as a share of GDP, would need to point to stress."
+        },
+        {
+          "topic": "fed",
+          "view": "\"The fiscal side will win\": Congress won't change course because of the Fed, which is \"not sure they have the tools\" to bring inflation down (Kitco's summary of her interview).",
+          "source": { "title": "Kitco News interview", "url": "https://www.kitco.com/news/video/2026-09-30/washington-is-heading-for-10-trillion-in-deficits-with-no-appetite-to-cut-says-lyn-alden", "date": "2026-09-30" },
+          "check": "policy_loose",
+          "horizon": "near",
+          "if_differs": "This system's Taylor Rule check would need to show the Fed funds rate below what inflation and unemployment alone justify."
+        },
+        {
+          "topic": "rates",
+          "view": "Prefers cash and short-term bills to long bonds: \"Avoid excessive dependence on long-duration fiat claims.\"",
+          "source": { "title": "Lyn Alden — June 2026 Newsletter: The Wild West", "url": "https://www.lynalden.com/june-2026-newsletter/", "date": "2026-06-04" },
+          "check": "long_yields_structural",
+          "horizon": "structural",
+          "if_differs": "The 10-year yield would need to run above its 10-year average while the term premium rises."
+        },
+        {
+          "topic": "hard_assets",
+          "view": "A structural gold bull who is \"certainly not selling,\" though in \"the hold camp\" after the run toward $5,000 (Kitco's summary).",
+          "source": { "title": "Kitco News interview", "url": "https://www.kitco.com/news/video/2026-09-30/washington-is-heading-for-10-trillion-in-deficits-with-no-appetite-to-cut-says-lyn-alden", "date": "2026-09-30" },
+          "check": "gold_decoupling",
+          "horizon": "structural",
+          "if_differs": "Gold would need to beat inflation over the past two years and stop trading like a normal interest-rate asset (its usual inverse link to real yields breaking down)."
         }
       ]
     }

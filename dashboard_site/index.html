@@ -397,23 +397,40 @@
     .radar-detail-table .radar-score { width: 42px; }
   }
 
-  .analyst-card { margin-top: 12px; }
-  .analyst-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .analyst-head h2 { font-size: 17px; margin: 0; }
-  .analyst-role { font-size: 12px; color: var(--text-muted); }
-  .analyst-lens { font-size: 13px; color: var(--text-secondary); margin: 6px 0 4px; }
-  .analyst-asof { font-size: 11px; color: var(--text-muted); margin: 0 0 4px; }
-  .analyst-asof.stale { color: var(--warning); font-weight: 600; }
-  .analyst-row { border-top: 1px solid var(--grid); padding: 12px 0 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
-  .analyst-row .row-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
-  .analyst-row .row-head strong { font-size: 13px; }
-  .analyst-row .col-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 2px; }
-  .analyst-row .col { font-size: 13px; line-height: 1.45; }
-  .analyst-row .col a { color: var(--neutral-blue); font-size: 11px; }
-  .analyst-row .since-note { display: block; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
-  .analyst-row .gap-note { grid-column: 1 / -1; font-size: 12px; color: var(--text-muted); }
+  .nv-intro { font-size: 14px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 10px; }
+  .nv-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
+  .nv-legend .pill { margin-right: 4px; }
+  .nv-about summary, .nv-gap summary { cursor: pointer; color: var(--neutral-blue); font-size: 12px; }
+  .nv-about p, .nv-about li { font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+  .nv-about ul { padding-left: 18px; margin: 6px 0 0; }
+  .nv-about li { margin-bottom: 6px; }
+  .nv-fine { font-size: 11px; color: var(--text-muted); margin: 10px 0 0; }
+  .nv-people { display: flex; gap: 8px; overflow-x: auto; padding: 14px 2px 2px; scrollbar-width: none; }
+  .nv-people::-webkit-scrollbar { display: none; }
+  .nv-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-1); color: var(--text-secondary); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+  .nv-chip[data-person="all"] { padding-left: 12px; min-height: 34px; }
+  .nv-chip.active { border-color: var(--neutral-blue); background: var(--neutral-blue-bg); color: var(--text-primary); }
+  .nv-stale-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
+  .nv-avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--grid); color: var(--text-secondary); font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
+  .nv-person, .nv-topic { margin-top: 12px; }
+  .nv-topic-head h2 { font-size: 17px; margin: 0; }
+  .nv-question { font-size: 13px; color: var(--text-muted); margin: 2px 0 0; }
+  .nv-lens { font-size: 14px; line-height: 1.5; color: var(--text-secondary); margin: 8px 0 4px; }
+  .nv-asof { font-size: 12px; color: var(--text-muted); margin: 0; }
+  .nv-asof.stale { color: var(--warning); }
+  .nv-group { margin-top: 16px; }
+  .nv-data { padding: 10px 12px; border-left: 3px solid var(--neutral-blue); border-radius: 0 8px 8px 0; background: var(--page); font-size: 13px; line-height: 1.5; }
+  .nv-data-label { display: block; margin-bottom: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+  .nv-view { padding-top: 14px; }
+  .nv-view + .nv-view { margin-top: 14px; border-top: 1px solid var(--grid); }
+  .nv-view-head { display: flex; align-items: center; gap: 8px; }
+  .nv-name { flex: 1; font-size: 14px; font-weight: 600; }
+  .nv-text { margin: 6px 0 4px 34px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+  .nv-meta { margin-left: 34px; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
+  .nv-meta a { color: var(--neutral-blue); text-decoration: none; }
+  .nv-gap { margin: 6px 0 0 34px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+  .nv-hidden { display: none !important; }
   .pill.differs { background: none; color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
-  @media (max-width: 640px) { .analyst-row { grid-template-columns: 1fr; } }
 
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
@@ -558,9 +575,15 @@
        deliberately no overall agreement score. -->
   <div class="tab-panel" id="tab-analysts" hidden>
     <div class="card">
-      <p class="eyebrow">Notable Views: how well-known investors' public views compare with this system's live data</p>
-      <p class="context-note" style="margin:0 0 6px;">Each row puts a public view from a macro analyst next to what this system's live data shows today. <b>Agrees</b> means the data currently shows what they describe; <b>Differs</b> means it doesn't yet, and says what would have to change. It's a comparison of frameworks, not a verdict on who's right. Each view is measured over a window that matches it: today's reading for near-term calls, the past 12 months for calls about direction, and multi-year averages for long-term ones (the column heading says which).Rows built on a long-standing principle rather than a forecast say what that principle implies today instead.</p>
-      <p class="context-note" style="margin:0;">Views are short paraphrases of public statements, linked to the source and dated. Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
+      <p class="eyebrow">Notable Views</p>
+      <p class="nv-intro">What well-known investors and economists are saying, side by side with what this system's live data shows. Grouped by topic. Tap a name to see one person's views.</p>
+      <p class="nv-legend"><span><span class="pill info">Agrees</span> the data shows what they describe</span><span><span class="pill muted">Partly</span> some of it</span><span><span class="pill differs">Differs</span> not yet</span></p>
+      <details class="nv-about">
+        <summary>How to read this, and who's here</summary>
+        <p>It's a comparison of frameworks, not a verdict on who's right. Each view is checked over a window that matches it: today's reading for near-term calls, the past 12 months for calls about direction, and multi-year trends for long-term ones. Each data box says which. Views are short paraphrases of public statements (quotes are word for word), linked to the source and dated.</p>
+        <ul id="nv-about-people"></ul>
+      </details>
+      <p class="nv-fine">Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
     </div>
     <div id="analysts-wrap"><p class="loading">Loading…</p></div>
   </div>
@@ -3511,7 +3534,7 @@ const ANALYST_CHECKS = {
     const c = fiscal.find((x) => x.stage === "Policy constraint");
     if (!c || c.stress == null) return { reading: "Taylor Rule check unavailable.", supports: null };
     return {
-      reading: `Fed funds vs. the Taylor Rule: ${c.value}${c.trend ? ` (${c.trend})` : ""}. ${c.stress ? "Policy is looser than inflation and unemployment alone justify, the risk he describes." : "Policy is not looser than the rule prescribes."}`,
+      reading: `Fed funds vs. the Taylor Rule: ${c.value}${c.trend ? ` (${c.trend})` : ""}. ${c.stress ? "Policy is looser than inflation and unemployment alone justify." : "Policy is not looser than the rule prescribes."}`,
       supports: c.stress,
     };
   },
@@ -3562,33 +3585,66 @@ const ANALYST_CHECKS = {
       supports: band === "HIGH" || confirmed >= 2 ? true : band === "TRANSITIONING" || (row.red_count ?? 0) >= 1 ? "partial" : false,
     };
   },
-  // Principle rows (Buffett) return their own label instead of
-  // Agrees/Differs: a rule like "be fearful when others are greedy" isn't a
-  // claim the data can agree with, so the row says what the rule implies today.
-  crowd_sentiment: async ({ positioning }) => {
-    const by = Object.fromEntries(positioning.map((m) => [m.seriesId, m]));
-    const greedy = [], fearful = [];
-    const pc = by.CBOE_EQUITY_PC_RATIO, margin = by.FINRA_MARGIN_DEBIT_USD_MILLIONS, vix = by.COT_VIX_LEV_FUNDS_NET_PCT_OI;
-    if (pc) (pc.band <= 1 ? greedy : pc.band >= 3 ? fearful : []).push(`options traders ${pc.band <= 1 ? "call-heavy" : "put-heavy"}`);
-    if (margin) (margin.band >= 3 ? greedy : margin.band === 0 ? fearful : []).push(`margin debt ${margin.band >= 3 ? "growing fast" : "shrinking"}`);
-    if (vix) (vix.band <= 1 ? greedy : vix.band === 4 ? fearful : []).push(`hedge funds ${vix.band <= 1 ? "short volatility" : "buying protection"}`);
-    const checked = [pc, margin, vix].filter(Boolean).length;
-    if (checked === 0) return { reading: "Positioning data unavailable.", supports: null };
-    const list = (a) => a.join(", ");
-    if (greedy.length >= 2 && fearful.length === 0) {
-      return { label: "Crowd leaning greedy", cls: "differs", reading: `${greedy.length} of ${checked} crowd gauges lean greedy (${list(greedy)}). By his rule, a time for caution rather than eagerness.` };
-    }
-    if (fearful.length >= 2 && greedy.length === 0) {
-      return { label: "Crowd leaning fearful", cls: "info", reading: `${fearful.length} of ${checked} crowd gauges lean fearful (${list(fearful)}). By his rule, the kind of moment he looks to buy.` };
-    }
+  // Near (Yardeni: the AI selloff is a "speed bump"): the same reading as
+  // equity_correction_risk, read the other way round -- calm crash
+  // indicators support the bullish view. Same reading text on purpose, so
+  // the page shows one data box for both views.
+  equity_resilient: async (ctx) => {
+    const r = await ANALYST_CHECKS.equity_correction_risk(ctx);
+    const flip = { true: false, false: true, partial: "partial" };
+    return { reading: r.reading, supports: r.supports == null ? null : flip[String(r.supports)] };
+  },
+  // Near (Marks: lenders to AI must be "exceptionally vigilant"): a
+  // warning, not a forecast, so the row says whether credit markets are
+  // pricing that risk yet rather than Agrees/Differs.
+  credit_pricing: async ({ row }) => {
+    if (row?.hy_spread_bps == null) return { reading: "High-yield spread unavailable.", supports: null };
+    const c = row.hy_spread_color;
     return {
-      label: "No clear crowd mood", cls: "muted",
-      reading: `Crowd gauges are mixed or typical${greedy.length ? `; greedy: ${list(greedy)}` : ""}${fearful.length ? `; fearful: ${list(fearful)}` : ""}. Neither extreme his rule acts on.`,
+      label: c === "GREEN" ? "Not priced in yet" : c === "AMBER" ? "Starting to show" : "Priced in",
+      cls: c === "GREEN" ? "differs" : "info",
+      reading: `High-yield bond spreads (the extra yield riskier companies pay to borrow) are ${Math.round(row.hy_spread_bps)} basis points, ${c === "GREEN" ? "normal" : c === "AMBER" ? "elevated" : "high"} on this system's 350 / 500 bands. ${c === "GREEN" ? "Credit markets aren't charging much extra for risk yet." : "Credit markets are charging more for risk."}`,
     };
   },
-  risk_context: async (ctx) => {
-    const r = await ANALYST_CHECKS.equity_correction_risk(ctx);
-    return { label: "Context", cls: "muted", reading: `For comparison, this system: ${r.reading.charAt(0).toLowerCase() + r.reading.slice(1)}` };
+  // Direction (Sahm, Marks: inflation is stubborn): core PCE, the Fed's
+  // preferred measure, over the last 3 months (annualized) vs. the last 12.
+  inflation_not_easing: async ({ history }) => {
+    const h = await history("PCEPILFE", 13);
+    if (h.length < 13) return { reading: "Core PCE history unavailable.", supports: null };
+    const m3 = (Math.pow(h[0].value / h[3].value, 4) - 1) * 100;
+    const y = (h[0].value / h[12].value - 1) * 100;
+    const month = new Date(`${h[0].observation_date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    return {
+      reading: `Core PCE inflation (the Fed's preferred measure) ran at ${m3.toFixed(1)}% a year over the 3 months to ${month}, vs. ${y.toFixed(1)}% over 12 months. The Fed's target is 2%.`,
+      supports: m3 >= 3 ? true : m3 >= y || m3 >= 2.5 ? "partial" : false,
+    };
+  },
+  // Near (Sahm: "in balance", unemployment "low and stable"): the 12-month
+  // change in unemployment plus the Sahm Rule.
+  labor_balanced: async (ctx) => {
+    const ch = await yearChange(ctx, "UNRATE");
+    if (!ch) return { reading: "Unemployment history unavailable.", supports: null };
+    const c = ctx.row?.sahm_rule_color;
+    const stable = Math.abs(ch.change) <= 0.3;
+    const sahm = ctx.row?.sahm_rule_value != null
+      ? `; Sahm Rule ${Number(ctx.row.sahm_rule_value).toFixed(2)}, ${c === "GREEN" ? "normal range" : c === "AMBER" ? "an early warning" : "a recession signal"}`
+      : "";
+    return {
+      reading: `Unemployment ${ch.now.toFixed(1)}%, ${ch.change >= 0 ? "up" : "down"} ${Math.abs(ch.change).toFixed(1)} points from a year ago${sahm}.`,
+      supports: stable && c === "GREEN" ? true : (stable || c === "GREEN") && c !== "RED" ? "partial" : false,
+    };
+  },
+  // Near (Yardeni: comfortable with the 4%-5% "old normal").
+  ten_year_in_range: async (ctx) => {
+    const y = await ctx.latest("DGS10");
+    if (!y) return { reading: "10-year yield unavailable.", supports: null };
+    const v = Number(y.value);
+    const inside = v >= 4 && v <= 5;
+    return {
+      reading: `10-year yield ${v.toFixed(2)}%, ${inside ? "inside" : v > 5 ? "above" : "below"} the 4%–5% range.`,
+      supports: inside,
+      since: await sinceView(ctx, "DGS10", "10-year yield", "pts"),
+    };
   },
   margin_debt_high: async ({ positioning }) => {
     const m = positioning.find((x) => x.kind === "margin_yoy");
@@ -3645,11 +3701,11 @@ async function sinceView(ctx, id, name, kind) {
   return `${name} ${d >= 0 ? "+" : ""}${d.toFixed(kind === "pct" ? 1 : 2)}${kind === "pct" ? "%" : " points"}`;
 }
 
-// The "this system" column is labeled with the window the check used.
-const HORIZON_LABEL = {
-  near: "This system today",
-  direction: "This system · past 12 months",
-  structural: "This system · multi-year trend",
+// Short horizon label shown on each topic's data box.
+const HORIZON_SHORT = {
+  near: "today",
+  direction: "past 12 months",
+  structural: "multi-year trend",
 };
 
 // Not RAG colors: "Differs" isn't bad and "Agrees" isn't good.
@@ -3659,8 +3715,12 @@ const ANALYST_VERDICT = {
   false: ["differs", "Differs"],
   null: ["muted", "No data"],
 };
-const ANALYST_STALE_DAYS = 90;
+const ANALYST_STALE_DAYS = 60; // ~one Fed-meeting cycle; views are refreshed after each FOMC meeting
 
+// Layout (2026-11-11): grouped by TOPIC, not by person, so views on the
+// same question sit together and each data reading is shown once. Views
+// that share a reading (same measure) share one data box. A row of person
+// chips filters the page to one person's views.
 async function renderAnalystViews(row) {
   const wrap = document.getElementById("analysts-wrap");
   try {
@@ -3672,19 +3732,14 @@ async function renderAnalystViews(row) {
       withTimeout(POSITIONING_READY, 30000, []),
     ]);
     const cache = new Map();
-    const history = (id, n) => {
-      const key = `${id}:${n}`;
-      if (!cache.has(key)) {
-        cache.set(key, fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${encodeURIComponent(id)}&order=observation_date.desc&limit=${n}`).catch(() => []));
-      }
-      return cache.get(key);
-    };
-    const latest = async (id) => (await history(id, 1))[0] ?? null;
     const memo = (key, f) => {
       if (!cache.has(key)) cache.set(key, f());
       return cache.get(key);
     };
     const enc = encodeURIComponent;
+    const history = (id, n) => memo(`h:${id}:${n}`, () =>
+      fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${enc(id)}&order=observation_date.desc&limit=${n}`).catch(() => []));
+    const latest = async (id) => (await history(id, 1))[0] ?? null;
     const onOrBefore = (id, date) => memo(`ob:${id}:${date}`, () =>
       fetchFromSupabase(`data_points?select=observation_date,value&series_id=eq.${enc(id)}&observation_date=lte.${date}&order=observation_date.desc&limit=1`)
         .then((r) => r[0] ?? null).catch(() => null));
@@ -3693,45 +3748,89 @@ async function renderAnalystViews(row) {
         .then((r) => (r.length ? r.reduce((a, x) => a + x.value, 0) / r.length : null)).catch(() => null));
     const ctx = { row, fiscal, positioning, history, latest, onOrBefore, avgBetween };
     const today = new Date().toISOString().slice(0, 10);
+    const fmtDate = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-    const cards = await Promise.all(content.analysts.map(async (a) => {
-      const ageDays = Math.round((Date.parse(today) - Date.parse(a.views_as_of)) / 86400000);
-      const stale = ageDays > ANALYST_STALE_DAYS;
-      const rows = await Promise.all(a.themes.map(async (t) => {
-        let verdictHtml, systemHtml, gapHtml = "";
-        const colLabel = t.check ? HORIZON_LABEL[t.horizon] || HORIZON_LABEL.near : "This system";
-        if (!t.check) {
-          verdictHtml = `<span class="pill muted">${escHtml(t.label || "Different horizon")}</span>`;
-          systemHtml = escHtml(t.note || "");
-        } else {
-          const fn = ANALYST_CHECKS[t.check];
-          const r = fn
-            ? await fn({ ...ctx, viewDate: t.source?.date }).catch(() => ({ reading: "Check failed to load.", supports: null }))
-            : { reading: "Unknown check.", supports: null };
-          const [cls, label] = r.label ? [r.cls || "muted", r.label] : ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
-          verdictHtml = `<span class="pill ${cls}">${label}</span>`;
-          systemHtml = r.reading + (r.since ? `<span class="since-note">Since they said it (${escHtml(t.source.date)}): ${escHtml(r.since)}.</span>` : "");
-          if (r.supports !== true && r.supports !== null && t.if_differs) {
-            gapHtml = `<div class="gap-note"><b>What would need to change:</b> ${escHtml(t.if_differs)}</div>`;
-          }
-        }
-        return `
-          <div class="analyst-row">
-            <div class="row-head">${verdictHtml}<strong>${escHtml(t.theme)}</strong></div>
-            <div class="col"><span class="col-label">Their view</span>${escHtml(t.view)}<br><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)}, ${escHtml(t.source.date)} ↗</a></div>
-            <div class="col"><span class="col-label">${colLabel}</span>${systemHtml}</div>
-            ${gapHtml}
-          </div>`;
-      }));
-      return `
-        <div class="card analyst-card">
-          <div class="analyst-head"><h2>${escHtml(a.name)}</h2><span class="analyst-role">${escHtml(a.role)}</span></div>
-          <p class="analyst-lens">${escHtml(a.lens)}</p>
-          <p class="analyst-asof${stale ? " stale" : ""}">Views as of ${escHtml(a.views_as_of)}${stale ? ` (over ${ANALYST_STALE_DAYS} days old, may be out of date)` : ""} · this system's side updates live</p>
-          ${rows.join("")}
-        </div>`;
+    const people = content.analysts.map((a) => ({
+      ...a,
+      stale: (Date.parse(today) - Date.parse(a.views_as_of)) / 86400000 > ANALYST_STALE_DAYS,
     }));
-    wrap.innerHTML = cards.join("");
+
+    // Evaluate every view; fetches are memoized, so views on the same
+    // measure cost one query.
+    const evaluated = await Promise.all(people.flatMap((a) => a.themes.map(async (t) => {
+      const fn = t.check && ANALYST_CHECKS[t.check];
+      const r = fn
+        ? await fn({ ...ctx, viewDate: t.source?.date }).catch(() => ({ reading: "Check failed to load.", supports: null }))
+        : { reading: escHtml(t.note || "Not something this system's data can test."), label: t.label || "Not testable", cls: "muted" };
+      return { a, t, r };
+    })));
+
+    const renderView = ({ a, t, r }) => {
+      const [cls, label] = r.label ? [r.cls || "muted", r.label] : ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
+      const gap = r.supports !== true && r.supports != null && t.if_differs
+        ? `<details class="nv-gap"><summary>What would change this</summary>${escHtml(t.if_differs)}</details>`
+        : "";
+      return `
+        <div class="nv-view" data-person="${escHtml(a.id)}">
+          <div class="nv-view-head"><span class="nv-avatar">${escHtml(a.initials)}</span><span class="nv-name">${escHtml(a.name)}</span><span class="pill ${cls}">${escHtml(label)}</span></div>
+          <p class="nv-text">${escHtml(t.view)}</p>
+          <div class="nv-meta"><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)} · ${escHtml(fmtDate(t.source.date))} ↗</a>${r.since ? `<br>Since then: ${escHtml(r.since)}` : ""}</div>
+          ${gap}
+        </div>`;
+    };
+
+    const topicsHtml = content.topics.map((topic) => {
+      const items = evaluated.filter((e) => e.t.topic === topic.id);
+      if (items.length === 0) return "";
+      const groups = new Map();
+      for (const e of items) {
+        if (!groups.has(e.r.reading)) groups.set(e.r.reading, { reading: e.r.reading, horizon: e.t.horizon, items: [] });
+        groups.get(e.r.reading).items.push(e);
+      }
+      return `
+        <section class="card nv-topic">
+          <div class="nv-topic-head"><h2>${escHtml(topic.title)}</h2><p class="nv-question">${escHtml(topic.question)}</p></div>
+          ${[...groups.values()].map((g) => `
+            <div class="nv-group">
+              <div class="nv-data"><span class="nv-data-label">The data · ${escHtml(HORIZON_SHORT[g.horizon] || "today")}</span>${g.reading}</div>
+              ${g.items.map(renderView).join("")}
+            </div>`).join("")}
+        </section>`;
+    }).join("");
+
+    const chips = [`<button class="nv-chip active" data-person="all">Everyone</button>`]
+      .concat(people.map((a) => `<button class="nv-chip" data-person="${escHtml(a.id)}"><span class="nv-avatar">${escHtml(a.initials)}</span>${escHtml(a.name)}${a.stale ? `<span class="nv-stale-dot" title="Views over ${ANALYST_STALE_DAYS} days old"></span>` : ""}</button>`))
+      .join("");
+    const personCard = (a) => `
+      <div class="card nv-person">
+        <div class="nv-view-head"><span class="nv-avatar">${escHtml(a.initials)}</span><span class="nv-name">${escHtml(a.name)}</span></div>
+        <p class="nv-question">${escHtml(a.role)}</p>
+        <p class="nv-lens">${escHtml(a.lens)}</p>
+        <p class="nv-asof${a.stale ? " stale" : ""}">Views as of ${escHtml(fmtDate(a.views_as_of))}${a.stale ? ` — over ${ANALYST_STALE_DAYS} days old, may be out of date` : ""}</p>
+      </div>`;
+
+    wrap.innerHTML = `
+      <div class="nv-people" role="group" aria-label="Show views from">${chips}</div>
+      <div id="nv-person-slot"></div>
+      ${topicsHtml}`;
+
+    const applyFilter = (id) => {
+      wrap.querySelectorAll(".nv-chip").forEach((c) => c.classList.toggle("active", c.dataset.person === id));
+      wrap.querySelectorAll(".nv-view").forEach((v) => v.classList.toggle("nv-hidden", id !== "all" && v.dataset.person !== id));
+      wrap.querySelectorAll(".nv-group, .nv-topic").forEach((el) => el.classList.toggle("nv-hidden", !el.querySelector(".nv-view:not(.nv-hidden)")));
+      const a = people.find((p) => p.id === id);
+      document.getElementById("nv-person-slot").innerHTML = a ? personCard(a) : "";
+    };
+    wrap.querySelector(".nv-people").addEventListener("click", (ev) => {
+      const chip = ev.target.closest(".nv-chip");
+      if (chip) applyFilter(chip.dataset.person);
+    });
+
+    // "About these people" list inside the intro card.
+    const about = document.getElementById("nv-about-people");
+    if (about) {
+      about.innerHTML = people.map((a) => `<li><b>${escHtml(a.name)}</b> (${escHtml(a.role)}). ${escHtml(a.lens)} <span class="nv-asof${a.stale ? " stale" : ""}">Views as of ${escHtml(fmtDate(a.views_as_of))}${a.stale ? ", may be out of date" : ""}.</span></li>`).join("");
+    }
   } catch (err) {
     wrap.innerHTML = `<p class="loading">Failed to load notable views: ${escHtml(err.message)}</p>`;
   }
