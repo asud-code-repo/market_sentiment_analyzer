@@ -375,7 +375,11 @@
   .datenav .dn-btn:disabled { opacity:.35; cursor:default; }
   .datenav-static { margin-left:auto; font:var(--t3); color:var(--text-muted); }
   .datenav-static[hidden] { display:none; }
-  .rd #refresh-btn { flex-shrink:0; }
+  /* PWA-only (shown by JS in standalone mode): same outlined look as the date-nav buttons */
+  .rd #refresh-btn { flex-shrink:0; background:none; border:1px solid var(--hair-strong); border-radius:4px; min-width:26px; height:22px; padding:0 6px;
+    cursor:pointer; color:var(--text-secondary); font:500 13px/1 var(--font-ui); }
+  .rd #refresh-btn:hover { color:var(--text-primary); }
+  .rd #refresh-btn:focus-visible { outline:2px solid var(--accent); }
   .rd #error-container:not(:empty) { margin-top:12px; }
 
   /* ---------- verdict strip ---------- */
