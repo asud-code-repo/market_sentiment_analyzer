@@ -68,7 +68,7 @@ test("ambiguous matches return candidates unless one is a ## section", () => {
 
 test("the real rules doc: sections the workflows name are all reachable", () => {
   const s = parseSections(readRulesDoc());
-  for (const name of ["Formatting Requirements", "Deployment Instrument Selection", "Signal Tiering", "6-Indicator Panel", "Wave Deployment Thresholds", "Post-Crash Allocation Protocol", "Stage 1", "Contextual Indicators", "Statistical Hazard Model", "AI single-name credit stress", "Fiscal-event trigger"]) {
+  for (const name of ["Formatting Requirements", "Deployment Instrument Selection", "Signal Tiering", "6-Indicator Panel", "Wave Deployment Thresholds", "Post-Crash Allocation Protocol", "Stage 1", "Contextual Indicators", "Statistical Hazard Model", "AI single-name credit stress", "Fiscal-event trigger", "Treasury auction quality", "Repo-stress spread", "Bond volatility"]) {
     assert.ok("found" in findSection(s, name), name);
   }
   const toc = tableOfContents(s);

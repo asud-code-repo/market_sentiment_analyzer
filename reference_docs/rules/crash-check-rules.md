@@ -1010,7 +1010,7 @@ Four indicators are covered by this section:
 |---|---|---|
 | E1 | Repo-stress spread, SOFR − IORB (`repo_stress_spread`) | Live, with a provisional funding-pressure flag (> +5bp × 3 days) |
 | E2 | Bond volatility (MOVE) | MOVE level + deltas live (`bond_volatility_move`); the proposed `move_spike_vix_calm` divergence flag was **rejected** (no forward edge — see "Investigated and rejected" under Macro Regime Signals) |
-| E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Not built |
+| E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Live: `weak_auction` per tenor inside `treasury_auction_demand` (provisional) |
 | E6 | Private-credit proxy (BDC ETF, BIZD) | Not built, optional |
 
 **Rules that hold for all four:**
@@ -1091,6 +1091,36 @@ Four indicators are covered by this section:
   above 130.
 - Context only, per the rules above.
 
+### Treasury auction quality (10Y/30Y)
+
+- **Where:** each 10Y and 30Y entry in `get_context_indicators`'
+  `treasury_auction_demand.tenors` carries `weak_auction`, `reopening`,
+  `days_old` and `stale`; `weak_auction_count` sums the flags. The data comes
+  from the existing Treasury Fiscal Data `auctions_query` ingest (see the
+  Fiscal Dominance table's "Treasury auction demand" row).
+- **Comparison window:** the latest auction vs the average of the previous 6
+  auctions **of the same tenor, reopenings included**. 10Y and 30Y are
+  reopened most months; excluding reopenings would stretch the window to
+  about 18 months. Indirect share = indirect accepted as % of competitive
+  accepted.
+- **Weak auction (provisional):** bid-to-cover more than **0.2 below** the
+  average **and** indirect share more than **5 points below**. Both must
+  hold; exactly on either line is not weak. `null` = a needed number is
+  missing (unknown, not "not weak"). Free when-issued yields aren't
+  available, so this stands in for the usual tail measure.
+- **Base rate (2015-01 to 2026-10):** 10Y 5 of 138 auctions (3.6%), 30Y 3 of
+  136 (2.2%): Nov 2016 (both), Aug 2020 (30Y), Aug 2025 (10Y), among others.
+  Either condition alone fires far more often (indirect share alone on
+  12–18% of auctions), which is why both are required. It describes the
+  auction just held; it is not a forecast and has not been backtested
+  against market outcomes. Constants: `mcp_server/src/lib/auctionQuality.ts`.
+- **Source staleness:** on 2026-11-13 the Fiscal Data feed had posted
+  nothing newer than Oct 7 (10Y) and Oct 8 (30Y), with no results after an
+  Oct 30 record date (auctions from Oct 19 on were listed without results).
+  `stale` is true when the latest auction is more than 40 days old. When it
+  is, say the data is stale; don't read it as "no recent weakness".
+- Context only, per the rules above.
+
 ---
 
 ## Fiscal Dominance Regime Checklist (informational only — never gates, structural cadence)
@@ -1128,7 +1158,7 @@ as a daily flag.
 | r − g | Nominal: the average debt rate above minus nominal GDP growth YoY (`GDP`, same quarter a year earlier). Real, for context: `DFII10` minus CBO potential real growth (`GDPPOT` YoY), with actual real growth (`GDPC1`) alongside | The core debt-dynamics driver. Debt/GDP is stable when the primary balance equals d·(r−g)/(1+g), so a rising r − g raises the primary balance needed to keep debt flat | r < g does **not** by itself shrink debt (a big enough primary deficit still pushes debt/GDP up), and r > g doesn't mean debt rises "even with a surplus", only unless the surplus is big enough. g over four quarters swings with the cycle and inflation; read the direction. Trend: a year earlier. Added 2026-10-02 |
 | Debt-stabilizing primary balance | d·(r−g)/(1+g) with d = debt held by the public % GDP (`FYGFGDQ188S`, not `GFDEGDQ188S`, which includes intragovernmental debt), r and g as above, compared with the actual primary balance % GDP from the check above. Scenarios at +50bp and +100bp on r | Turns the static readings into a forward-looking gauge: how far the actual primary balance is from the level that holds debt/GDP flat, and how much that threshold moves as the average rate rises | The +50/+100bp scenarios raise the *average* rate, which takes years of rollover, not a move in market yields. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g; d includes Treasuries held by the Fed, whose interest is largely remitted back. Added 2026-10-02 |
 | Long-end inflation expectations + term premium | 3-month changes in `T5YIFR` (5y5y forward inflation) and `THREEFYTP10` (Kim-Wright term premium); "both rising" = each up ≥10bp. Prior 3 months for trend | Markets demanding both more inflation compensation and more duration-risk compensation at once is the pricing fingerprint of fiscal risk. Either alone has ordinary explanations | The 10bp threshold is an uncalibrated judgment call. 5y5y strips out the next five years, so it reads long-run inflation credibility rather than near-term prints. Added 2026-10-02 |
-| Treasury auction demand | Treasury Fiscal Data API `auctions_query` (new best-effort source in `ingestion/src/sources/treasury.ts`): original-issue nominal 2y/5y/10y/30y coupon auctions since 2015 → `AUCTION_{2Y,5Y,10Y,30Y}_{BID_TO_COVER,DEALER_PCT,INDIRECT_PCT}` (dealer and indirect as % of competitive accepted). Latest auction vs. that tenor's previous 6 | The timeliest "who is still buying the bonds?" read (TIC holdings lag ~2 months). Heavier dealer take-down with lower bid-to-cover means end-investor demand fell short and dealers absorbed the gap | Reopenings, TIPS and FRNs excluded (the 2-Year FRN shares the "2-Year" term). "Weaker than recent" = dealer share above AND bid-to-cover below the prior-6 average, with no calibrated threshold. Indirect bidders are the usual foreign-demand proxy but include domestic funds bidding through dealers. **Tails aren't computed**: they need the when-issued yield, which no free source publishes. Single auctions are noisy. Added 2026-10-02 |
+| Treasury auction demand | Treasury Fiscal Data API `auctions_query` (new best-effort source in `ingestion/src/sources/treasury.ts`): nominal 2y/5y/10y/30y coupon auctions since 2015, reopenings included (grouped by `original_security_term`, since 2026-11-13) → `AUCTION_{2Y,5Y,10Y,30Y}_{BID_TO_COVER,DEALER_PCT,INDIRECT_PCT}` (dealer and indirect as % of competitive accepted). Latest auction vs. that tenor's previous 6 | The timeliest "who is still buying the bonds?" read (TIC holdings lag ~2 months). Heavier dealer take-down with lower bid-to-cover means end-investor demand fell short and dealers absorbed the gap | TIPS and FRNs excluded (the 2-Year FRN shares the "2-Year" term). Reopenings were excluded until 2026-11-13; they're now compared within the same tenor (see "Treasury auction quality (10Y/30Y)" for the weak-auction flag and the source-staleness caveat). "Weaker than recent" = dealer share above AND bid-to-cover below the prior-6 average, with no calibrated threshold. Indirect bidders are the usual foreign-demand proxy but include domestic funds bidding through dealers. **Tails aren't computed**: they need the when-issued yield, which no free source publishes. Single auctions are noisy. Added 2026-10-02 |
 | Fed share of marketable Treasuries + QT pace | FRED `TREAST` (Fed Treasury holdings, H.4.1, weekly) ÷ Treasury MSPD total marketable debt (`MSPD_TOTAL_MARKETABLE`, month-end, Treasury Fiscal Data), on matching dates; 13-week change in `TREAST` per month | Whether the central bank is absorbing more of the fiscal burden: a rising share, or runoff turning into net buying | Purchases can have non-fiscal motives (market functioning, reserve management), so read alongside the auction and r − g checks. Trend: 1yr and 3yrs earlier; prior 13 weeks for pace. Added 2026-10-02 |
 | M2 / nominal GDP | FRED `M2SL` averaged over GDP's latest quarter ÷ that quarter's `GDP`; M2 YoY vs. nominal GDP YoY | Money growth outrunning nominal GDP for a sustained stretch is the monetary-financing pattern | Also moves with rate-driven shifts between deposits and money funds/T-bills, so it's context, not a verdict. Trend: a year earlier. Added 2026-10-02 |
 

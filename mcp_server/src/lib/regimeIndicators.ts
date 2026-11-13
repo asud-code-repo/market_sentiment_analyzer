@@ -1,5 +1,6 @@
 import { supabase, getLatestDataPoint } from "./supabase.js";
 import { subtractDays } from "./seriesDelta.js";
+import { isWeakAuction, WEAK_AUCTION_TENORS, WEAK_AUCTION_BTC_BELOW_AVG, WEAK_AUCTION_INDIRECT_PTS_BELOW_AVG } from "./auctionQuality.js";
 
 // Fiscal Dominance Regime Checklist (added 2026-09-22, see
 // reference_docs/rules/crash-check-rules.md's section of the same name for
@@ -781,14 +782,42 @@ export interface AuctionTenorResult {
   prior_avg_dealer_pct: number | null;
   prior_avg_indirect_pct: number | null;
   weaker_than_recent: boolean | null;
+  /** E4 (10Y/30Y only; absent for other tenors): provisional weak-auction flag, see auctionQuality.ts. */
+  weak_auction?: boolean | null;
+  /** Whether this latest auction was a reopening (10Y/30Y are reopened most months). */
+  reopening?: boolean | null;
+  /** Calendar days from auction_date to today; benchmark coupons auction monthly. */
+  days_old: number;
+  /** true when days_old > AUCTION_STALE_DAYS — the source has stopped updating, not "no recent weakness". */
+  stale: boolean;
 }
+
+// Fiscal Data's auctions_query was found lagging 2026-11-13 (latest posted
+// 10Y/30Y results Oct 7/8, nothing after a record_date of Oct 30), so the
+// age of each latest auction is reported rather than assumed current.
+const AUCTION_STALE_DAYS = 40;
 
 export interface AuctionDemandResult {
   tenors: AuctionTenorResult[];
   avg_dealer_pct_latest: number | null;
   avg_dealer_pct_prior: number | null;
   weaker_than_recent_count: number;
+  /** E4: how many of 10Y/30Y flagged weak_auction === true. */
+  weak_auction_count: number;
   caveat: string;
+}
+
+/** Reopening flag stored in the auction row's raw_payload (ingestion treasury.ts); null if absent (pre-2026-11-13 rows). */
+async function getAuctionReopening(tenor: string, date: string): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from("data_points")
+    .select("raw_payload")
+    .eq("series_id", `AUCTION_${tenor}_BID_TO_COVER`)
+    .eq("observation_date", date)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to read AUCTION_${tenor} raw_payload: ${error.message}`);
+  const r = (data?.raw_payload as { reopening?: string } | null)?.reopening;
+  return r === "Yes" ? true : r === "No" ? false : null;
 }
 
 /**
@@ -816,6 +845,7 @@ export async function computeAuctionDemand(): Promise<AuctionDemandResult | null
         return prior.length > 0 ? prior.reduce((a, p) => a + p.value, 0) / prior.length : null;
       };
       const latestDealer = valueOn(dealer, btc[0].date);
+      const daysOld = Math.round((Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(btc[0].date)) / 86400000);
       const avgBtc = priorAvg(btc);
       const avgDealer = priorAvg(dealer);
       const result: AuctionTenorResult = {
@@ -828,7 +858,20 @@ export async function computeAuctionDemand(): Promise<AuctionDemandResult | null
         prior_avg_dealer_pct: avgDealer !== null ? round1(avgDealer) : null,
         prior_avg_indirect_pct: priorAvg(indirect) !== null ? round1(priorAvg(indirect)!) : null,
         weaker_than_recent: latestDealer !== null && avgBtc !== null && avgDealer !== null ? latestDealer > avgDealer && btc[0].value < avgBtc : null,
+        days_old: daysOld,
+        stale: daysOld > AUCTION_STALE_DAYS,
       };
+      if ((WEAK_AUCTION_TENORS as readonly string[]).includes(tenor)) {
+        // Unrounded inputs, so the flag matches the documented rule exactly.
+        const latestIndirect = valueOn(indirect, btc[0].date);
+        result.weak_auction = isWeakAuction({
+          bid_to_cover: btc[0].value,
+          indirect_pct: latestIndirect,
+          prior_avg_bid_to_cover: avgBtc,
+          prior_avg_indirect_pct: priorAvg(indirect),
+        });
+        result.reopening = await getAuctionReopening(tenor, btc[0].date);
+      }
       return result;
     }),
   );
@@ -841,8 +884,11 @@ export async function computeAuctionDemand(): Promise<AuctionDemandResult | null
     avg_dealer_pct_latest: mean(tenors.flatMap((t) => (t.dealer_pct !== null ? [t.dealer_pct] : []))),
     avg_dealer_pct_prior: mean(tenors.flatMap((t) => (t.prior_avg_dealer_pct !== null ? [t.prior_avg_dealer_pct] : []))),
     weaker_than_recent_count: tenors.filter((t) => t.weaker_than_recent).length,
+    weak_auction_count: tenors.filter((t) => t.weak_auction === true).length,
     caveat:
-      `Original-issue nominal coupon auctions only (no reopenings, TIPS or FRNs); dealer and indirect shares are % of competitive accepted. Indirect bidders are the usual foreign-demand proxy but also include domestic funds bidding through dealers. Compared with each tenor's previous ${AUCTION_LOOKBACK} auctions. Tails (yield vs. when-issued) need paid data and aren't shown. Single auctions are noisy -- look for weakness repeating across tenors and months.`,
+      `Nominal coupon auctions, reopenings included and compared within the same tenor (TIPS and FRNs excluded); dealer and indirect shares are % of competitive accepted. weak_auction (10Y/30Y only, PROVISIONAL): bid-to-cover more than ${WEAK_AUCTION_BTC_BELOW_AVG} below AND indirect share more than ${WEAK_AUCTION_INDIRECT_PTS_BELOW_AVG}pts below the previous ${AUCTION_LOOKBACK}; fired on ~2-4% of 2015-2026 auctions; null = a needed number is missing.` +
+      ` Check each tenor's days_old: stale = true means Treasury's Fiscal Data feed hasn't posted a newer auction (it lagged by weeks in Oct-Nov 2026), so say the data is stale rather than reading it as "no recent weakness".` +
+      ` Indirect bidders are the usual foreign-demand proxy but also include domestic funds bidding through dealers. Compared with each tenor's previous ${AUCTION_LOOKBACK} auctions. Tails (yield vs. when-issued) need paid data and aren't shown. Single auctions are noisy -- look for weakness repeating across tenors and months.`,
   };
 }
 

@@ -156,7 +156,11 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - Dashboard shows one bar per indicator.
   - Tool exposes no probability or narrative (safe to call in steps 1–6).
 
-## E4 — 10Y/30Y auction quality (phase 2 of E3) · Priority 6 · Status: agreed, not built
+## E4 — 10Y/30Y auction quality (phase 2 of E3) · Priority 6 · Status: done
+
+- **Built (2026-11-13):** `treasury.ts` now groups auctions by `original_security_term`, includes reopenings and stores `reopening` in `raw_payload` (10Y: 97 of 144 auctions since 2015 are reopenings, 30Y: 95 of 142, 5Y: 7 of 142, 2Y: 0). New `mcp_server/src/lib/auctionQuality.ts` (`isWeakAuction`, provisional constants) + 3 tests. `computeAuctionDemand` adds `weak_auction`/`reopening` for 10Y/30Y, `days_old`/`stale` for every tenor, and `weak_auction_count`. The rules doc has a new `### Treasury auction quality (10Y/30Y)` section, and its Fiscal Dominance row now says reopenings are included.
+- **Base rate (2015-01 → 2026-10, reopenings included):** weak = 10Y 5/138 (3.6%), 30Y 3/136 (2.2%). Bid-to-cover alone: 7.2% / 3.7%; indirect share alone: 18.1% / 12.5%. Latest (Oct 7 / Oct 8 reopenings): both strong (10Y btc 2.77 vs 2.54, indirect 80.3 vs 74.1).
+- **Open: source staleness.** Fiscal Data `auctions_query` had nothing newer than Oct 7/8 for 10Y/30Y on 2026-11-13 (record_date stops at Oct 30; auctions from Oct 19 have null results). Surfaced via `days_old` / `stale` (> 40 days). A more current official source (TreasuryDirect's auction-results service) is a possible follow-up, not built.
 
 - **Touches:** ingestion; `get_context_indicators`
 - **Data:** Fiscal Data auction results (bid-to-cover, indirect bidder share).

@@ -87,11 +87,15 @@ function requireFields(rows: Record<string, unknown>[], fields: string[], source
 // Treasury Fiscal Data API -- "Treasury Securities Auctions Data"
 // (auctions_query). Added 2026-10-02 (external review, round 2): auction
 // demand is the timeliest "who is still buying the bonds?" signal --
-// TIC holdings (tic.ts) lag ~2 months. Original-issue nominal coupon
-// auctions only, for the four benchmark tenors: reopenings (different
-// security_term, e.g. "9-Year 10-Month"), TIPS and FRNs (the 2-Year FRN
-// shares the "2-Year" term) are excluded so each series compares like with
-// like. Per auction, three series keyed by auction_date:
+// TIC holdings (tic.ts) lag ~2 months. Nominal coupon auctions for the four
+// benchmark tenors. REOPENINGS ARE INCLUDED since 2026-11-13 (E4): they are
+// grouped with their original issue via original_security_term (a reopening's
+// own security_term reads e.g. "9-Year 10-Month"), because excluding them
+// stretched the 10Y/30Y "previous 6" window to ~18 months. 2Y is never
+// reopened; 5Y rarely (7 of 142 since 2015). TIPS and FRNs (the 2-Year FRN
+// shares the "2-Year" term) stay excluded. Each run re-writes the full
+// 2015+ history, so the next ingest adds the reopening rows. Per auction,
+// three series keyed by auction_date:
 //   - bid-to-cover (bid_to_cover_ratio, as published)
 //   - primary-dealer take-down % = primary_dealer_accepted / comp_accepted
 //   - indirect-bidder %          = indirect_bidder_accepted / comp_accepted
@@ -115,15 +119,17 @@ export async function fetchTreasuryAuctions(): Promise<DataPoint[]> {
   });
   requireFields(
     rows,
-    ["auction_date", "security_term", "reopening", "inflation_index_security", "floating_rate", "bid_to_cover_ratio", "comp_accepted", "primary_dealer_accepted", "indirect_bidder_accepted"],
+    ["auction_date", "security_term", "original_security_term", "reopening", "inflation_index_security", "floating_rate", "bid_to_cover_ratio", "comp_accepted", "primary_dealer_accepted", "indirect_bidder_accepted"],
     "Treasury auctions_query",
   );
 
   const points: DataPoint[] = [];
   for (const row of rows) {
-    const tenor = AUCTION_TENORS[row.security_term ?? ""];
+    // Tenor from original_security_term, so a reopening ("9-Year 10-Month")
+    // is grouped with its original "10-Year" issue (E4 decision 2026-11-13).
+    const tenor = AUCTION_TENORS[row.original_security_term ?? row.security_term ?? ""];
     if (!tenor) continue;
-    if (row.reopening === "Yes" || row.inflation_index_security === "Yes" || row.floating_rate === "Yes") continue;
+    if (row.inflation_index_security === "Yes" || row.floating_rate === "Yes") continue;
     const date = row.auction_date ?? "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     const btc = Number(row.bid_to_cover_ratio);
@@ -137,7 +143,7 @@ export async function fetchTreasuryAuctions(): Promise<DataPoint[]> {
       source: "TREASURY_FISCALDATA",
       source_series_code: `auctions_query:${row.security_term}`,
       observation_date: date,
-      raw_payload: { cusip: row.cusip, security_term: row.security_term, bid_to_cover_ratio: row.bid_to_cover_ratio, comp_accepted: row.comp_accepted, primary_dealer_accepted: row.primary_dealer_accepted, indirect_bidder_accepted: row.indirect_bidder_accepted },
+      raw_payload: { cusip: row.cusip, security_term: row.security_term, original_security_term: row.original_security_term, reopening: row.reopening, bid_to_cover_ratio: row.bid_to_cover_ratio, comp_accepted: row.comp_accepted, primary_dealer_accepted: row.primary_dealer_accepted, indirect_bidder_accepted: row.indirect_bidder_accepted },
     };
     points.push({ ...base, series_id: `AUCTION_${tenor}_BID_TO_COVER`, value: btc, unit: "ratio" });
     if (Number.isFinite(dealer)) points.push({ ...base, series_id: `AUCTION_${tenor}_DEALER_PCT`, value: (dealer / comp) * 100, unit: "percent" });
