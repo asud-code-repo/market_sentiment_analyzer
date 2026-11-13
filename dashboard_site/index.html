@@ -417,25 +417,23 @@
   .scale div.on { background:var(--surface-1); box-shadow: inset 0 2px 0 var(--text-primary), inset 0 0 0 1px var(--hair-strong); }
   .scale div.on b { color:var(--text-primary); }
 
-  /* ---------- distance to red (E7) ---------- */
-  .dtr { border-top:1px solid var(--hair-strong); }
-  .dtr .row { display:grid; align-items:center; column-gap:18px; padding:9px 10px 9px 14px;
-    grid-template-columns: minmax(150px,1fr) minmax(160px,2.2fr) minmax(150px,1.1fr);
-    border-bottom:1px solid var(--hair); box-shadow: inset 3px 0 0 var(--tick, transparent); }
-  .dtr .row[data-status=good] { --tick: var(--good); }
-  .dtr .row[data-status=warning] { --tick: var(--warning); }
-  .dtr .row[data-status=critical] { --tick: var(--critical); background: var(--critical-bg); }
-  .dtr .name b { font-weight:600; }
-  .dtr .name small { display:block; font:var(--t3); color:var(--text-muted); margin-top:1px; }
-  .dtr .bar, .dtr .track, .dtr .fill, .dtr .tick, .dtr .redline { display:block; }
-  .dtr .track { position:relative; height:8px; background:var(--sunk); border-radius:1px; }
+  /* ---------- distance to red (E7): one compact strip ---------- */
+  .dtr { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-top:1px solid var(--hair-strong); border-bottom:1px solid var(--hair); }
+  .dtr .cell { padding:7px 10px 8px; border-left:1px solid var(--hair); box-shadow: inset 0 2px 0 var(--tick, transparent); min-width:0; }
+  .dtr .cell:first-child { border-left:0; }
+  .dtr .cell[data-status=good] { --tick: var(--good); }
+  .dtr .cell[data-status=warning] { --tick: var(--warning); background: var(--warning-bg); }
+  .dtr .cell[data-status=critical] { --tick: var(--critical); background: var(--critical-bg); }
+  .dtr .top { display:flex; justify-content:space-between; align-items:baseline; gap:6px; white-space:nowrap; }
+  .dtr .top b { font:600 12px/1.2 var(--font-ui); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; }
+  .dtr .top span { font:500 12px/1.2 var(--font-ui); color:var(--text-secondary); }
+  .dtr .track, .dtr .fill, .dtr .tick, .dtr .redline { display:block; }
+  .dtr .track { position:relative; height:4px; margin-top:6px; background:var(--sunk); border-radius:1px; }
   .dtr .fill { position:absolute; left:0; top:0; bottom:0; background:var(--tick, var(--text-muted)); border-radius:1px; }
-  .dtr .tick { position:absolute; top:-3px; bottom:-3px; width:0; border-left:1px dashed var(--text-muted); }
-  .dtr .redline { position:absolute; right:0; top:-4px; bottom:-4px; width:2px; background:var(--critical); }
-  .dtr .read { text-align:right; font:500 13px/1.25 var(--font-ui); color:var(--text-primary); white-space:nowrap; }
-  .dtr .read small { display:block; font:var(--t3); color:var(--text-muted); white-space:normal; }
-  .dtr .state { font:var(--t3); color:var(--text-secondary); }
-  .dtr-na { font:var(--t3); color:var(--text-muted); padding:10px 0; }
+  .dtr .tick { position:absolute; top:-2px; bottom:-2px; width:0; border-left:1px dashed var(--text-muted); }
+  .dtr .redline { position:absolute; right:0; top:-3px; bottom:-3px; width:2px; background:var(--critical); }
+  .dtr .state { display:block; margin-top:4px; font:var(--t3); color:var(--text-muted); }
+  .dtr-na { font:var(--t3); color:var(--text-muted); padding:6px 0; }
 
   /* ---------- LLM estimate (full reports) ---------- */
   .llm-now { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
@@ -652,8 +650,9 @@
     .ledger:not(.fl) .row > .thr::before { content:"green if "; }
     .ledger:not(.fl) .row > .num .chg:not(.flat)::after { content:" 7d"; color:var(--text-muted); font-weight:400; }
     .ledger .streak small { display:none; }
-    .dtr .row { grid-template-columns: 1fr auto; grid-template-areas:"name read" "bar bar"; row-gap:8px; column-gap:10px; padding:10px 8px 10px 12px; }
-    .dtr .row > .name { grid-area:name; } .dtr .row > .read { grid-area:read; } .dtr .row > .bar { grid-area:bar; }
+    .dtr { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .dtr .top { flex-wrap:wrap; white-space:normal; row-gap:1px; }
+    .dtr .cell:nth-child(3n+1) { border-left:0; } .dtr .cell:nth-child(n+4) { border-top:1px solid var(--hair); }
     .spark { width:100px; }
     .hazard { grid-template-columns:1fr; gap:12px; }
     [popover].pop, [popover].pop.wide { max-width:calc(100vw - 24px); }
@@ -3100,56 +3099,57 @@ function renderGateLedger(row, idx) {
 const DTR_ROWS = [
   { k: "vix", name: "VIX", dist: (d) => `${d.toFixed(1)} pts`, line: (v) => `${v}` },
   { k: "hy_spread", name: "HY spread", dist: (d) => `${Math.round(d)}bp`, line: (v) => `${v}bp` },
-  { k: "sp_drawdown", name: "S&amp;P drawdown", dist: (d) => `${d.toFixed(1)} pts`, line: (v) => `${v}% below the high` },
+  { k: "sp_drawdown", name: "Drawdown", dist: (d) => `${d.toFixed(1)} pts`, line: (v) => `${v}% below the high` },
   { k: "treasury_10y", name: "10Y Treasury", dist: (d) => `${Math.round(d * 100)}bp`, line: (v) => `${v.toFixed(2)}%` },
   { k: "sahm_rule", name: "Sahm rule", dist: (d) => d.toFixed(2), line: (v) => v.toFixed(2) },
 ];
 
+// One compact strip (2026-11-13 user request: the first version, one row per
+// indicator, took too much space). Each cell: name + distance to red over a
+// thin bar from 0 to the RED line, dashed tick where AMBER starts. The full
+// sentence sits in the cell title (hover) and the popover explains the rest.
 function renderDistanceToRed(row) {
   const dtr = row.distance_to_red;
   const pop = popHtml("i-dtr", "Distance to red · what is this?", `
-    <p><b>What it is.</b> How far each gate indicator is from its red line, using the rule engine's own thresholds. The bar fills from zero toward the red line on the right; the dashed tick marks where amber begins.</p>
+    <p><b>What it is.</b> How far each gate indicator is from its red line, using the rule engine's own thresholds. Each bar fills from zero toward the red line on its right; the dashed tick marks where amber begins. Hover a cell for the exact numbers.</p>
     <p><b>Why it matters.</b> It shows which indicator is closest to flipping before it does. A reading has to sit above the red line on ${dtr?.required_confirmation_days ?? 2} separate dates before it counts.</p>
     <p><b>What it doesn't mean.</b> One red indicator doesn't authorize a wave. That takes 3 of the 6 at confirmed red at the same time.</p>
-    <p class="fine">Red means strictly above the line, so a reading exactly on it is still amber. For the S&amp;P, the % shown is how far the index itself would have to fall.</p>`);
+    <p class="fine">Red means strictly above the line, so a reading exactly on it is still amber. For the S&amp;P, the distance is in percentage points of drawdown; the hover text gives how far the index itself would have to fall.</p>`);
   const head = `<div class="sh"><span class="lbl">Distance to red</span><span class="note">Same thresholds as the gate · context, not a signal</span>${ib("i-dtr", "distance to red")}</div>`;
   if (!dtr?.indicators) {
     return `<section class="rsec" id="section-distance">${head}<p class="dtr-na">Not computed for this date. This view starts with runs from November 13, 2026.</p>${pop}</section>`;
   }
-  const rows = DTR_ROWS.map((g) => {
+  const cells = DTR_ROWS.map((g) => {
     const d = dtr.indicators[g.k];
     if (!d || typeof d.value !== "number") return "";
     const fill = Math.max(0, Math.min(1, d.value / d.red_above));
     const amberAt = Math.max(0, Math.min(1, d.amber_from / d.red_above));
-    let read, sub;
+    let short, detail;
     if (d.color === "RED") {
-      read = "In red";
-      sub = d.red_confirmation_days_needed > 0 ? `${d.red_confirmation_days_needed} more date${d.red_confirmation_days_needed === 1 ? "" : "s"} to confirm` : "confirmed";
+      short = "in red";
+      detail = d.red_confirmation_days_needed > 0 ? `In red; ${d.red_confirmation_days_needed} more date${d.red_confirmation_days_needed === 1 ? "" : "s"} to confirm` : "In red, confirmed";
     } else {
-      read = `${g.dist(d.distance_to_red)} to red`;
+      short = g.dist(d.distance_to_red);
       const pct = d.pct_move_to_red;
-      sub = pct == null ? `red above ${g.line(d.red_above)}`
-        : g.k === "sp_drawdown" ? `S&amp;P would need to fall ${Math.abs(pct).toFixed(1)}%`
-        : `needs a ${pct.toFixed(1)}% rise · red above ${g.line(d.red_above)}`;
+      detail = `${g.dist(d.distance_to_red)} to red${pct == null ? "" : g.k === "sp_drawdown" ? ` (S&amp;P would need to fall ${Math.abs(pct).toFixed(1)}%)` : ` (needs a ${pct.toFixed(1)}% rise)`} · red above ${g.line(d.red_above)}`;
     }
-    return `<div class="row" data-status="${STATUS_ATTR[d.color] ?? ""}">
-      <span class="name"><b>${g.name}</b><small>as of ${fmtMd(d.observation_date)}</small></span>
-      <span class="bar"><span class="track" role="img" aria-label="${g.name.replace("&amp;", "and")}: ${Math.round(fill * 100)}% of the way to red">
+    const plain = `${g.name}: ${detail} · as of ${fmtMd(d.observation_date)}`.replace(/&amp;/g, "&");
+    return `<div class="cell" data-status="${STATUS_ATTR[d.color] ?? ""}" title="${escHtml(plain)}">
+      <span class="top"><b>${g.name}</b><span>${short}</span></span>
+      <span class="track" role="img" aria-label="${escHtml(plain)}">
         <span class="fill" style="width:${(fill * 100).toFixed(1)}%"></span>
         <span class="tick" style="left:${(amberAt * 100).toFixed(1)}%"></span>
         <span class="redline"></span>
-      </span></span>
-      <span class="read">${read}<small>${sub}</small></span>
+      </span>
     </div>`;
   }).join("");
   const fp = dtr.fed_pivot_signal;
-  const word = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "—");
-  const fedRow = fp ? `<div class="row" data-status="${STATUS_ATTR[fp.color] ?? ""}">
-      <span class="name"><b>Fed pivot</b><small>manual judgment</small></span>
-      <span class="bar state">A state, not a distance</span>
-      <span class="read">${word(fp.state === "NONE" ? "None" : fp.state)}<small>red if ${word(fp.red_state)}</small></span>
+  const word = (x) => (x ? x.charAt(0) + x.slice(1).toLowerCase() : "—");
+  const fedCell = fp ? `<div class="cell" data-status="${STATUS_ATTR[fp.color] ?? ""}" title="Fed pivot: a manual judgment, so a state rather than a distance. Red if ${word(fp.red_state)}.">
+      <span class="top"><b>Fed pivot</b><span>${word(fp.state)}</span></span>
+      <span class="state">red if ${word(fp.red_state)}</span>
     </div>` : "";
-  return `<section class="rsec" id="section-distance">${head}<div class="dtr">${rows}${fedRow}</div>${pop}</section>`;
+  return `<section class="rsec" id="section-distance">${head}<div class="dtr">${cells}${fedCell}</div>${pop}</section>`;
 }
 
 function renderHazardSection(row) {
