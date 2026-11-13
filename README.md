@@ -1,5 +1,9 @@
 # Macro Market Stress Monitor
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Demo of the public Stress Monitor dashboard" width="900">
+</p>
+
 A market-crash-monitoring system that replaced a giant static prompt
 (hand-updated numbers pasted into an LLM chat every time) with a small
 pipeline: live data ingestion, a deterministic rule engine, a local MCP
