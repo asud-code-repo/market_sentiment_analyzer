@@ -1011,7 +1011,7 @@ Four indicators are covered by this section:
 | E1 | Repo-stress spread, SOFR − IORB (`repo_stress_spread`) | Live, with a provisional funding-pressure flag (> +5bp × 3 days) |
 | E2 | Bond volatility (MOVE) | MOVE level + deltas live (`bond_volatility_move`); the proposed `move_spike_vix_calm` divergence flag was **rejected** (no forward edge — see "Investigated and rejected" under Macro Regime Signals) |
 | E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Live: `weak_auction` per tenor inside `treasury_auction_demand` (provisional) |
-| E6 | Private-credit proxy (BDC ETF, BIZD) | Not built, optional |
+| E6 | Private-credit proxy (BDC ETF, BIZD) | **Rejected** 2026-11-13: no forward edge, see "Investigated and rejected" under Macro Regime Signals. BIZD is not tracked as context either |
 
 **Rules that hold for all four:**
 - **Context only.** They never count toward `red_count` or
@@ -1245,6 +1245,24 @@ file was before being trusted:
   days**, which is within noise. A flag would only describe bonds moving
   while equities don't, not warn of anything. Don't re-propose it without
   new evidence; MOVE's level and deltas already show the spike.
+- **Private-credit proxy: BDC ETF (BIZD) 30-day total return ≤ −10%**
+  (build spec E6) — rejected 2026-11-13 after a backtest on Yahoo's
+  adjusted closes (total return, distributions included), 2013-03 to
+  2026-10, 3,416 days. It fires on **1.6% of days** (10 episodes), almost
+  all during equity selloffs already under way (Jan 2016, Dec 2018,
+  Mar 2020, 2022, Apr 2025), and carries **no forward edge**:
+  - VIX rose 5+ points within 30 days after 24% of signals, versus 33% on
+    any day.
+  - The S&P fell 5%+ within 30 days after 31% of signals, versus 30% on
+    days when the S&P was already down 5%+ over 30 days. The proxy adds
+    nothing beyond equity stress that is already visible; on the 8 flag
+    days without it, the rate was 13%, against a 14% base rate.
+  - The **median S&P return over the next 30 days was +6.9%** (vs +1.4%
+    overall), so it tends to fire **near bottoms**, not ahead of them.
+
+  A price-only version is worse: 38 of its 93 flag days came only from
+  distributions. BIZD is deliberately **not tracked as context** either.
+  Don't re-propose it without new evidence.
 - **CDS spreads** (sovereign/corporate default risk): re-confirmed no free
   source exists. This was already investigated and rejected once (see the
   "Missing indicators" review status table above) — an external review
@@ -1571,6 +1589,63 @@ Not implemented, and not a live draft — superseded by the scenario-derived
 formula above. Kept only so a future editor doesn't re-propose the same
 approach without knowing it was already considered and set aside in favor
 of the simpler, more directly-grounded derivation.
+
+### Event-conditional scenarios
+
+Added 2026-11-13 (build spec E8). For up to 3 upcoming events per run (e.g.
+an FOMC decision), a full report can record how the scenario split would
+look under each outcome, and the first full report after the event scores
+that prediction.
+
+**Anti-anchoring order (must hold):**
+- **Formed in step 7**, alongside the unconditional split, before step 8
+  shows any prior prediction.
+- **Written only in step 11**, via `write_snapshot`'s
+  `conditional_scenarios`. No other tool writes them, and the rule engine
+  never does.
+- **Returned only in step 8**, via `get_latest_snapshot`'s `conditional`
+  block, read from the last full-report row. No step 1–6 tool returns them.
+- **Never put your own branch probabilities in `trigger_status` notes**,
+  which `get_trigger_status` returns in step 2. Market-implied odds with a
+  named source (e.g. "CME FedWatch: 70% hold") are fine.
+
+**Shape:** `{event, event_date, branches: [{outcome, probability, bull,
+base, bear, crash}]}`.
+
+**Validation (provisional limits; the write is rejected otherwise):**
+- At most 3 events; `event_date` today or later, so a same-day prediction
+  before the event is allowed.
+- 2–5 branches with distinct names; "other" and "unresolved" are reserved.
+- Branch probabilities sum to 100, and each branch's split sums to 100.
+- The probability-weighted branch splits must be within **±5pts** of the
+  run's own unconditional split, for each scenario. This ties the branches
+  to the independently committed step-7 split, so copying the last report's
+  branches fails once the split has moved.
+
+**Carry-forward:** an open prediction the run doesn't resend is carried
+forward unchanged. Resending the same event (matched on name and date)
+replaces it, so the last prediction made before the event is the one
+scored.
+
+**Scoring:** an event is **due on the first full report strictly after its
+date**. Every due event needs a `conditional_outcomes` entry, or the write
+is rejected with a message listing what's due:
+- **a branch name:** the server records the probability that outcome had,
+  the predicted split for it, this run's committed step-7 split (the
+  actual), and the change per scenario (actual − predicted);
+- **"other":** none of the branches happened; recorded with probability 0
+  and no split comparison;
+- **"unresolved" + a required reason:** the event stays open and due, and
+  the write succeeds, so an unattended run never loses a day's snapshot.
+
+The server computes all scoring arithmetic. The run only judges which
+outcome happened, from its step 6 research.
+
+**Storage:** `crash_checks.conditional_scenarios` (open predictions) and
+`conditional_scoring` (entries scored in that run), on full-report rows
+only. Neither the public dashboard nor any tool other than
+`get_latest_snapshot` shows them. Logic and tests:
+`mcp_server/src/lib/conditionalScenarios.ts`.
 
 ---
 

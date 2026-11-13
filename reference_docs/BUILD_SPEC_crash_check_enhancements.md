@@ -179,14 +179,16 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - `red_count` unchanged.
 - **Depends on:** E3
 
-## E6 — Private-credit proxy (BDC ETF) · Priority 7 · Optional · Status: backtest FAILED, not built (decision pending)
+## E6 — Private-credit proxy (BDC ETF) · Priority 7 · Optional · Status: REJECTED (dropped 2026-11-13)
+
+- **Decision:** dropped. Added to the rules doc's "Investigated and rejected" list with the evidence below, so it isn't re-proposed. BIZD is not tracked as context either.
 
 - **Backtest (2026-11-13, Yahoo BIZD adjusted close = total return, 2013-03 → 2026-10, 3,416 days):** the flag (30d total return ≤ −10%) fires on 1.6% of days, in 10 episodes, almost all during equity selloffs already under way (Jan 2016, Dec 2018, Mar 2020, 2022, Apr 2025).
   - VIX +5pts within 30d: **24%** after the flag vs **33%** on any day.
   - S&P −5% within 30d: **31%** after the flag, but **30%** for days when the S&P was already down ≥ 5% over 30d (the control). The flag adds nothing beyond visible equity stress. With the S&P not already down (8 days): 13%, the same as the 14% base rate.
   - Median S&P 30d forward return after the flag: **+6.9%** (vs +1.4% overall). Flags clustered near bottoms; the proxy is coincident or lagging, not leading.
   - Price-only variant: 93 flag days vs 55 for total return. 38 days were flagged only because of distributions, which confirms the bias the spec warned about.
-- **Recommendation:** don't ship the flag (same outcome as E2's divergence flag). Options: drop E6 entirely, or track BIZD 7d/30d total return as plain context with no flag.
+- ~~Recommendation: don't ship the flag; drop E6 or track BIZD as plain context.~~ Superseded by the decision above: dropped entirely.
 
 - **Touches:** ingestion (`massive.ts` `CONTEXT_TICKERS`, not the personal watchlist table); `get_context_indicators`
 - **Data:** BIZD (or similar BDC ETF) from Massive.
@@ -196,7 +198,21 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
 - **Acceptance:** value + deltas returned; `red_count` unchanged.
 - **Depends on:** E9
 
-## E8 — Event-conditional scenario splits + scoring · Priority 8 · Status: agreed, not built (stays last)
+## E8 — Event-conditional scenario splits + scoring · Priority 8 · Status: built, waiting on the migration before push
+
+- **Design approved 2026-11-13, with these decisions:**
+  - A missing outcome for a due event **rejects** the write, but `outcome: "unresolved"` plus a required `reason` keeps the event open and due while the write succeeds (unattended runs never lose a snapshot).
+  - Carry-forward of open predictions the run doesn't resend: yes. Resending an event replaces it.
+  - Branches are **formed in step 7** (with the unconditional split, before step 8) and **written in step 11**.
+  - `event_date >= today` (same-day prediction allowed); scoring only on the first full report **strictly after** the event date.
+  - `get_latest_snapshot` reads the conditional data from the **last full report** row (the latest row is usually the automated refresh).
+  - Trigger notes: market-implied odds with a named source (e.g. CME FedWatch) are fine; never the run's own branch probabilities (step 2 returns trigger notes).
+  - Dashboard: not rendered.
+- **Anti-anchoring audit (code, 2026-11-13):** only `write_snapshot` (step 11) and `get_latest_snapshot` (step 8) reference the new fields. Every step 1–6 tool picks `crash_checks` fields explicitly; the only whole-row spread (`get_latest_snapshot`) strips the raw columns and returns them in a dedicated `conditional` block. The rule engine, dashboard and full-report site don't read them.
+- **Built:** `mcp_server/src/lib/conditionalScenarios.ts` (validation, merge, scoring; 9 tests); `write_snapshot` inputs `conditional_scenarios` / `conditional_outcomes`; `get_latest_snapshot.conditional` (`open`, `due`, `recent_scoring`); migration `20261113010000_conditional_scenarios.sql` (two nullable JSONB columns); rules doc `### Event-conditional scenarios` (end of "Crash-Probability Scoring Methodology"); one sentence each in project-instructions steps 7 and 11.
+- **Pre-migration safety:** the insert omits the new keys when empty, and the scoring read returns null if the column is missing, so nothing breaks until a run actually passes conditional scenarios.
+- **Deploy order:** apply the migration, then push (the instructions telling runs to pass the field come from GitHub `main`).
+- **First scored event:** Dec 2026 FOMC (2026-12-09). The last full report before it should write its branches; the first full report after Dec 9 scores it.
 
 - **Touches:** `write_snapshot` (new optional field); **`crash_checks` migration (Decision: added)**; `get_latest_snapshot`; `project-instructions.md` steps 7–11
 - **Data:** analyst judgment, written **after** step 7

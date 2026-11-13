@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestRepoStressSpread, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -24,6 +24,7 @@ import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, 
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
 import { computeFundingPressureFlag } from "./lib/repoStress.js";
+import { resolveConditional, dueEvents } from "./lib/conditionalScenarios.js";
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { readRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
@@ -80,7 +81,9 @@ server.registerTool(
       "probability (the last full report, not just the last row — most rows are bare automated " +
       "refreshes). Call only after independently committing to this run's scenario distribution " +
       "(crash_probability_pct is derived from that, not independently judged -- see write_snapshot) " +
-      "— this is for the delta-log framing, not for forming the estimate itself.",
+      "— this is for the delta-log framing, not for forming the estimate itself. conditional (E8) holds the " +
+      "last full report's open event predictions, which of them are due (needing an outcome in this run's " +
+      "write_snapshot), and recent scoring. Use them to score and describe change, never to revise step 7.",
   },
   withLogging("get_latest_snapshot", async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -95,8 +98,18 @@ server.registerTool(
     // Risk Radar retired 2026-11-13 (scores were inconsistent run to run and
     // never gated anything); older rows still hold it, so leave it out here
     // rather than invite the run to keep producing one.
-    const { risk_radar: _radar, risk_radar_anchors: _anchors, ...latestWithoutRadar } = latest;
-    return json({ latest: latestWithoutRadar, delta: computeDelta(latest, priorForDelta) });
+    const { risk_radar: _radar, risk_radar_anchors: _anchors, conditional_scenarios: _cs, conditional_scoring: _csc, ...latestWithoutRadar } = latest;
+    // E8: read from the last FULL report (prior), not `latest`, which is
+    // usually the automated refresh and never carries predictions.
+    const openPredictions = prior?.conditional_scenarios ?? [];
+    const today = new Date().toISOString().slice(0, 10);
+    const conditional = {
+      from_full_report_run_at: prior?.run_at ?? null,
+      open: openPredictions,
+      due: dueEvents(openPredictions, today).map((p) => ({ event: p.event, event_date: p.event_date, outcomes: p.branches.map((b) => b.outcome) })),
+      recent_scoring: await getRecentConditionalScoring(),
+    };
+    return json({ latest: latestWithoutRadar, delta: computeDelta(latest, priorForDelta), conditional });
   }),
 );
 
@@ -384,7 +397,15 @@ server.registerTool(
       "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
       "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
       "only commit to ONE judgment in step 7 (the scenario split), not two. Do not include any personal " +
-      "dollar figures in `notes` — this is written to Supabase, which holds macro/rule state only.",
+      "dollar figures in `notes` — this is written to Supabase, which holds macro/rule state only. " +
+      "conditional_scenarios (optional, max 3 events, event_date today or later): the event branches you " +
+      "formed in step 7; per event, branch probabilities sum to 100, each branch split sums to 100, and " +
+      "the probability-weighted splits must be within ±5pts of this call's scenario split. Open predictions " +
+      "you don't resend are carried forward; resending an event replaces it. conditional_outcomes: required " +
+      "for every event get_latest_snapshot listed as due — a branch name, \"other\", or \"unresolved\" with a " +
+      "reason (keeps it due; the write still succeeds). The server computes the score. Never write your own " +
+      "branch probabilities into trigger_status notes (market-implied odds with a named source, e.g. CME " +
+      "FedWatch, are fine).",
     inputSchema: {
       scenario_bull_pct: z.number().min(0).max(100),
       scenario_base_pct: z.number().min(0).max(100),
@@ -418,6 +439,28 @@ server.registerTool(
           }),
         )
         .optional(),
+      // E8: branches formed in step 7 with the unconditional split, written here.
+      conditional_scenarios: z
+        .array(
+          z.object({
+            event: z.string(),
+            event_date: z.string(),
+            branches: z.array(
+              z.object({
+                outcome: z.string(),
+                probability: z.number().min(0).max(100),
+                bull: z.number().min(0).max(100),
+                base: z.number().min(0).max(100),
+                bear: z.number().min(0).max(100),
+                crash: z.number().min(0).max(100),
+              }),
+            ),
+          }),
+        )
+        .optional(),
+      conditional_outcomes: z
+        .array(z.object({ event: z.string(), event_date: z.string(), outcome: z.string(), reason: z.string().optional() }))
+        .optional(),
     },
   },
   withLogging("write_snapshot", async (input) => {
@@ -425,6 +468,22 @@ server.registerTool(
       input.scenario_bull_pct + input.scenario_base_pct + input.scenario_bear_pct + input.scenario_crash_pct;
     if (Math.abs(scenarioSum - 100) > 0.5) {
       return json({ error: `Scenario distribution must sum to 100, got ${scenarioSum}` });
+    }
+    // E8: merge with the last FULL report's open predictions (the latest row
+    // is usually an automated refresh with none), validate, and score any
+    // event whose date has passed. Rejected as a whole on any error, so a
+    // run can fix and retry; "unresolved" lets a due event wait a day.
+    const { conditional_scenarios: submitted, conditional_outcomes: outcomes, ...snapshotInput } = input;
+    const lastFull = await getLatestCrashCheckWithProbability();
+    const conditional = resolveConditional(
+      lastFull?.conditional_scenarios ?? [],
+      submitted ?? [],
+      outcomes ?? [],
+      { bull: input.scenario_bull_pct, base: input.scenario_base_pct, bear: input.scenario_bear_pct, crash: input.scenario_crash_pct },
+      new Date().toISOString().slice(0, 10),
+    );
+    if (conditional.errors.length > 0) {
+      return json({ error: "conditional_scenarios / conditional_outcomes rejected; nothing was written. Fix and call again.", details: conditional.errors });
     }
     // crash_probability_pct/low/high are DERIVED here, not supplied by the
     // caller (changed 2026-09-22, user question: two independently-
@@ -452,10 +511,12 @@ server.registerTool(
     const crashProbabilityHighPct = input.scenario_bear_pct + input.scenario_crash_pct;
     const crashProbabilityPct = Math.round(input.scenario_crash_pct + 0.5 * input.scenario_bear_pct);
     const row = await writeSnapshot({
-      ...input,
+      ...snapshotInput,
       crash_probability_pct: crashProbabilityPct,
       crash_probability_low_pct: crashProbabilityLowPct,
       crash_probability_high_pct: crashProbabilityHighPct,
+      conditional_scenarios: conditional.open,
+      conditional_scoring: conditional.scoring,
     });
     return json({ written: row });
   }),

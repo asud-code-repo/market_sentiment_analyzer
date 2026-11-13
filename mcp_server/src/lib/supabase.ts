@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift, computeRateResetTriggerStatus } from "./portfolio.js";
 import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./watchlist.js";
 import { attachNextScheduledEvents } from "./economicCalendar.js";
+import type { OpenPrediction, ScoringEntry } from "./conditionalScenarios.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -95,6 +96,11 @@ export interface CrashCheckRow {
   // re-typed here, so there is no second copy of the thresholds to drift.
   // Null on rows from before the column existed.
   distance_to_red: Record<string, unknown> | null;
+  // Event-conditional scenarios (E8, 2026-11-13): written only by
+  // write_snapshot, returned only by get_latest_snapshot (from the last full
+  // report). Null on automated rows and on rows before the columns existed.
+  conditional_scenarios?: OpenPrediction[] | null;
+  conditional_scoring?: ScoringEntry[] | null;
   sp500_trough: number | null;
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
@@ -174,6 +180,22 @@ export async function getLatestRepoStressSpread(): Promise<RepoStressSpread | nu
         : null,
     recent: rows.map((r) => ({ observation_date: r.observation_date, value: r.value })),
   };
+}
+
+/**
+ * Recent E8 scoring entries, newest row first, for get_latest_snapshot
+ * (step 8) only. Returns null rather than throwing when the column doesn't
+ * exist yet (migration not applied), so step 8 never breaks over E8.
+ */
+export async function getRecentConditionalScoring(rowLimit = 5): Promise<ScoringEntry[] | null> {
+  const { data, error } = await supabase
+    .from("crash_checks")
+    .select("run_at, conditional_scoring")
+    .not("conditional_scoring", "is", null)
+    .order("run_at", { ascending: false })
+    .limit(rowLimit);
+  if (error) return null;
+  return (data ?? []).flatMap((r) => (r.conditional_scoring as ScoringEntry[] | null) ?? []);
 }
 
 /** Most recent row for a series_id, or null if we've never ingested it. */
@@ -334,6 +356,8 @@ export async function writeSnapshot(qualitative: {
   warsh_hard_rules_active?: boolean;
   fed_pivot_signal?: "NONE" | "PAUSE" | "CUT";
   trigger_status?: unknown;
+  conditional_scenarios?: OpenPrediction[];
+  conditional_scoring?: ScoringEntry[];
 }): Promise<CrashCheckRow> {
   const [latest] = await getRecentCrashChecks(1);
   if (!latest) {
@@ -517,6 +541,11 @@ export async function writeSnapshot(qualitative: {
     warsh_hard_rules_active: qualitative.warsh_hard_rules_active ?? latest.warsh_hard_rules_active,
     trigger_status: triggerStatus,
     raw_source_data: { copied_from_crash_check_id: latest.id },
+    // E8: already merged/validated by the caller (conditionalScenarios.ts).
+    // Keys are added only when non-empty, so this insert works before the
+    // 20261113010000 migration and an empty open set reads back as null.
+    ...(qualitative.conditional_scenarios?.length ? { conditional_scenarios: qualitative.conditional_scenarios } : {}),
+    ...(qualitative.conditional_scoring?.length ? { conditional_scoring: qualitative.conditional_scoring } : {}),
   };
 
   const { data, error } = await supabase.from("crash_checks").insert(row).select().single();
