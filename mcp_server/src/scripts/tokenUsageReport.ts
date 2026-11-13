@@ -11,14 +11,15 @@
  * What this does and doesn't capture:
  *   + MCP tool request/response payloads (the variable part — this is the
  *     only thing that was previously invisible).
- *   + The static floor: project-instructions.md + crash-check-rules.md +
- *     dashboard-template.html, sized fresh from disk each run of this
- *     script (so it doesn't silently go stale if those docs grow).
+ *   + The static floor: project-instructions.md + crash-check-rules.md,
+ *     sized fresh from disk each run of this script (so it doesn't silently
+ *     go stale if those docs grow). dashboard-template.html dropped out
+ *     2026-11-13 when the run stopped rendering an HTML artifact.
  *   - The MCP tool *schema* floor (names/descriptions/input schemas sent
  *     once per conversation) — approximated as a rough constant below;
  *     update it if server.ts's tool count/descriptions change materially.
- *   - Web research and the model's own completion (the rendered HTML
- *     artifact) — not observable from the MCP server at all.
+ *   - Web research and the model's own completion (the chat summary) —
+ *     not observable from the MCP server at all.
  * Days are bucketed in America/New_York, matching ingest.yml's schedule
  * and freshness.ts's convention elsewhere in this project.
  */
@@ -36,7 +37,7 @@ import { TOKEN_LOG_PATH } from "../lib/tokenLog.js";
 const MCP_SCHEMA_FLOOR_TOKENS = 3500;
 
 const RULES_DIR = path.resolve(fileURLToPath(import.meta.url), "../../../../reference_docs/rules");
-const STATIC_DOCS = ["project-instructions.md", "crash-check-rules.md", "dashboard-template.html"];
+const STATIC_DOCS = ["project-instructions.md", "crash-check-rules.md"];
 
 function easternDateString(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(
@@ -106,7 +107,7 @@ function main() {
     }
   }
   console.log(
-    "\nNote: excludes web research and the model's own completion (the rendered dashboard artifact) — " +
+    "\nNote: excludes web research and the model's own completion (the chat summary) — " +
       "real per-run total will be higher than floor+tools.",
   );
 }

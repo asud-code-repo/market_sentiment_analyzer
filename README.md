@@ -233,7 +233,6 @@ job (`.github/workflows/ingest.yml`).
 For Claude Desktop: point an MCP server entry at
 `mcp_server/src/server.ts` (via `npx tsx`), and attach
 `reference_docs/rules/crash-check-rules.md` +
-`reference_docs/rules/dashboard-template.html` +
 `reference_docs/rules/portfolio-review-template.html` +
 `reference_docs/rules/project-instructions.md` as project knowledge.
 
@@ -255,9 +254,10 @@ GitHub account's email in the Access policy).
   ingestion actually ran) — pulls the current indicator panel, contextual
   macro indicators, and (if a wave is active) the deployment plan; commits
   to a crash-probability estimate before ever seeing the prior one
-  (anti-anchoring); does qualitative research; renders
-  `dashboard-template.html`; persists via `write_snapshot` and
-  `write_full_report`.
+  (anti-anchoring); does qualitative research; persists via `write_snapshot` and
+  `write_full_report`; ends with a plain-text summary plus links to the
+  dashboard and the Full Report page (no HTML artifact since 2026-11-13 —
+  the old template is in `reference_docs/archive/`).
 - **"Run portfolio review"** (on-demand, no fixed schedule) — checks
   portfolio drift against long-term targets, watchlist ticker status
   against Wave price targets, cross-references macro/geopolitical sources,

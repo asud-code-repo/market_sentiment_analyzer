@@ -1442,15 +1442,19 @@ If a value is genuinely missing (e.g. no probability score exists yet for
 this run), the dashboard shows "not available," never a narrative estimate
 standing in for it.
 
-**Render every full crash check as an HTML artifact using `dashboard-template.html`
-(in this same folder) as the base — not as plain chat text.** Reuse its structure,
-CSS custom properties, and component classes (`.cc-card`, `.cc-indicator`,
-`.cc-pill`, `.cc-stackbar`, `.cc-trigger`, `.cc-table`, etc.); replace the example
-content with this run's live values. Keep the status-color semantics fixed:
-green = `--good`, amber = `--warning`, red = `--critical` — never repurpose them
-for anything that isn't a GREEN/AMBER/RED-style status. If a section's data isn't
-available this run (e.g. no delta because it's the first check), omit or note it
-rather than inventing a value.
+**A crash check ends in a plain-text chat summary, not an HTML artifact
+(changed 2026-11-13).** The rendered views live on the two web pages, both
+built from what `write_snapshot` / `write_full_report` save: the public
+dashboard (`dashboard_site`) and the private Full Report page
+(`full_report_site`). The chat run used to hand-build an HTML artifact from
+`dashboard-template.html`, but once project knowledge grew past what Claude
+Desktop loads in full, the template came back as search fragments and runs
+started rebuilding it from memory; the template now lives in
+`reference_docs/archive/` for history only. Keep the status-color semantics
+fixed on both pages: green = `--good`, amber = `--warning`, red = `--critical`
+— never repurpose them for anything that isn't a GREEN/AMBER/RED-style status.
+If a value isn't available this run (e.g. no delta because it's the first
+check), say so rather than inventing one.
 
 **Two run types, explicitly labeled.** At ~6–7 checks/day, most runs are
 lightweight automated indicator refreshes, not full narrative reports — the
@@ -1470,7 +1474,8 @@ report"). Make the distinction a rule, not an implicit side effect:
   specific to the Portfolio Opportunity Review — see below — not part of
   this report.)
 
-**Scan order, top to bottom (fixed):**
+**Scan order, top to bottom (fixed)** — the order of the chat summary, and
+of the dashboard's Stress tab:
 1. RED ALERT banner, if any indicator/wave condition is confirmed or pending confirmation
 2. Crash-probability meter: point %, 3-day Δ, 7-day Δ, visual meter. Color
    code: green 0–20%, amber 20–35%, red 35%+. (A "confidence tag" based on a
@@ -1501,7 +1506,7 @@ irregularly, compute both deltas off calendar days, not check-to-check gaps.
 **The delta log itself is persisted structured data, not just rendered
 prose (since 2026-08-27).** `write_snapshot`'s optional `delta_log` field
 (`{sign: "pos"|"neg", text}[]`) captures the same colored bulleted list
-already shown in the chat HTML artifact — previously this was only ever
+the chat run used to show in its HTML artifact — previously this was only ever
 built live at render time, so the public dashboard could only show
 whatever unstructured prose ended up in `notes`, with no way to reconstruct
 the colored +/- list from it. `dashboard_site` now renders `delta_log`
