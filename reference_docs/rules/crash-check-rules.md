@@ -922,7 +922,7 @@ Four indicators are covered by this section:
 | ID | Indicator | Status |
 |---|---|---|
 | E1 | Repo-stress spread, SOFR − IORB (`repo_stress_spread`) | Live, with a provisional funding-pressure flag (> +5bp × 3 days) |
-| E2 | Bond volatility (MOVE) + `move_spike_vix_calm` divergence flag | MOVE level + deltas live (`bond_volatility_move`); divergence flag **not built** (base rate showed no forward edge — decision pending) |
+| E2 | Bond volatility (MOVE) | MOVE level + deltas live (`bond_volatility_move`); the proposed `move_spike_vix_calm` divergence flag was **rejected** (no forward edge — see "Investigated and rejected" under Macro Regime Signals) |
 | E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Not built |
 | E6 | Private-credit proxy (BDC ETF, BIZD) | Not built, optional |
 
@@ -997,17 +997,11 @@ Four indicators are covered by this section:
   Base rate 2002-11-12 to 2026-11-12: above 130 on 8.2% of days, above 160
   on 2.5%, concentrated in 2008-09 and 2022-23. Constants:
   `mcp_server/src/lib/bondVolatility.ts`.
-- **Divergence flag (`move_spike_vix_calm`) — not built.** The proposed
-  rule (MOVE 7d change ≥ +15pts while VIX 7d change < +3pts, 7-calendar-day
-  lookback as in the other divergence flags) fires on 2.1% of days, 65
-  episodes, mostly 1–2 days long, at real bond-volatility events (summer
-  2003, the 2013 taper tantrum, 2022, March 2023). But it carries **no
-  forward edge for equity volatility:** after it fired, VIX rose 5+ points
-  within 30 days 26% of the time, versus 29% on any day with VIX calm. The
-  spec's original %-based rule (MOVE ≥ +20%, VIX ≤ +10%) fires on 1.0% of
-  days with a 34% hit rate, which is within noise on 62 days. So the flag
-  would *describe* bonds moving while equities don't; it would not *warn*.
-  Whether to ship it on that basis is pending.
+- **No MOVE-vs-VIX divergence flag.** One was proposed and rejected
+  (2026-11-13) for lack of a forward edge; the evidence is under
+  "Investigated and rejected" in Macro Regime Signals. Read a MOVE spike
+  from its level and deltas instead. The level that matters is a break
+  above 130.
 - Context only, per the rules above.
 
 ---
@@ -1122,6 +1116,18 @@ file was before being trusted:
   MOVE is now ingested from Yahoo with the shared-dependency risk accepted;
   see "Bond volatility (MOVE)" under Context-Only Enhancement Indicators.
   ICE's own index still has no free FRED mirror.
+- **MOVE-spike-while-VIX-calm divergence flag (`move_spike_vix_calm`)** —
+  rejected 2026-11-13 after a base-rate check on Yahoo daily closes,
+  2002-11-12 to 2026-11-12. The rule tested was MOVE 7d change ≥ +15pts
+  while VIX 7d change < +3pts (7-calendar-day lookback, as in the other
+  divergence flags). It fires on **2.1% of days** (65 episodes, mostly 1–2
+  days, at real bond-volatility events: 2003, the 2013 taper tantrum, 2022,
+  March 2023), but carries **no forward edge**: VIX rose 5+ points within
+  30 days after **26%** of signals, versus **29%** for any calm-VIX day. The
+  %-based variant (MOVE ≥ +20% while VIX ≤ +10%) reached **34% on 62
+  days**, which is within noise. A flag would only describe bonds moving
+  while equities don't, not warn of anything. Don't re-propose it without
+  new evidence; MOVE's level and deltas already show the spike.
 - **CDS spreads** (sovereign/corporate default risk): re-confirmed no free
   source exists. This was already investigated and rejected once (see the
   "Missing indicators" review status table above) — an external review

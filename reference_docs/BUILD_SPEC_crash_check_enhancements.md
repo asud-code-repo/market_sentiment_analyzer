@@ -74,7 +74,7 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - `red_count` / `wave_authorized` unchanged.
 - **Depends on:** E9
 
-## E2 — Bond volatility (MOVE) + divergence flag · Priority 2 · Status: MOVE built; divergence flag pending decision
+## E2 — Bond volatility (MOVE) + divergence flag · Priority 2 · Status: done (divergence flag rejected)
 
 - **Touches:** ingestion; `data_points`; `get_context_indicators`; `divergence_flags`
 - **Data — Decision:** the watchlist feed (Massive grouped-daily) carries no indexes. Pull `^MOVE` through the existing Yahoo module (`yahoo.ts`), **optional and non-fatal** (log a warning, return null). Update the "Investigated and rejected" MOVE entry in `crash-check-rules.md` in the same change, and state the accepted risk there: VIX depends on the same unofficial Yahoo endpoint, so a Yahoo break takes out both.
@@ -89,7 +89,9 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - Levels: > 130 on 8.2% of days, > 160 on 2.5% (mostly 2008-09, 2022-23).
   - Absolute divergence rule: 2.1% of days, 65 episodes (mostly 1–2 days), at real bond-vol events (2003, 2013 taper, 2022, Mar 2023).
   - **No forward edge:** VIX rose ≥ 5pts within 30 days after 26% of flagged days vs 29% of all calm-VIX days. The original % rule: 1.0% of days, 34% hit rate on 62 days (noise).
-  - **Pending decision:** ship the flag as purely descriptive ("bonds moving, equities not"), or skip it and keep MOVE as level + deltas only.
+  - **Decision (2026-11-13): skip the divergence flag.** Recorded in the rules doc's "Investigated and rejected" list with this evidence so it isn't re-proposed. MOVE keeps its level band and deltas.
+- **Open:** MOVE history before the last ~3 months arrives only with the next **manual** backfill run (`backfill.yml` is `workflow_dispatch` only, not scheduled). Nothing depends on it; deltas need 7 days.
+- **Acceptance (as amended):** MOVE value + 3d/7d deltas returned; `red_count` unchanged. The divergence-flag criterion is dropped.
 - **Acceptance:**
   - MOVE value + 3d/7d deltas returned.
   - New divergence flag appears in `get_indicator_panel` / `get_latest_snapshot` output in the same format as existing flags.
