@@ -117,7 +117,13 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - Instructions updated so date/label are copied from the tool, not recalled.
 - **Depends on:** E9
 
-## E5 — AI single-name credit check (manual) · Priority 4 · Status: agreed, not built
+## E5 — AI single-name credit check (manual) · Priority 4 · Status: done
+
+- **Built (2026-11-13):** rules doc `### AI single-name credit stress (Type D supporting signal, not a criterion)`, right after Stage 1, with the baseline/provenance table, like-for-like comparison rules and provisional escalation. Step 6 of project-instructions points to it. Type D's "ALL THREE" criteria and the Stage 3 split are unchanged. `rulesDoc.test.ts` now checks the section is reachable.
+- **Baseline provenance (user-supplied 2026-11-13, then checked against the original article, CNBC / Deena Zaidi, 2026-11-06):**
+  - CRWV ~1,155bp: **5Y, stated**; Deutsche Bank data cited by CNBC (Fri Nov 6; 1,289 on Thu). The same article also says "roughly 1,100".
+  - NVDA ~139bp, ORCL ~298bp: the original article states **no tenor, no data provider and no as-of day** → "assumed 5Y, unverified" kept.
+  - Secondhand; not from the Jain webinar.
 
 - **Touches:** `crash-check-rules.md` (Type D section); `project-instructions.md` step 6
 - **Data:** manual research each run (CDS data is paywalled). Baseline 2026-11-06: NVDA ~139bp, ORCL ~298bp, CRWV ~1,155bp. **Decision:** record tenor and source with each baseline (5Y senior, plus where the quote came from).

@@ -399,6 +399,52 @@ explicitly before making any allocation recommendation.
 
 If signals point to two or more types simultaneously, classify as Hybrid (Type E).
 
+### AI single-name credit stress (Type D supporting signal, not a criterion)
+
+Added 2026-11-13 (build spec E5). **This is a supporting / escalation
+signal, not a fourth Type D criterion.** Type D is still diagnosed only by
+the three criteria above (ALL THREE), and the Stage 3 Type D split is
+unchanged. Nothing here can satisfy, replace or block a Type D criterion,
+and it never feeds `red_count` or wave logic.
+
+**What to do each run (step 6, manual research; CDS data is paywalled):**
+find the current CDS spread for NVDA, ORCL and CRWV and report each against
+its baseline below. With each new quote, record its **tenor, source and
+as-of date**.
+
+**Baselines (2026-11-06), with their provenance:**
+
+| Name | Baseline | Tenor | Source | Status |
+|---|---|---|---|---|
+| CRWV (CoreWeave) | ~1,155bp (Fri Nov 6) | 5Y, stated | Deutsche Bank data cited by CNBC | Confirmed in the original article. Same article also says "roughly 1,100" elsewhere, and 1,289 on Thu Nov 5 |
+| ORCL (Oracle) | ~298bp | Assumed 5Y, **unverified** | CNBC; no data provider named | Original article states no tenor, source or as-of day |
+| NVDA (Nvidia) | ~139bp | Assumed 5Y, **unverified** | CNBC; no data provider named | Original article states no tenor, source or as-of day |
+
+Source article: CNBC, "CoreWeave bond yield tops 16% as AI credit stress
+rises", Deena Zaidi, 2026-11-06, read directly 2026-11-13. These baselines
+are **secondhand** (a news article citing data, not the data itself), and
+two of three are partly unverified. Not from the Ritesh Jain webinar.
+
+**Comparing a new quote against a baseline:**
+- Treat a difference as a change in credit risk only when the new quote has
+  the **same tenor and the same data source** as the baseline. Otherwise,
+  report both numbers and say the sources or tenors differ. Don't call it
+  widening or tightening.
+- The baselines are themselves noisy: one article gave CoreWeave as both
+  ~1,155 and ~1,100. Differences within roughly ±10% of a secondhand
+  baseline are not evidence of change on their own.
+- Once a quote with a stated tenor and named data provider is found for
+  NVDA or ORCL, replace that row's baseline and status here.
+
+**Provisional escalation (call it out at the top of the crash-type
+section):**
+- a CoreWeave credit event: bankruptcy filing, failure to pay, or a
+  distressed debt exchange/restructuring; or
+- ORCL CDS above 400bp, on a quote whose tenor and source can be stated.
+
+Escalation means reporting it prominently with the evidence. It does not
+diagnose Type D or change any allocation.
+
 ### Stage 2 — Universal Core (always first, regardless of crash type)
 
 ~30.4% of dry powder, already embedded in the Wave 1–3 structure above:
