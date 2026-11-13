@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestRepoStressSpread, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -23,6 +23,7 @@ import { logTokenUsage } from "./lib/tokenLog.js";
 import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
+import { computeFundingPressureFlag } from "./lib/repoStress.js";
 import { readRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -456,7 +457,7 @@ server.registerTool(
     description:
       "Returns supplementary macro context — financial stress/conditions indices, breakeven " +
       "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
-      "delinquencies, WTI, retail sales, IG credit spread, SOFR, broad dollar index, NFCI " +
+      "delinquencies, WTI, retail sales, IG credit spread, SOFR, the SOFR−IORB repo-stress spread, broad dollar index, NFCI " +
       "sub-indices, TIPS real yield, two external recession-probability models, small-cap " +
       "breadth, gold price (GLD), copper price, Bitcoin price, and sector capital-rotation. " +
       "Informational only — never part of the 6-indicator wave-authorization gate. gold_price is " +
@@ -530,7 +531,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, repoStressSpread, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -584,6 +585,7 @@ server.registerTool(
         computeSectorRotation(),
         computeInsiderClusterSignals(),
         computeMarketPositioning(),
+        getLatestRepoStressSpread(),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -766,6 +768,20 @@ server.registerTool(
         signal: dgs30.value > 5.0 ? "ABOVE 5.0% — elevated long-term yields worth watching (crash-check-rules.md's threshold)" : "below the 5.0% elevated-yield watch threshold",
       },
       sofr_pct: sofr && { ...sofr, signal: "repo/dollar-funding stress reference rate — read alongside reverse_repo_usd_billions, no single-direction band" },
+      repo_stress_spread: repoStressSpread && {
+        spread_bps: repoStressSpread.spread_bps,
+        observation_date: repoStressSpread.observation_date,
+        sofr_pct: repoStressSpread.sofr_pct,
+        policy_rate_pct: repoStressSpread.policy_rate_pct,
+        funding_pressure: computeFundingPressureFlag(repoStressSpread.recent),
+        signal:
+          "SOFR minus the Fed's interest rate on reserves (IORB; IOER before 2021-07-29), in bps. Normally negative " +
+          "(repo trades below the rate the Fed pays banks); positive = repo trading above IORB, i.e. funding pressure " +
+          "(Sept 2019: +315bp; Oct-Dec 2025 ran +5 to +32bp). Month/quarter-end prints are routinely positive for a " +
+          "day or two. funding_pressure.flag is PROVISIONAL (threshold set from the 2018-2026 base rate, where it fired " +
+          "on 3.1% of days, not backtested against outcomes); null = too little history, not false. Context only — " +
+          "never part of red_count or wave authorization. 3d/7d deltas: get_series_deltas SOFR_IORB_SPREAD_BPS (already bps).",
+      },
       broad_dollar_index: dtwexbgs && { ...dtwexbgs, signal: "rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities" },
       nfci_risk_subindex: nfciRisk && { ...nfciRisk, signal: nfciRisk.value > 0 ? "elevated financial-sector volatility/funding risk" : "below-average" },
       nfci_credit_subindex: nfciCredit && { ...nfciCredit, signal: nfciCredit.value > 0 ? "tighter credit conditions specifically" : "looser than average" },

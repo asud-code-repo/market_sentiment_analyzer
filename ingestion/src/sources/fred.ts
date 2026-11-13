@@ -86,6 +86,9 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // reference_docs/rules/crash-check-rules.md "Contextual Indicators".
   { id: "SOFR", unit: "percent" },       // Secured Overnight Financing Rate — repo-market
                                           // reference rate, spikes on repo/dollar-funding stress.
+  { id: "IORB", unit: "percent" },       // Interest on Reserve Balances (2021-07-29 onward;
+                                          // replaced IOER). Added 2026-11-13 as the policy-rate
+                                          // leg of SOFR_IORB_SPREAD_BPS — see buildSofrPolicySpread.
   { id: "DTWEXBGS", unit: "index" },     // Nominal Broad U.S. Dollar Index (Fed H.10, 26-currency
                                           // basket) — the "global transmission: dollar" leg.
   { id: "NFCIRISK", unit: "index" },     // Chicago Fed NFCI Risk Subindex — financial-sector
@@ -322,6 +325,15 @@ async function fetchWithRetry(url: string): Promise<Response> {
 }
 
 async function fetchLatestObservation(seriesId: string, apiKey: string): Promise<FredObservation> {
+  const observation = (await fetchRecentObservations(seriesId, apiKey, 5))[0];
+  if (!observation) {
+    throw new Error(`FRED returned no usable observation for ${seriesId}`);
+  }
+  return observation;
+}
+
+/** The most recent `limit` observations (newest first), "." placeholders dropped. */
+async function fetchRecentObservations(seriesId: string, apiKey: string, limit: number): Promise<FredObservation[]> {
   const url = new URL("https://api.stlouisfed.org/fred/series/observations");
   url.searchParams.set("series_id", seriesId);
   url.searchParams.set("api_key", apiKey);
@@ -339,7 +351,7 @@ async function fetchLatestObservation(seriesId: string, apiKey: string): Promise
   url.searchParams.set("observation_end", new Date().toISOString().slice(0, 10));
   // FRED sometimes reports the most recent period as "." (not yet available) —
   // pull a few and take the first real value rather than assuming index 0 is valid.
-  url.searchParams.set("limit", "5");
+  url.searchParams.set("limit", String(limit));
 
   const res = await fetchWithRetry(url.toString());
   if (!res.ok) {
@@ -347,11 +359,72 @@ async function fetchLatestObservation(seriesId: string, apiKey: string): Promise
   }
 
   const body = (await res.json()) as FredResponse;
-  const observation = body.observations?.find((o) => o.value !== ".");
-  if (!observation) {
-    throw new Error(`FRED returned no usable observation for ${seriesId}`);
+  return (body.observations ?? []).filter((o) => o.value !== ".");
+}
+
+// Repo-stress spread, SOFR minus the Fed's interest rate on reserves, in
+// bps (E1, 2026-11-13; see crash-check-rules.md "Context-Only Enhancement
+// Indicators"). Stored as a DERIVED series (source FRED_DERIVED, same as
+// SP500_ATH) rather than computed at read time, so get_series_deltas'
+// 3d/7d lookback works on it and the history backfills — a deliberate
+// exception to "data_points holds sourced series", noted in the rules doc.
+//
+// The policy-rate leg is IORB from 2021-07-29 and its predecessor IOER
+// before that (IOER ends 2021-07-28), so the spread runs back to SOFR's own
+// 2018-04-03 start, covering the Sept 2019 repo spike. Each SOFR date is
+// paired with the policy rate in force on that date (latest observation on
+// or before it — both series are daily, so this only matters across a
+// holiday or a rate change). Both observation dates go in raw_payload so a
+// mismatch is visible downstream.
+export const SOFR_IORB_SPREAD_SERIES = "SOFR_IORB_SPREAD_BPS";
+const IORB_START_DATE = "2021-07-29";
+
+interface PolicyRateObservation {
+  series: "IOER" | "IORB";
+  date: string;
+  value: number;
+}
+
+export function buildSofrPolicySpread(sofr: FredObservation[], policy: PolicyRateObservation[]): DataPoint[] {
+  const policyAsc = [...policy].sort((a, b) => a.date.localeCompare(b.date));
+  const sofrAsc = [...sofr].sort((a, b) => a.date.localeCompare(b.date));
+  const points: DataPoint[] = [];
+  let j = 0;
+  let inForce: PolicyRateObservation | null = null;
+  for (const s of sofrAsc) {
+    while (j < policyAsc.length && policyAsc[j].date <= s.date) inForce = policyAsc[j++];
+    if (!inForce) continue; // no policy rate on or before this date — skip, never guess
+    const sofrValue = Number(s.value);
+    points.push({
+      series_id: SOFR_IORB_SPREAD_SERIES,
+      source: "FRED_DERIVED",
+      source_series_code: `SOFR-${inForce.series}`,
+      observation_date: s.date,
+      // Both legs are published to 2 decimals, so this is a whole number of bps.
+      value: Math.round((sofrValue - inForce.value) * 100),
+      unit: "bps",
+      raw_payload: {
+        computed_from: `SOFR - ${inForce.series}`,
+        sofr: { value: sofrValue, observation_date: s.date },
+        policy_rate: { series: inForce.series, value: inForce.value, observation_date: inForce.date },
+      },
+    });
   }
-  return observation;
+  return points;
+}
+
+const toPolicy = (series: "IOER" | "IORB", obs: FredObservation[]): PolicyRateObservation[] =>
+  obs.map((o) => ({ series, date: o.date, value: Number(o.value) }));
+
+// Daily path: re-derive the trailing ~2 weeks so a day FRED posts late is
+// filled on the next run (idempotent upsert, same reasoning as SP500's
+// trailing window above).
+async function fetchRecentSofrPolicySpread(apiKey: string): Promise<DataPoint[]> {
+  const [sofr, iorb] = await Promise.all([
+    fetchRecentObservations("SOFR", apiKey, 10),
+    fetchRecentObservations("IORB", apiKey, 20),
+  ]);
+  return buildSofrPolicySpread(sofr, toPolicy("IORB", iorb));
 }
 
 // S&P drawdown-from-ATH is one of the 6 canonical indicators, but it needs
@@ -517,8 +590,10 @@ export async function fetchFredBackfill(): Promise<DataPoint[]> {
   const startStr = BACKFILL_START_DATE;
 
   const points: DataPoint[] = [];
+  const historyById = new Map<string, FredObservation[]>();
   for (const series of FRED_SERIES) {
     const history = await fetchFredHistory(series.id, apiKey, startStr);
+    historyById.set(series.id, history);
     for (const obs of history) {
       points.push({
         series_id: series.id,
@@ -553,6 +628,17 @@ export async function fetchFredBackfill(): Promise<DataPoint[]> {
   }
   console.log(`  FRED backfill: SP500 — ${sp500History.length} observations since ${startStr}`);
 
+  // SOFR - IOER/IORB spread over SOFR's full history. IOER is discontinued
+  // (last observation 2021-07-28), so it's fetched here only as the spread's
+  // pre-IORB leg, not added to FRED_SERIES' daily list.
+  const ioerHistory = (await fetchFredHistory("IOER", apiKey, startStr)).filter((o) => o.date < IORB_START_DATE);
+  const spread = buildSofrPolicySpread(historyById.get("SOFR") ?? [], [
+    ...toPolicy("IOER", ioerHistory),
+    ...toPolicy("IORB", historyById.get("IORB") ?? []),
+  ]);
+  points.push(...spread);
+  console.log(`  FRED backfill: ${SOFR_IORB_SPREAD_SERIES} — ${spread.length} derived observations (IOER spliced before ${IORB_START_DATE})`);
+
   return points;
 }
 
@@ -577,6 +663,15 @@ export async function fetchFred(): Promise<DataPoint[]> {
   }
 
   points.push(...(await fetchSp500LevelAndAth(apiKey)));
+
+  // Context-only and derived, so a failure here degrades to "no new spread
+  // rows today" (the tool then reports the last stored value with its date)
+  // rather than failing FRED, a required source.
+  try {
+    points.push(...(await fetchRecentSofrPolicySpread(apiKey)));
+  } catch (err) {
+    console.warn(`  ${SOFR_IORB_SPREAD_SERIES}: skipped this run — ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   return points;
 }

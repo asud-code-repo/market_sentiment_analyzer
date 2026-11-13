@@ -875,7 +875,7 @@ confidence qualifier per Signal Tiering.
 | WTI crude oil | FRED `DCOILWTICO` | Above $100/barrel = stagflation accelerant | See Recovery/Complacency band above |
 | Copper price (`copper_price_usd_per_ton`) | FRED `PCOPPUSDM` (IMF-sourced, monthly) | Added 2026-09-22. "Dr. Copper" — a classic leading growth/recession-cycle indicator (industrial demand turns often show up here before official data). No confirmed free-flow (SSGA-style NAV-history) source exists for copper ETFs (CPER is USCF-issued, not SSGA), so this is price-level only, same treatment as WTI oil above | Informational cross-check for the Type B (Recession) crash-type diagnosis (Stage 1 below) — deliberately NOT one of that diagnosis's three hard trigger criteria (unemployment/Sahm/CPI), which stay unchanged. Monthly cadence — a single month's move means little, read the trend |
 | Retail sales (advance, all stores) | FRED `RSAFS` | Closest free proxy for consumer/card spending strength — FRED has no public real-time card-swipe series | See Complacency Watch Bands above |
-| Secured Overnight Financing Rate (repo stress) | FRED `SOFR` | Spikes above the Fed's target range signal repo/dollar-funding stress (e.g. Sept 2019) | Read alongside overnight reverse repo — no single-direction band |
+| Secured Overnight Financing Rate (repo stress) | FRED `SOFR` | Spikes above the Fed's target range signal repo/dollar-funding stress (e.g. Sept 2019) | Read alongside overnight reverse repo — no single-direction band. The SOFR − IORB spread is covered under Context-Only Enhancement Indicators below |
 | Broad U.S. Dollar Index | FRED `DTWEXBGS` | Rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities | Read as a global-transmission signal, not directional on its own |
 | Chicago Fed NFCI Risk Subindex | FRED `NFCIRISK` | Positive = elevated financial-sector volatility/funding risk; a narrower cut of the composite NFCI already tracked | Same interpretation convention as composite NFCI |
 | Chicago Fed NFCI Credit Subindex | FRED `NFCICREDIT` | Positive = tighter credit conditions specifically (vs. the composite NFCI, which blends credit/leverage/risk) | Same interpretation convention as composite NFCI |
@@ -910,6 +910,75 @@ confidence qualifier per Signal Tiering.
 > discontinued this series code. Presenting a 4-year-old number as a live
 > reading would be actively misleading, so it was removed entirely rather
 > than kept with a caveat. Global PMI remains an unfilled gap.
+
+---
+
+## Context-Only Enhancement Indicators (E1/E2/E4/E6 — never gate, thresholds provisional)
+
+Added 2026-11-13 from a review of Ritesh Jain's (PineTree Macro) Sep 2026
+webinar (build spec: `reference_docs/BUILD_SPEC_crash_check_enhancements.md`).
+Four indicators are covered by this section:
+
+| ID | Indicator | Status |
+|---|---|---|
+| E1 | Repo-stress spread, SOFR − IORB (`repo_stress_spread`) | Live, with a provisional funding-pressure flag (> +5bp × 3 days) |
+| E2 | Bond volatility (MOVE) + `move_spike_vix_calm` divergence flag | Not built |
+| E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Not built |
+| E6 | Private-credit proxy (BDC ETF, BIZD) | Not built, optional |
+
+**Rules that hold for all four:**
+- **Context only.** They never count toward `red_count` or
+  `confirmed_red_count`, and never feed `wave_authorized` or `wave_active`.
+  `rule_engine/src/rules.ts` and the wave-authorization gate never consume
+  them. A divergence flag built on one of them (E2) is informational like
+  every other divergence flag, never a gate.
+- **Thresholds are provisional until backtested.** Each lives as a named
+  constant in code, is documented here, and is labeled `provisional` in tool
+  output. There is no separate config system. A flag ships only after its
+  threshold has been checked against the backfilled history.
+- **Missing data is `null` / unavailable**, never 0 and never an estimate.
+
+### Repo-stress spread (SOFR minus IORB)
+
+- **Definition:** FRED `SOFR` minus the Fed's interest rate on reserve
+  balances, in bps. The policy-rate leg is FRED `IORB` from 2021-07-29 and its
+  predecessor `IOER` before that (spliced, so the series starts with SOFR on
+  2018-04-03). Each SOFR date is paired with the policy rate in force on that
+  date; both legs' values and observation dates are returned.
+- **Storage:** written to `data_points` as `SOFR_IORB_SPREAD_BPS`, source
+  `FRED_DERIVED`. This is a deliberate exception to the convention that
+  `data_points` holds sourced series (the other one is `SP500_ATH`); it is
+  stored so `get_series_deltas` can return 3d/7d deltas and the history
+  backfills. Other derived values (net liquidity, stock-bond correlation)
+  stay computed at read time.
+- **Reading it:** normally negative (repo trades below the rate the Fed pays
+  on reserves). Positive means repo is trading above IORB, i.e. funding
+  pressure. Month-end and quarter-end prints are routinely positive for a day
+  or two.
+- **Base rate (2018-04-03 to 2026-11-12, 2,151 daily observations):**
+
+  | Candidate flag | Episodes | Share of all days flagged | Where it fires |
+  |---|---|---|---|
+  | > 0bp for ≥ 3 consecutive business days | 25 | 12.5% | 2018–19 throughout, late 2025 (39-day run), Feb–Mar 2026, Oct 23–Nov 5 2026 |
+  | **> +5bp for ≥ 3 consecutive business days (chosen)** | 17 | 3.1% | 2018 (2 days), 2019, Oct 2025–Jan 2 2026 only |
+  | > +10bp for ≥ 3 consecutive business days | 8 | 0.7% | 2019 and late-2025 peaks only |
+
+  The spec's original "> 0bp" threshold fires through long stretches,
+  including ordinary ones, so it is not used. A percentile cutoff was also
+  rejected: the IOER and IORB eras have different normal levels (IORB-era
+  p95 is +3bp vs +7bp over the full history), so one percentile would blend
+  them.
+- **Funding-pressure flag (`repo_stress_spread.funding_pressure`,
+  provisional):** `flag` is true when the spread is **above +5bp on 3 or
+  more consecutive business days** (consecutive SOFR observations, ending at
+  the latest one). Exactly +5bp does not count. It fires in the 2019 repo
+  stress and the Oct 2025–Jan 2026 pressure that preceded the end of QT, and
+  not at all 2020–2024. Also returned: `consecutive_days_above` and
+  `above_since`. `flag` is `null` (unknown, not false) when fewer than 3
+  observations exist. The threshold was chosen from this base rate, not
+  backtested against market outcomes. Constants:
+  `mcp_server/src/lib/repoStress.ts`.
+- Context only, per the rules above.
 
 ---
 

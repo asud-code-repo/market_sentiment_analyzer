@@ -55,6 +55,9 @@ const PLAUSIBILITY_RULES: Record<string, PlausibilityRule> = {
   SAHMREALTIME: { kind: "absolute", min: -1, max: 10 },
   UNRATE: { kind: "absolute", min: 0, max: 30 },
   SP500: { kind: "day_over_day_pct", maxAbsPct: 25 },
+  // SOFR - IORB, bps (derived). History runs -21 to +315 (Sept 17 2019's
+  // repo spike); a value far outside that is a unit or parsing bug.
+  SOFR_IORB_SPREAD_BPS: { kind: "absolute", min: -100, max: 1000 },
 };
 
 export interface PlausibilityResult {

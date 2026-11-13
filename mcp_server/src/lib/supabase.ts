@@ -123,6 +123,54 @@ export interface DataPointRow {
   value: number;
 }
 
+/**
+ * Latest repo-stress spread row (SOFR_IORB_SPREAD_BPS, a derived series —
+ * see ingestion/src/sources/fred.ts buildSofrPolicySpread) with both legs'
+ * values and observation dates pulled from raw_payload. Null when the series
+ * has never been ingested; a leg missing from the payload is null, never 0.
+ */
+export interface RepoStressSpread {
+  spread_bps: number;
+  observation_date: string;
+  sofr_pct: { value: number; observation_date: string } | null;
+  policy_rate_pct: { series: string; value: number; observation_date: string } | null;
+  /** Last ~30 observations, newest first — input for the funding-pressure flag (repoStress.ts). */
+  recent: { observation_date: string; value: number }[];
+}
+
+export async function getLatestRepoStressSpread(): Promise<RepoStressSpread | null> {
+  const { data: rows, error } = await supabase
+    .from("data_points")
+    .select("observation_date, value, raw_payload")
+    .eq("series_id", "SOFR_IORB_SPREAD_BPS")
+    .order("observation_date", { ascending: false })
+    .limit(30);
+  if (error) {
+    throw new Error(`Failed to read latest SOFR_IORB_SPREAD_BPS: ${error.message}`);
+  }
+  const data = rows?.[0];
+  if (!data) return null;
+  const payload = (data.raw_payload ?? {}) as {
+    sofr?: { value?: number; observation_date?: string };
+    policy_rate?: { series?: string; value?: number; observation_date?: string };
+  };
+  const sofr = payload.sofr;
+  const policy = payload.policy_rate;
+  return {
+    spread_bps: data.value,
+    observation_date: data.observation_date,
+    sofr_pct:
+      typeof sofr?.value === "number" && typeof sofr.observation_date === "string"
+        ? { value: sofr.value, observation_date: sofr.observation_date }
+        : null,
+    policy_rate_pct:
+      typeof policy?.value === "number" && typeof policy.observation_date === "string" && typeof policy.series === "string"
+        ? { series: policy.series, value: policy.value, observation_date: policy.observation_date }
+        : null,
+    recent: rows.map((r) => ({ observation_date: r.observation_date, value: r.value })),
+  };
+}
+
 /** Most recent row for a series_id, or null if we've never ingested it. */
 export async function getLatestDataPoint(seriesId: string): Promise<DataPointRow | null> {
   const { data, error } = await supabase
