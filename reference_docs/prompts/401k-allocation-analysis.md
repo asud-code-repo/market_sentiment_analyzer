@@ -73,8 +73,8 @@ Call these first and keep the results for later steps:
 7. `get_trigger_status`: upcoming Fed and inflation events, and the
    Warsh Fed classification.
 8. `get_latest_snapshot`: the latest scenario distribution (bull, base,
-   bear, crash), the derived crash probability, and `risk_radar`. Use
-   these as the macro regime read. Don't form a new one.
+   bear, crash) and the derived crash probability. Use these as the macro
+   regime read. Don't form a new one.
 9. Optional: `get_series_deltas` for SP500, VIXCLS, BAMLH0A0HYM2, DGS10
    and the watchlist tickers, if you need recent direction.
 
@@ -153,7 +153,7 @@ wave-gated dry powder. Measure what holding it costs right now:
 
 1. **Regime fit.** For each fund, say whether the current regime is a
    tailwind, neutral, or a headwind, with the specific indicator values
-   behind it. Draw on the scenario distribution, risk radar, fiscal
+   behind it. Draw on the scenario distribution, fiscal
    dominance checklist, rates decomposition, stock/bond correlation
    (if it's positive, bonds aren't diversifying), sector rotation,
    positioning, and divergence flags. Don't combine these into a single

@@ -113,17 +113,11 @@ for a full plain-language walkthrough of the data flow and math, including
 its documented limitations (a confirmed data-leakage issue in one input
 feature, tracked in `BACKLOG.md`).
 
-**Public Risk Radar (`risk_radar`, daily)**: a 6-axis discretionary
-macro-risk read (geopolitical, policy_fed, inflation, valuation,
-labor_market, earnings — each 0-100), required on every `write_snapshot`
-call and shown on the public dashboard. Like `crash_probability_pct`, this
-is LLM judgment, not a calibrated model — but 4 of the 6 axes are anchored
-to real series/fields already tracked in this system (fed pivot signal,
-breakeven inflation, Sahm Rule/claims, real 10yr yield), while
-`geopolitical`/`earnings` stay purely narrative-judged since no free
-anchoring data exists for either. Full banding rubric in
-`reference_docs/rules/crash-check-rules.md`'s "Risk Radar Scoring
-Methodology" section.
+**Risk Radar — retired 2026-11-13.** A 6-axis discretionary 0-100 score ran
+on crash checks and portfolio reviews from 2026-09-15. It never gated
+anything, mostly restated series shown directly elsewhere, and swung run to
+run on the same data, so it was removed everywhere; its database columns are
+kept for history (see `crash-check-rules.md`'s "Risk Radar (retired)").
 
 **Cross-indicator divergence detection**: three pairs of normally-correlated
 series (IG-vs-HY credit spreads, initial-vs-continuing jobless claims,
@@ -144,7 +138,7 @@ service:
 
 - **Supabase** holds macro/market data and — as of the Private Portfolio Report page —
   crash-type diagnosis narrative and Portfolio Opportunity Review content
-  (drift %, ticker thesis, risk-radar scores). **No dollar figures, no
+  (drift %, ticker thesis). **No dollar figures, no
   account balances, ever** — enforced in code, not just by convention:
   every write path that persists free text (`write_snapshot`,
   `write_full_report`, `write_portfolio_review`) cross-references the real
@@ -186,8 +180,7 @@ never persisted.
   Cloudflare Access-gated via email one-time-PIN or GitHub login) — the BrokerageLink
   watchlist with live status, crash-type diagnosis, qualitative portfolio
   context, and the full Portfolio Opportunity Review (drift bars, ticker
-  thesis re-underwrite, macro cross-reference, a server-side-rendered risk
-  radar chart). Rendered server-side by a Cloudflare Pages Function using
+  thesis re-underwrite, macro cross-reference). Rendered server-side by a Cloudflare Pages Function using
   the `service_role` key — no client-embedded credential to leak.
 
 Both are installable as a home-screen PWA (manifest + icons, no service

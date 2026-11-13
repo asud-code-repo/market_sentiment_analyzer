@@ -56,10 +56,7 @@ server.registerTool(
       "probability (the last full report, not just the last row — most rows are bare automated " +
       "refreshes). Call only after independently committing to this run's scenario distribution " +
       "(crash_probability_pct is derived from that, not independently judged -- see write_snapshot) " +
-      "— this is for the delta-log framing, not for forming the estimate itself. `risk_radar` (when " +
-      "present) is the prior run's discretionary macro-risk read (see crash-check-rules.md's 'Risk " +
-      "Radar Scoring Methodology') -- same tier as the scenario distribution, never gates, useful here " +
-      "only as a reference point for this run's own risk_radar judgment.",
+      "— this is for the delta-log framing, not for forming the estimate itself.",
   },
   withLogging("get_latest_snapshot", async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -71,7 +68,11 @@ server.registerTool(
     // (e.g. this tool called twice in one session) — delta should compare
     // against a genuinely prior report, not itself.
     const priorForDelta = prior && prior.id !== latest.id ? prior : undefined;
-    return json({ latest, delta: computeDelta(latest, priorForDelta) });
+    // Risk Radar retired 2026-11-13 (scores were inconsistent run to run and
+    // never gated anything); older rows still hold it, so leave it out here
+    // rather than invite the run to keep producing one.
+    const { risk_radar: _radar, risk_radar_anchors: _anchors, ...latestWithoutRadar } = latest;
+    return json({ latest: latestWithoutRadar, delta: computeDelta(latest, priorForDelta) });
   }),
 );
 
@@ -345,17 +346,7 @@ server.registerTool(
       "has the later date. fed-event/inflation-print entries also get their `status` forced to " +
       "'fired' server-side once their own `date` is today or in the past, regardless of what you " +
       "supply -- you still write the qualitative outcome in `note` (was it hawkish/dovish, in-line " +
-      "or a beat/miss), just don't worry about the status enum lagging behind it. `risk_radar` " +
-      "(geopolitical/policy_fed/inflation/valuation/labor_market/" +
-      "earnings, each 0-100) is required every run — see crash-check-rules.md's 'Risk Radar Scoring " +
-      "Methodology' for the per-axis banded rubric (5 of the 6 axes anchor to real series already " +
-      "tracked in this system, including geopolitical now -- see geopolitical_risk_index in " +
-      "get_context_indicators's macro_regime_signals, added 2026-09-22; only earnings stays " +
-      "narrative-only, no free anchoring data exists for it). Also include `risk_radar_anchors`, " +
-      "with one concise evidence/explanation string for each matching axis; these are displayed " +
-      "beside the scores on the public dashboard. Keep anchors factual and brief, cite the observed " +
-      "value/context, and use narrative-only wording for earnings. Discretionary like the scenario " +
-      "distribution -- never gates, never validated. " +
+      "or a beat/miss), just don't worry about the status enum lagging behind it. " +
       "crash_probability_pct/low/high are NOT inputs to this tool (changed 2026-09-22) -- they are " +
       "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
       "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
@@ -366,22 +357,6 @@ server.registerTool(
       scenario_base_pct: z.number().min(0).max(100),
       scenario_bear_pct: z.number().min(0).max(100),
       scenario_crash_pct: z.number().min(0).max(100),
-      risk_radar: z.object({
-        geopolitical: z.number().min(0).max(100),
-        policy_fed: z.number().min(0).max(100),
-        inflation: z.number().min(0).max(100),
-        valuation: z.number().min(0).max(100),
-        labor_market: z.number().min(0).max(100),
-        earnings: z.number().min(0).max(100),
-      }),
-      risk_radar_anchors: z.object({
-        geopolitical: z.string().trim().min(1).max(240),
-        policy_fed: z.string().trim().min(1).max(240),
-        inflation: z.string().trim().min(1).max(240),
-        valuation: z.string().trim().min(1).max(240),
-        labor_market: z.string().trim().min(1).max(240),
-        earnings: z.string().trim().min(1).max(240),
-      }),
       notes: z.string(),
       delta_log: z
         .array(
@@ -898,7 +873,7 @@ server.registerTool(
         },
         geopolitical_risk_index: gprIndex && {
           ...gprIndex,
-          signal: `Caldara & Iacoviello (Federal Reserve Board) -- a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Read alongside (not as a substitute for) actual news/Fed-communication research in step 6. See crash-check-rules.md's Risk Radar Scoring Methodology for the banded rubric this now anchors the geopolitical axis to.${gprIndex.value > 150 ? " Above 150 -- genuinely elevated against this system's own full backfilled history (above its ~90th percentile)." : ""}`,
+          signal: `Caldara & Iacoviello (Federal Reserve Board) -- a text-parsing tally of geopolitical-tension coverage across 10 major newspapers, monthly. Read alongside (not as a substitute for) actual news/Fed-communication research in step 6.${gprIndex.value > 150 ? " Above 150 -- genuinely elevated against this system's own full backfilled history (above its ~90th percentile)." : ""}`,
         },
         stock_bond_correlation: stockBondCorrelation && {
           ...stockBondCorrelation,
@@ -1283,7 +1258,7 @@ server.registerTool(
   {
     description:
       "Persists this Portfolio Opportunity Review's qualitative synthesis (verdict, summary, macro " +
-      "cross-reference, per-ticker thesis re-underwrite, risk radar scores) to " +
+      "cross-reference, per-ticker thesis re-underwrite) to " +
       "portfolio_review_snapshots — merged into the Full Report page, never anon-readable, same as " +
       "full_report_snapshots. Portfolio drift is recomputed server-side, not taken from this call. Do " +
       "not include personal dollar figures anywhere here — the write is rejected if one is detected " +
@@ -1301,14 +1276,6 @@ server.registerTool(
           reasoning: z.string(),
         }),
       ),
-      risk_radar: z.object({
-        geopolitical: z.number().min(0).max(100),
-        policy_fed: z.number().min(0).max(100),
-        inflation: z.number().min(0).max(100),
-        valuation: z.number().min(0).max(100),
-        labor_market: z.number().min(0).max(100),
-        earnings: z.number().min(0).max(100),
-      }),
     },
   },
   withLogging("write_portfolio_review", async (input) => {

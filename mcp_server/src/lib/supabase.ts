@@ -109,15 +109,11 @@ export interface CrashCheckRow {
   // (external review 2026-09-19, F01); both otherwise leave band/raw/
   // calibrated null.
   hazard_10pct_status: string | null;
-  // Daily public Risk Radar (added 2026-09-15) -- discretionary LLM
-  // judgment like crash_probability_pct, required on every write_snapshot
-  // call. See crash-check-rules.md's "Risk Radar Scoring Methodology" --
-  // 5 of 6 axes anchor to real series already tracked here; earnings stays
-  // narrative-only. Separate from (not the same field as)
-  // portfolio_review_snapshots.risk_radar, which is Portfolio-Review-
-  // triggered and stays on the private full_report_site unchanged.
-  risk_radar: RiskRadarScores | null;
-  risk_radar_anchors: RiskRadarAnchors | null;
+  // Risk Radar (2026-09-15 to 2026-11-13) -- retired: discretionary scores
+  // that swung run to run (inflation 38 <-> 68 on the same data) and never
+  // gated anything. Columns kept for history; new rows leave them null.
+  risk_radar: unknown;
+  risk_radar_anchors: unknown;
   created_at: string;
 }
 
@@ -273,11 +269,6 @@ export async function writeSnapshot(qualitative: {
   scenario_base_pct: number;
   scenario_bear_pct: number;
   scenario_crash_pct: number;
-  // Daily public Risk Radar -- required every run, same cadence/rigor bar
-  // as crash_probability_pct above. See crash-check-rules.md's "Risk
-  // Radar Scoring Methodology" for the per-axis banded rubric.
-  risk_radar: RiskRadarScores;
-  risk_radar_anchors: RiskRadarAnchors;
   notes: string;
   // Same structured list already rendered in the HTML artifact's delta log
   // (each {sign: "pos"|"neg", text}) — optional since a run with no prior
@@ -460,8 +451,6 @@ export async function writeSnapshot(qualitative: {
     scenario_base_pct: qualitative.scenario_base_pct,
     scenario_bear_pct: qualitative.scenario_bear_pct,
     scenario_crash_pct: qualitative.scenario_crash_pct,
-    risk_radar: qualitative.risk_radar,
-    risk_radar_anchors: qualitative.risk_radar_anchors,
     notes: qualitative.notes,
     delta_log: qualitative.delta_log ?? null,
     crash_type: qualitative.crash_type ?? latest.crash_type,
@@ -600,24 +589,6 @@ export interface PortfolioReviewTickerEntry {
   reasoning: string;
 }
 
-export interface RiskRadarScores {
-  geopolitical: number;
-  policy_fed: number;
-  inflation: number;
-  valuation: number;
-  labor_market: number;
-  earnings: number;
-}
-
-export interface RiskRadarAnchors {
-  geopolitical: string;
-  policy_fed: string;
-  inflation: string;
-  valuation: string;
-  labor_market: string;
-  earnings: string;
-}
-
 export interface PortfolioReviewSnapshotRow {
   id: string;
   run_at: string;
@@ -626,7 +597,7 @@ export interface PortfolioReviewSnapshotRow {
   macro_cross_reference: string | null;
   drift: unknown;
   tickers: PortfolioReviewTickerEntry[];
-  risk_radar: RiskRadarScores | null;
+  risk_radar: unknown; // retired 2026-11-13, kept for history; new rows leave it null
   source_crash_check_id: string | null;
   created_at: string;
 }
@@ -649,7 +620,6 @@ export async function writePortfolioReview(qualitative: {
   summary: string;
   macro_cross_reference: string;
   tickers: PortfolioReviewTickerEntry[];
-  risk_radar: RiskRadarScores;
 }): Promise<PortfolioReviewSnapshotRow> {
   const [latestCrashCheck] = await getRecentCrashChecks(1);
 
@@ -679,7 +649,6 @@ export async function writePortfolioReview(qualitative: {
     macro_cross_reference: qualitative.macro_cross_reference,
     drift,
     tickers: qualitative.tickers,
-    risk_radar: qualitative.risk_radar,
     source_crash_check_id: latestCrashCheck?.id ?? null,
   };
 

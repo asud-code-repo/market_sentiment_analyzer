@@ -1355,77 +1355,18 @@ of the simpler, more directly-grounded derivation.
 
 ---
 
-## Risk Radar Scoring Methodology (public, daily — `risk_radar`)
+## Risk Radar (retired 2026-11-13)
 
-**What it is**: a 6-axis discretionary macro-risk read (geopolitical,
-policy_fed, inflation, valuation, labor_market, earnings — each 0-100),
-required on every `write_snapshot` call, same cadence as
-`crash_probability_pct`. Surfaced on the public dashboard.
-
-Each axis also stores a concise factual `risk_radar_anchors` explanation
-(maximum 240 characters) beside its score. Anchors are supplied with the
-daily `write_snapshot`, persisted separately from the numeric scores, and
-shown in the public dashboard's Axis / Score / Anchor table. Cite the
-observed series/value/context when available; earnings remains
-narrative-only. Historical rows without anchors remain valid and display
-that no anchor was recorded. Do not include personal or account-specific
-information in these public explanations.
-
-**Why this exists alongside the private Portfolio Review's own risk_radar**:
-that one (`write_portfolio_review`) is Portfolio-Review-triggered, not
-daily, and has no documented scoring basis ("reflecting this run's own
-judgment" is the entire spec). This section exists specifically to close
-that gap for the *public, daily* version — the private one is unchanged.
-
-**Like `crash_probability_pct` above, this is discretionary LLM judgment,
-not a calibrated model** — the difference is 5 of the 6 axes are anchored
-to real series already tracked in this system, not free-form:
-
-- **`policy_fed`** — anchor to `fed_pivot_signal` (NONE/PAUSE/CUT) and
-  `get_trigger_status`'s `fed_event_trigger` proximity. 0-25: NONE, no
-  FOMC within 2 weeks. 26-50: PAUSE, or an FOMC meeting within 2 weeks.
-  51-75: CUT, or an active hiking cycle. 76-100: emergency/inter-meeting
-  action.
-- **`inflation`** — anchor directly to `T10YIE`. 0-20: <2.0%. 21-40:
-  2.0-2.5%. 41-65: 2.5-3.0% (the existing "sustained 4+ weeks" complacency
-  flag threshold). 66-100: >3.0%.
-- **`labor_market`** — anchor to the Sahm Rule color, ICSA/CCSA trend, and
-  `CGBD2024`. 0-25: Sahm GREEN, stable claims. 26-50: Sahm AMBER, or
-  rising claims. 51-75: Sahm RED (unconfirmed), or accelerating claims.
-  76-100: Sahm RED confirmed, broad-based deterioration.
-- **`valuation`** — anchor to `DFII10` (real yield) as the closest
-  available proxy. Same caveat as `tips_real_yield_10y_pct` above: this is
-  the real-yield leg only — no free earnings-yield/CAPE series exists on
-  FRED, so this axis alone cannot represent a full valuation read.
-- **`geopolitical`** — anchor to `geopolitical_risk_index` (GPR,
-  Caldara-Iacoviello — see "Macro Regime Signals" above), added 2026-09-22.
-  Previously "no free anchoring data exists" — no longer true now that GPR
-  is tracked. Bands set from this system's own real backfilled history
-  (500 monthly observations, 1985-present; the index is normalized so its
-  long-run average sits near 100), not guessed: 0-25: GPR below its
-  historical median (~90 in this system's own data). 26-50: 90-130
-  (moderately elevated — where a typical reading, including this system's
-  own most recent one, tends to sit). 51-75: 130-200 (genuinely elevated —
-  above the historical ~90th percentile). 76-100: >200 (crisis-level — this
-  system's real historical data puts 9/11, the 1991 Gulf War, the 2003 Iraq
-  invasion, and the 2022 Russia-Ukraine invasion all above this line, along
-  with a 2026-03 spike higher than 2022's). Read alongside actual news/Fed-
-  communication research (step 6) — GPR is a real anchor, not a substitute
-  for judgment about what's *currently* happening.
-- **`earnings`** — **no free anchoring data exists** (a real, standing gap,
-  same category as the missing global-PMI/CAPE series documented elsewhere
-  in this file). Stays genuinely judgment-based, banded only by narrative
-  severity (0-25 no material earnings concern ... 76-100 broad earnings
-  collapse) — same tier as `crash_type`/`warsh_classification`,
-  already-accepted judgment fields in this system.
-
-**Non-goals**: does not feed `crash_probability_pct` (which is now derived
-from the scenario distribution only — see the Crash-Probability Scoring
-Methodology section above), does not score into the 3-of-6 wave-
-authorization gate, is not validated or back-tested. A reader should not
-treat all six axes as equally grounded — `earnings` alone now carries
-materially less anchoring than the other five, and the dashboard card says
-so explicitly.
+A 6-axis discretionary score (geopolitical, policy_fed, inflation,
+valuation, labor_market, earnings, each 0-100) ran on every crash check from
+2026-09-15 and in every Portfolio Opportunity Review. Retired from both: it
+never gated anything, five of its six axes restated series the dashboard
+already shows directly, and the scores were inconsistent run to run on the
+same data (inflation swung 38 <-> 68 within a day while the breakeven it was
+supposed to anchor to sat near 2.2%, the rubric's 21-40 band). Don't produce
+one. The `risk_radar` / `risk_radar_anchors` columns on `crash_checks` and
+`risk_radar` on `portfolio_review_snapshots` are kept for history; new rows
+leave them null.
 
 ---
 
@@ -1464,15 +1405,13 @@ report"). Make the distinction a rule, not an implicit side effect:
 - **Automated indicator refresh** (the default, most runs): render the RED
   banner (if any), the 6-indicator grid with streak/confirmation status, the
   crash-probability meter, trigger status, and contextual indicators. No
-  narrative synthesis, no crash-type diagnosis, no radar chart — label the
+  narrative synthesis, no crash-type diagnosis — label the
   run itself "Indicator Update" as already shown.
 - **Full chat-triggered report** (on demand, or automatically when a
   confirmed threshold newly fires): adds narrative synthesis, Stage 1 crash-
   type diagnosis (if drawdown ≥15%), and brokerage-window watchlist. Label
   it distinctly (e.g. "Full Report") so the history view never makes the
-  user guess which kind of entry they're looking at. (The radar chart is
-  specific to the Portfolio Opportunity Review — see below — not part of
-  this report.)
+  user guess which kind of entry they're looking at.
 
 **Scan order, top to bottom (fixed)** — the order of the chat summary, and
 of the dashboard's Stress tab:
@@ -1529,14 +1468,12 @@ directly, using CSS that had sat unused since before this field existed.
   delta-arrow per row so trajectory is visible, not just current state
 
 **Render every Portfolio Opportunity Review as an HTML artifact using
-`portfolio-review-template.html` (in this same folder) as the base** — same rule
-as the crash check, not plain chat text. Reuse its component classes (`.cc-verdict-headline`,
+`portfolio-review-template.html` (in this same folder) as the base** — not plain
+chat text (unlike the crash check, which ends in a text summary since 2026-11-13). Reuse its component classes (`.cc-verdict-headline`,
 `.cc-alloc-row`/`.cc-alloc-target`, `.cc-flag-card`, `.cc-ticker-card`/`.cc-prox-track`,
 `.cc-source-card`, etc.); replace the example content with this run's live values.
 The tactical 401k's allocation bars are informational context (it's wave-gated, not
 drift-scored) — never color them as a drift alarm. The ticker proximity meter's
 BUY/WATCH/WAIT zone widths and marker position should reflect each ticker's actual
 price relative to its Wave 1/2/3 targets, not be evenly spaced by default.
-- Radar chart comparing current vs prior check across: Geopolitical, Policy/Fed,
-  Inflation, Valuation, Labor Market, Earnings
 - No excessive prose inside dashboard widgets — explanatory text goes outside them

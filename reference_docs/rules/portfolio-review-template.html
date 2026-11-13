@@ -132,26 +132,6 @@
   .cc-source-card .point { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
   .cc-source-card .asof { font-size: 9px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
 
-  /* Radar chart — current vs prior check across 6 dimensions. Two series:
-     current (solid, neutral-blue) and prior (dashed, muted) — fixed
-     categorical assignment, not cycled, with a legend since there are 2
-     series. Values are 0-100 risk/elevation scores per axis, plotted by
-     Claude each run from its own synthesis — this is judgment output, not
-     a rule-engine binding, same as the crash-type diagnosis in
-     dashboard-template.html. */
-  .cc-radar-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .cc-radar-svg { width: 300px; height: 300px; flex-shrink: 0; }
-  .cc-radar-grid { fill: none; stroke: var(--grid); stroke-width: 1; }
-  .cc-radar-axis { stroke: var(--grid); stroke-width: 1; }
-  .cc-radar-label { font-size: 10px; fill: var(--text-secondary); }
-  .cc-radar-current { fill: var(--neutral-blue); fill-opacity: 0.18; stroke: var(--neutral-blue); stroke-width: 2; }
-  .cc-radar-prior { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
-  .cc-radar-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-secondary); }
-  .cc-radar-legend .item { display: flex; align-items: center; gap: 8px; }
-  .cc-radar-legend .sw { width: 16px; height: 2px; flex-shrink: 0; }
-  .cc-radar-legend .sw.current { background: var(--neutral-blue); height: 3px; }
-  .cc-radar-legend .sw.prior { border-top: 2px dashed var(--text-muted); }
-
   .cc-disclaimer { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 </style>
 
@@ -294,45 +274,6 @@
         <div class="org">JPMorgan <span class="cc-pill warning" style="font-size:9px;">Tension w/ EOG</span></div>
         <div class="point">Mid-year outlook: AI capex offsetting Iran War drag; commodities desk still projects a Brent oversupply, ~$58/bbl.</div>
         <div class="asof">Outlook published June 2026 (mid-year)</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- RISK RADAR — current vs prior check across 6 dimensions. Judgment
-       output (Claude's own synthesis each run), not a rule-engine binding.
-       0-100 scale per axis; higher = more elevated/risky. Update the two
-       polygons' point coordinates below to reflect this run's actual
-       assessment vs the prior review's stored values. -->
-  <div class="cc-card">
-    <p class="cc-eyebrow">Risk Radar — current vs. prior review</p>
-    <div class="cc-radar-wrap">
-      <svg class="cc-radar-svg" viewBox="0 0 300 300">
-        <!-- grid rings at 33/66/100% -->
-        <polygon class="cc-radar-grid" points="150,110 184.6,130 184.6,170 150,190 115.4,170 115.4,130" />
-        <polygon class="cc-radar-grid" points="150,70 219.3,110 219.3,190 150,230 80.7,190 80.7,110" />
-        <polygon class="cc-radar-grid" points="150,30 253.9,90 253.9,210 150,270 46.1,210 46.1,90" />
-        <!-- axis lines -->
-        <line class="cc-radar-axis" x1="150" y1="150" x2="150" y2="30" />
-        <line class="cc-radar-axis" x1="150" y1="150" x2="253.9" y2="90" />
-        <line class="cc-radar-axis" x1="150" y1="150" x2="253.9" y2="210" />
-        <line class="cc-radar-axis" x1="150" y1="150" x2="150" y2="270" />
-        <line class="cc-radar-axis" x1="150" y1="150" x2="46.1" y2="210" />
-        <line class="cc-radar-axis" x1="150" y1="150" x2="46.1" y2="90" />
-        <!-- prior check (dashed, muted) -->
-        <polygon class="cc-radar-prior" points="150,80.4 217.5,111 202,180 150,224.4 127.1,163.2 108.4,126" />
-        <!-- current check (solid, neutral-blue) -->
-        <polygon class="cc-radar-current" points="150,63.6 220.7,109.2 207.2,183 150,222 124,165 103.2,123" />
-        <!-- axis labels -->
-        <text class="cc-radar-label" x="150" y="20" text-anchor="middle">Geopolitical</text>
-        <text class="cc-radar-label" x="262" y="80" text-anchor="start">Policy / Fed</text>
-        <text class="cc-radar-label" x="262" y="224" text-anchor="start">Inflation</text>
-        <text class="cc-radar-label" x="150" y="288" text-anchor="middle">Valuation</text>
-        <text class="cc-radar-label" x="38" y="224" text-anchor="end">Labor Market</text>
-        <text class="cc-radar-label" x="38" y="80" text-anchor="end">Earnings</text>
-      </svg>
-      <div class="cc-radar-legend">
-        <div class="item"><span class="sw current"></span>Current (Jul 10): Geopolitical 72, Policy/Fed 68, Inflation 55, Valuation 60, Labor 25, Earnings 45</div>
-        <div class="item"><span class="sw prior"></span>Prior (Jul 3): Geopolitical 58, Policy/Fed 65, Inflation 50, Valuation 62, Labor 22, Earnings 40</div>
       </div>
     </div>
   </div>
