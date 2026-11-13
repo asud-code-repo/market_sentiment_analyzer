@@ -287,40 +287,6 @@
     .radar-detail-table .radar-score { width: 42px; }
   }
 
-  .nv-intro { font-size: 14px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 10px; }
-  .nv-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
-  .nv-legend .pill { margin-right: 4px; }
-  .nv-about summary, .nv-gap summary { cursor: pointer; color: var(--neutral-blue); font-size: 12px; }
-  .nv-about p, .nv-about li { font-size: 12px; line-height: 1.5; color: var(--text-muted); }
-  .nv-about ul { padding-left: 18px; margin: 6px 0 0; }
-  .nv-about li { margin-bottom: 6px; }
-  .nv-fine { font-size: 11px; color: var(--text-muted); margin: 10px 0 0; }
-  .nv-people { display: flex; gap: 8px; overflow-x: auto; padding: 14px 2px 2px; scrollbar-width: none; }
-  .nv-people::-webkit-scrollbar { display: none; }
-  .nv-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-1); color: var(--text-secondary); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
-  .nv-chip[data-person="all"] { padding-left: 12px; min-height: 34px; }
-  .nv-chip.active { border-color: var(--neutral-blue); background: var(--neutral-blue-bg); color: var(--text-primary); }
-  .nv-stale-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
-  .nv-avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--grid); color: var(--text-secondary); font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
-  .nv-person, .nv-topic { margin-top: 12px; }
-  .nv-topic-head h2 { font-size: 17px; margin: 0; }
-  .nv-question { font-size: 13px; color: var(--text-muted); margin: 2px 0 0; }
-  .nv-lens { font-size: 14px; line-height: 1.5; color: var(--text-secondary); margin: 8px 0 4px; }
-  .nv-asof { font-size: 12px; color: var(--text-muted); margin: 0; }
-  .nv-asof.stale { color: var(--warning); }
-  .nv-group { margin-top: 16px; }
-  .nv-data { padding: 10px 12px; border-left: 3px solid var(--neutral-blue); border-radius: 0 8px 8px 0; background: var(--page); font-size: 13px; line-height: 1.5; }
-  .nv-data-label { display: block; margin-bottom: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
-  .nv-view { padding-top: 14px; }
-  .nv-view + .nv-view { margin-top: 14px; border-top: 1px solid var(--grid); }
-  .nv-view-head { display: flex; align-items: center; gap: 8px; }
-  .nv-name { flex: 1; font-size: 14px; font-weight: 600; }
-  .nv-text { margin: 6px 0 4px 34px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
-  .nv-meta { margin-left: 34px; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
-  .nv-meta a { color: var(--neutral-blue); text-decoration: none; }
-  .nv-gap { margin: 6px 0 0 34px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
-  .nv-hidden { display: none !important; }
-  .pill.differs { background: none; color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
 
   .error-banner { background: var(--critical-bg); color: var(--critical); border-radius: 10px; padding: 14px; font-size: 13px; }
   .loading { color: var(--text-muted); font-size: 13px; }
@@ -663,8 +629,7 @@
   .stat small { grid-column:1/-1; font:var(--t3); color:var(--text-muted); margin-top:3px; }
 
   /* ---------- Notable Views keeps its own width ---------- */
-  .rd #tab-analysts { max-width:960px; margin:18px auto 0; display:flex; flex-direction:column; gap:16px; }
-  .rd #tab-analysts[hidden] { display:none; }
+
 
   /* ---------- narrower screens ---------- */
   @media (max-width: 1180px) {
@@ -717,6 +682,69 @@
     .ledger.fl .row > .prior { grid-area:prior; } .ledger.fl .row > .rule { grid-area:rule; } .ledger.fl .row > .flag { grid-area:flag; }
     .grp { grid-template-columns:1fr; row-gap:6px; } .grp h3 small { display:block; margin:3px 0 0; }
     .ctx { grid-template-columns:1fr; }
+  }
+
+  /* ---------- Notable Views (redesign 2026-11-13) ---------- */
+  :root { --ag:#2a78d6; --ag-soft:rgba(42,120,214,.5); --ag-off:rgba(11,11,11,.38); }
+  @media (prefers-color-scheme: dark) { :root { --ag:#5a9cec; --ag-soft:rgba(90,156,236,.5); --ag-off:rgba(255,255,255,.38); } }
+  .mx { width:100%; border-collapse:collapse; }
+  .mx th { font:var(--label); letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); padding:8px 6px; border-bottom:1px solid var(--hair-strong); text-align:center; white-space:nowrap; }
+  .mx th:first-child { text-align:left; }
+  .mx th small { display:block; font:var(--t3); text-transform:none; letter-spacing:0; margin-top:3px; }
+  .mx th.stale small, .mx th.stale .ini { color:var(--warning); }
+  .mx td { border-bottom:1px solid var(--hair); padding:8px 6px; text-align:center; vertical-align:middle; }
+  .mx td.t { text-align:left; } .mx td.t b { font:600 13px/1.25 var(--font-ui); } .mx td.t small { display:block; font:var(--t3); color:var(--text-muted); margin-top:2px; max-width:420px; }
+  .mx td a { text-decoration:none; color:inherit; display:inline-flex; gap:3px; }
+  .mx td .none { color:var(--text-muted); }
+  .mx .ini { display:none; }
+  .g { flex-shrink:0; width:12px; height:12px; border-radius:50%; display:inline-block; box-sizing:border-box; }
+  .g.a { background:var(--ag); }
+  .g.p { background: linear-gradient(90deg, var(--ag-soft) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--ag-soft); }
+  .g.d { box-shadow: inset 0 0 0 1.5px var(--ag-off); }
+  .g.n { box-shadow: inset 0 0 0 1.5px var(--ag); background: repeating-linear-gradient(45deg, transparent 0 2px, var(--ag) 2px 3px); }
+  .g.x { width:6px; height:6px; margin:3px; background:var(--ag-off); }
+  .mx th.agr, .mx td.agr { text-align:left; padding-left:14px; width:150px; }
+  .abar { display:flex; height:8px; gap:1px; width:96px; }
+  .abar i { display:block; height:100%; }
+  .abar i.a { background:var(--ag); } .abar i.p { background:var(--ag-soft); }
+  .abar i.d, .abar i.x { box-shadow: inset 0 0 0 1px var(--ag-off); }
+  .abar i.n { background: repeating-linear-gradient(45deg, transparent 0 2px, var(--ag) 2px 3px); box-shadow: inset 0 0 0 1px var(--ag); }
+  .agr-wrap { display:flex; align-items:center; gap:8px; }
+  .agr-wrap small { font:var(--t3); color:var(--text-muted); white-space:nowrap; } .agr-wrap small b { color:var(--text-secondary); font-weight:600; }
+  .keyrow { display:flex; gap:16px; flex-wrap:wrap; font:var(--t3); color:var(--text-muted); align-items:center; margin-top:10px; }
+  .keyrow span { display:inline-flex; align-items:center; gap:6px; }
+  .nvtopic { padding-top:22px; scroll-margin-top:110px; }
+  .nvtopic h3 { margin:0; font:600 15px/1.25 var(--font-ui); } .nvtopic h3 small { font:var(--t3); color:var(--text-muted); margin-left:8px; font-weight:400; }
+  .reading { display:grid; grid-template-columns:110px 1fr; gap:14px; margin:10px 0 4px; padding:8px 0 8px 12px; border-left:2px solid var(--hair-strong); font:500 12.5px/1.45 var(--font-ui); color:var(--text-secondary); }
+  .reading .lbl { padding-top:3px; }
+  .vw { display:grid; grid-template-columns: 26px 150px minmax(0,640px) 1fr; column-gap:14px; padding:10px 0; border-bottom:1px solid var(--hair); align-items:start; }
+  .vw .av, .roster .av { width:24px; height:24px; border-radius:50%; background:var(--sunk); box-shadow: inset 0 0 0 1px var(--hair-strong); font:700 9px/24px var(--font-ui); text-align:center; color:var(--text-secondary); }
+  .vw .who b { display:block; font:600 12.5px/1.3 var(--font-ui); }
+  .vw .who span { display:inline-flex; align-items:center; gap:6px; font:600 10.5px/1 var(--font-ui); letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); margin-top:4px; }
+  .vw .q { font:400 13px/1.5 var(--font-ui); }
+  .vw .q .src { display:block; font:var(--t3); color:var(--text-muted); margin-top:4px; }
+  .vw .q .src a { color:var(--accent); text-decoration:none; }
+  .vw .side { font:var(--t3); color:var(--text-muted); }
+  .vw .side b { display:block; color:var(--text-secondary); font-weight:500; }
+  .vw .side .chg { display:block; margin-bottom:6px; }
+  .rd .nv-off { display:none !important; } /* person filter + Show everyone */
+  .roster li { grid-template-columns: 26px 1fr auto; align-items:center; }
+  .roster button.e { all:unset; cursor:pointer; font:500 12.5px/1.35 var(--font-ui); }
+  .roster button.e b { font-weight:600; } .roster button.e small { display:block; font:var(--t3); color:var(--text-muted); margin-top:2px; }
+  .roster button.e:hover b, .roster li.on button.e b { color:var(--accent); }
+  .roster button.e:focus-visible { outline:2px solid var(--accent); }
+  .roster .st2 { font:var(--t3); color:var(--text-muted); text-align:right; } .roster .st2.old { color:var(--warning); }
+  .roster-all { all:unset; cursor:pointer; font:var(--t3); color:var(--accent); margin-top:8px; display:inline-block; }
+  @media (max-width: 640px) {
+    .mx .full { display:none; } .mx .ini { display:inline; } .mx th small { display:none; }
+    .mx th.agr, .mx td.agr { width:auto; padding-left:6px; } .mx th.agr .full { display:none; } .mx th.agr::after { content:"Agree"; }
+    .agr-wrap small { display:none; } .abar { width:40px; }
+    .mx td.t small { display:none; } .mx td, .mx th { padding:8px 3px; } .mx td.t b { font-size:12px; }
+    .vw { grid-template-columns:26px 1fr; grid-template-areas:"av who" "q q" "side side"; row-gap:8px; }
+    .vw .av { grid-area:av; } .vw .who { grid-area:who; align-self:center; } .vw .q { grid-area:q; } .vw .side { grid-area:side; }
+    .vw .who b { display:inline; } .vw .who span { margin:0 0 0 8px; }
+    .vw .side:empty { display:none; }
+    .reading { grid-template-columns:1fr; gap:4px; }
   }
 
 </style>
@@ -817,18 +845,11 @@
        already loads. Frameworks compared, not a scorecard of who's right --
        deliberately no overall agreement score. -->
   <div class="tab-panel" id="tab-analysts" hidden>
-    <div class="card">
-      <p class="eyebrow">Notable Views</p>
-      <p class="nv-intro">What well-known investors and economists are saying, side by side with what this system's live data shows. Grouped by topic. Tap a name to see one person's views.</p>
-      <p class="nv-legend"><span><span class="pill info">Agrees</span> the data shows what they describe</span><span><span class="pill muted">Partly</span> some of it</span><span><span class="pill differs">Differs</span> not yet</span></p>
-      <details class="nv-about">
-        <summary>How to read this, and who's here</summary>
-        <p>It's a comparison of frameworks, not a verdict on who's right. Each view is checked over a window that matches it: today's reading for near-term calls, the past 12 months for calls about direction, and multi-year trends for long-term ones. Each data box says which. Views are short paraphrases of public statements (quotes are word for word), linked to the source and dated.</p>
-        <ul id="nv-about-people"></ul>
-      </details>
-      <p class="nv-fine">Not affiliated with or endorsed by anyone named here. Not investment advice.</p>
+    <div class="verdict" id="views-verdict"><p class="loading">Loading…</p></div>
+    <div class="cols">
+      <main class="col-main"><div id="analysts-wrap"><p class="loading">Loading…</p></div></main>
+      <aside class="col-rail" id="analysts-rail"></aside>
     </div>
-    <div id="analysts-wrap"><p class="loading">Loading…</p></div>
   </div>
 
   <footer class="rfooter"><span>Read-only view of macro/market state: a stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast.</span><span>No personal account data; portfolio figures live in the local MCP tools.</span></footer>
@@ -3747,7 +3768,7 @@ function activateTab(tabId) {
   });
   // The report date picker only applies to the Stress tab; the other tabs always show the latest data.
   document.getElementById("datenav").hidden = tabId !== "stressmonitor";
-  document.getElementById("datenav-static").hidden = tabId === "stressmonitor" || tabId === "analysts";
+  document.getElementById("datenav-static").hidden = tabId === "stressmonitor";
   try {
     localStorage.setItem(TAB_STORAGE_KEY, tabId);
   } catch (err) {
@@ -4079,13 +4100,7 @@ const HORIZON_SHORT = {
   structural: "multi-year trend",
 };
 
-// Not RAG colors: "Differs" isn't bad and "Agrees" isn't good.
-const ANALYST_VERDICT = {
-  true: ["info", "Agrees"],
-  partial: ["muted", "Partly"],
-  false: ["differs", "Differs"],
-  null: ["muted", "No data"],
-};
+// Marks use one blue at different strengths, never green/red: "Differs" isn't bad and "Agrees" isn't good.
 const ANALYST_STALE_DAYS = 60; // ~one Fed-meeting cycle; views are refreshed after each FOMC meeting
 
 // Layout (2026-11-11): grouped by TOPIC, not by person, so views on the
@@ -4136,72 +4151,109 @@ async function renderAnalystViews(row) {
       return { a, t, r };
     })));
 
-    const renderView = ({ a, t, r }) => {
-      const [cls, label] = r.label ? [r.cls || "muted", r.label] : ANALYST_VERDICT[String(r.supports)] ?? ANALYST_VERDICT.null;
-      const gap = r.supports !== true && r.supports != null && t.if_differs
-        ? `<details class="nv-gap"><summary>What would change this</summary>${escHtml(t.if_differs)}</details>`
-        : "";
-      return `
-        <div class="nv-view" data-person="${escHtml(a.id)}">
-          <div class="nv-view-head"><span class="nv-avatar">${escHtml(a.initials)}</span><span class="nv-name">${escHtml(a.name)}</span><span class="pill ${cls}">${escHtml(label)}</span></div>
-          <p class="nv-text">${escHtml(t.view)}</p>
-          <div class="nv-meta"><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)} · ${escHtml(fmtDate(t.source.date))} ↗</a>${r.since ? `<br>Since then: ${escHtml(r.since)}` : ""}</div>
-          ${gap}
-        </div>`;
+    // Mark per view: agrees / partly / differs / not priced in yet (credit_pricing's label) / no data.
+    const mark = (r) => {
+      if (r.label) return r.label === "Not priced in yet" ? "n" : r.label === "Priced in" ? "a" : r.label === "Starting to show" ? "p" : "x";
+      return r.supports === true ? "a" : r.supports === "partial" ? "p" : r.supports === false ? "d" : "x";
     };
+    const MARK_WORD = { a: "Agrees", p: "Partly", d: "Differs", n: "Not priced in yet", x: "No data" };
+    const word = (e) => e.r.label ?? MARK_WORD[e.m];
+    for (const e of evaluated) e.m = mark(e.r);
+    const shortName = (a) => a.name.split(" ").slice(-1)[0];
+    const topics = content.topics.map((topic) => ({ topic, items: evaluated.filter((e) => e.t.topic === topic.id) })).filter((x) => x.items.length);
 
-    const topicsHtml = content.topics.map((topic) => {
-      const items = evaluated.filter((e) => e.t.topic === topic.id);
-      if (items.length === 0) return "";
+    // ---- verdict strip ----
+    const count = (k) => evaluated.filter((e) => e.m === k).length;
+    const scored = evaluated.filter((e) => e.m !== "x");
+    const share = (x) => x.items.filter((e) => e.m === "a").length / x.items.length;
+    // Ties go to the topic with more views (5 of 5 beats 3 of 3; 0 of 4 beats 0 of 3).
+    const contested = [...topics].sort((p, q) => share(p) - share(q) || q.items.length - p.items.length)[0];
+    const consensus = [...topics].sort((p, q) => share(q) - share(p) || q.items.length - p.items.length)[0];
+    const stale = people.filter((a) => a.stale);
+    const reviewed = content.last_reviewed ? fmtDate(content.last_reviewed) : "—";
+    document.getElementById("views-verdict").innerHTML = `
+      <div class="headline"><div class="big">${count("a")}<em>/${scored.length}</em> agree</div>
+        <div class="sub">views where the live data shows what they describe · ${count("p")} partly · ${count("d") + count("n")} differ ${ib("i-nv", "how to read this")}</div></div>
+      <div class="facts">
+        ${contested ? `<div class="fact context"><span class="lbl">Most contested</span><span class="v">${escHtml(contested.topic.title)} <small>${contested.items.filter((e) => e.m === "a").length} of ${contested.items.length} agree</small></span></div>` : ""}
+        ${consensus ? `<div class="fact context"><span class="lbl">Strongest consensus</span><span class="v">${escHtml(consensus.topic.title)} <small>${consensus.items.filter((e) => e.m === "a").length} of ${consensus.items.length}</small></span></div>` : ""}
+        <div class="fact context"><span class="lbl">Stale sources</span><span class="v">${stale.length} <small>&gt;${ANALYST_STALE_DAYS} days</small></span></div>
+      </div>
+      <div class="stamp"><b>Reviewed ${escHtml(reviewed)}</b><br>Refreshed after each FOMC</div>
+      ${popHtml("i-nv", "How to read this", `<p>Each view is checked over a window that matches it: <b>today's reading</b> for near-term calls, <b>the past 12 months</b> for calls about direction, <b>multi-year trends</b> for long-term ones.</p><p><b>Agrees</b> = the data shows what they describe. <b>Partly</b> = some of it. <b>Differs</b> = not yet. <b>Not priced in yet</b> = a warning the market isn't reflecting. Blue shades show how much the data backs a view; they aren't good or bad.</p><p>A comparison of frameworks, not a verdict on who's right. Views are short paraphrases of public statements (quotes are word for word), linked and dated.</p>`)}`;
+
+    // ---- topic x person grid with an agreement bar per topic ----
+    const abar = (items) => {
+      const n = items.length;
+      const segs = ["a", "p", "n", "d", "x"].filter((k) => items.some((e) => e.m === k))
+        .map((k) => `<i class="${k}" style="width:${(items.filter((e) => e.m === k).length / n) * 100}%"></i>`).join("");
+      const agree = items.filter((e) => e.m === "a").length;
+      return `<span class="agr-wrap"><span class="abar" role="img" aria-label="${agree} of ${n} agree">${segs}</span><small><b>${agree}</b> of ${n} agree</small></span>`;
+    };
+    const head = `<th>Topic</th>${people.map((a) => `<th class="${a.stale ? "stale" : ""}"><span class="full">${escHtml(shortName(a))}</span><span class="ini">${escHtml(a.initials)}</span><small>${a.stale ? "⚠ " : ""}${escHtml(fmtDate(a.views_as_of).replace(/, \d{4}$/, ""))}</small></th>`).join("")}<th class="agr"><span class="full">Agreement</span></th>`;
+    const rows = topics.map(({ topic, items }) => {
+      const firstReading = items[0].r.reading;
+      const cells = people.map((a) => {
+        const mine = items.filter((e) => e.a.id === a.id);
+        return `<td>${mine.length ? `<a href="#nv-t-${escHtml(topic.id)}" title="${escHtml(mine.map(word).join(", "))}">${mine.map((e) => `<i class="g ${e.m}"></i>`).join("")}</a>` : '<span class="none">·</span>'}</td>`;
+      }).join("");
+      return `<tr><td class="t"><b>${escHtml(topic.title)}</b><small>${firstReading}</small></td>${cells}<td class="agr">${abar(items)}</td></tr>`;
+    }).join("");
+
+    // ---- quotes, grouped by topic and shared data reading ----
+    const renderView = (e) => {
+      const { a, t, r } = e;
+      const change = e.m !== "a" && t.if_differs ? `<b>What would change this</b>${escHtml(t.if_differs)}` : "";
+      return `<div class="vw" data-person="${escHtml(a.id)}"><span class="av">${escHtml(a.initials)}</span>
+        <span class="who"><b>${escHtml(a.name)}</b><span><i class="g ${e.m}"></i>${escHtml(word(e))}</span></span>
+        <span class="q">${escHtml(t.view)}<span class="src"><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title)} ↗</a> · ${escHtml(fmtDate(t.source.date))}</span></span>
+        <span class="side">${r.since ? `<span class="chg">Since then: ${escHtml(r.since)}</span>` : ""}${change}</span></div>`;
+    };
+    const detail = topics.map(({ topic, items }) => {
       const groups = new Map();
       for (const e of items) {
         if (!groups.has(e.r.reading)) groups.set(e.r.reading, { reading: e.r.reading, horizon: e.t.horizon, items: [] });
         groups.get(e.r.reading).items.push(e);
       }
-      return `
-        <section class="card nv-topic">
-          <div class="nv-topic-head"><h2>${escHtml(topic.title)}</h2><p class="nv-question">${escHtml(topic.question)}</p></div>
-          ${[...groups.values()].map((g) => `
-            <div class="nv-group">
-              <div class="nv-data"><span class="nv-data-label">The data · ${escHtml(HORIZON_SHORT[g.horizon] || "today")}</span>${g.reading}</div>
-              ${g.items.map(renderView).join("")}
-            </div>`).join("")}
-        </section>`;
+      return `<div class="nvtopic" id="nv-t-${escHtml(topic.id)}"><h3>${escHtml(topic.title)}<small>${escHtml(topic.question)} · ${items.length} view${items.length === 1 ? "" : "s"}</small></h3>
+        ${[...groups.values()].map((g) => `<div class="nvgroup"><div class="reading"><span class="lbl">The data · ${escHtml(HORIZON_SHORT[g.horizon] || "today")}</span><span>${g.reading}</span></div>${g.items.map(renderView).join("")}</div>`).join("")}</div>`;
     }).join("");
 
-    const chips = [`<button class="nv-chip active" data-person="all">Everyone</button>`]
-      .concat(people.map((a) => `<button class="nv-chip" data-person="${escHtml(a.id)}"><span class="nv-avatar">${escHtml(a.initials)}</span>${escHtml(a.name)}${a.stale ? `<span class="nv-stale-dot" title="Views over ${ANALYST_STALE_DAYS} days old"></span>` : ""}</button>`))
-      .join("");
-    const personCard = (a) => `
-      <div class="card nv-person">
-        <div class="nv-view-head"><span class="nv-avatar">${escHtml(a.initials)}</span><span class="nv-name">${escHtml(a.name)}</span></div>
-        <p class="nv-question">${escHtml(a.role)}</p>
-        <p class="nv-lens">${escHtml(a.lens)}</p>
-        <p class="nv-asof${a.stale ? " stale" : ""}">Views as of ${escHtml(fmtDate(a.views_as_of))}${a.stale ? ` — over ${ANALYST_STALE_DAYS} days old, may be out of date` : ""}</p>
-      </div>`;
-
     wrap.innerHTML = `
-      <div class="nv-people" role="group" aria-label="Show views from">${chips}</div>
-      <div id="nv-person-slot"></div>
-      ${topicsHtml}`;
+      <section class="rsec"><div class="sh"><span class="lbl">Views vs data</span><span class="note">Each view is checked over the window it looks ahead: today, past 12 months, or multi-year</span></div>
+        <div class="ht-wrap"><table class="mx"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="keyrow"><span><i class="g a"></i>Agrees</span><span><i class="g p"></i>Partly</span><span><i class="g d"></i>Differs</span><span><i class="g n"></i>Not priced in yet</span><span>· No view</span>
+          <span><span class="abar" style="width:48px"><i class="a" style="width:50%"></i><i class="p" style="width:25%"></i><i class="d" style="width:25%"></i></span>Bar = share of that topic's views</span><span>Click a row to jump to the quotes</span></div></section>
+      <section class="rsec" id="nv-detail">${detail}</section>`;
 
+    // ---- side column: who's here (click to filter), where the data differs, about ----
+    const differs = evaluated.filter((e) => e.m === "d" || e.m === "n");
+    const pops = people.map((a) => popHtml(`p-${a.id}`, escHtml(a.name), `<p><b>${escHtml(a.role)}.</b> ${escHtml(a.lens)}</p><p>Views as of ${escHtml(fmtDate(a.views_as_of))}.${a.stale ? ` <b>Older than ${ANALYST_STALE_DAYS} days, may be out of date.</b>` : ""}</p>`)).join("");
+    document.getElementById("analysts-rail").innerHTML = `
+      <section class="rsec"><div class="sh"><span class="lbl">Who's here</span><span class="note">click a name to show only their views</span></div>
+        <ul class="tl roster">${people.map((a) => `<li data-person="${escHtml(a.id)}"><span class="av">${escHtml(a.initials)}</span>
+          <button class="e" type="button" data-person="${escHtml(a.id)}"><b>${escHtml(a.name)}</b><small>${escHtml(a.role)}</small></button>
+          <span class="st2${a.stale ? " old" : ""}">${a.stale ? "⚠ " : ""}${escHtml(fmtDate(a.views_as_of).replace(/, \d{4}$/, ""))} ${ib(`p-${a.id}`, a.name)}</span></li>`).join("")}</ul>
+        <button class="roster-all nv-off" type="button" id="nv-all">Show everyone</button>
+        <p class="nar" style="margin-top:10px">⚠ = views older than ${ANALYST_STALE_DAYS} days, may be out of date.</p></section>
+      ${differs.length ? `<section class="rsec"><div class="sh"><span class="lbl">Where the data differs</span></div><ul class="tl">${differs.map((e) => `<li><span class="d">${escHtml(shortName(e.a))}</span><span class="e">${escHtml(content.topics.find((x) => x.id === e.t.topic)?.title ?? "")}<small class="clamp">${e.r.reading}</small></span></li>`).join("")}</ul></section>` : ""}
+      <section class="rsec"><div class="sh"><span class="lbl">About</span></div>
+        <p class="nar">A comparison of frameworks, not a verdict on who's right. Views are short paraphrases (quotes verbatim), linked and dated. Not affiliated with or endorsed by anyone named. Not investment advice.</p></section>
+      ${pops}`;
+
+    const rail = document.getElementById("analysts-rail");
     const applyFilter = (id) => {
-      wrap.querySelectorAll(".nv-chip").forEach((c) => c.classList.toggle("active", c.dataset.person === id));
-      wrap.querySelectorAll(".nv-view").forEach((v) => v.classList.toggle("nv-hidden", id !== "all" && v.dataset.person !== id));
-      wrap.querySelectorAll(".nv-group, .nv-topic").forEach((el) => el.classList.toggle("nv-hidden", !el.querySelector(".nv-view:not(.nv-hidden)")));
-      const a = people.find((p) => p.id === id);
-      document.getElementById("nv-person-slot").innerHTML = a ? personCard(a) : "";
+      wrap.querySelectorAll(".vw").forEach((v) => v.classList.toggle("nv-off", id !== "all" && v.dataset.person !== id));
+      wrap.querySelectorAll(".nvgroup, .nvtopic").forEach((el) => el.classList.toggle("nv-off", !el.querySelector(".vw:not(.nv-off)")));
+      rail.querySelectorAll(".roster li").forEach((li) => li.classList.toggle("on", li.dataset.person === id));
+      document.getElementById("nv-all").classList.toggle("nv-off", id === "all");
+      if (id !== "all") document.getElementById("nv-detail").scrollIntoView({ behavior: "smooth", block: "start" });
     };
-    wrap.querySelector(".nv-people").addEventListener("click", (ev) => {
-      const chip = ev.target.closest(".nv-chip");
-      if (chip) applyFilter(chip.dataset.person);
+    rail.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button.e[data-person]");
+      if (btn) applyFilter(btn.parentElement.classList.contains("on") ? "all" : btn.dataset.person);
+      if (ev.target.closest("#nv-all")) applyFilter("all");
     });
-
-    // "About these people" list inside the intro card.
-    const about = document.getElementById("nv-about-people");
-    if (about) {
-      about.innerHTML = people.map((a) => `<li><b>${escHtml(a.name)}</b> (${escHtml(a.role)}). ${escHtml(a.lens)} <span class="nv-asof${a.stale ? " stale" : ""}">Views as of ${escHtml(fmtDate(a.views_as_of))}${a.stale ? ", may be out of date" : ""}.</span></li>`).join("");
-    }
   } catch (err) {
     wrap.innerHTML = `<p class="loading">Failed to load notable views: ${escHtml(err.message)}</p>`;
   }
