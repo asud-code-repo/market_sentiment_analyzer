@@ -161,6 +161,7 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
 - **Built (2026-11-13):** `treasury.ts` now groups auctions by `original_security_term`, includes reopenings and stores `reopening` in `raw_payload` (10Y: 97 of 144 auctions since 2015 are reopenings, 30Y: 95 of 142, 5Y: 7 of 142, 2Y: 0). New `mcp_server/src/lib/auctionQuality.ts` (`isWeakAuction`, provisional constants) + 3 tests. `computeAuctionDemand` adds `weak_auction`/`reopening` for 10Y/30Y, `days_old`/`stale` for every tenor, and `weak_auction_count`. The rules doc has a new `### Treasury auction quality (10Y/30Y)` section, and its Fiscal Dominance row now says reopenings are included.
 - **Base rate (2015-01 → 2026-10, reopenings included):** weak = 10Y 5/138 (3.6%), 30Y 3/136 (2.2%). Bid-to-cover alone: 7.2% / 3.7%; indirect share alone: 18.1% / 12.5%. Latest (Oct 7 / Oct 8 reopenings): both strong (10Y btc 2.77 vs 2.54, indirect 80.3 vs 74.1).
 - **Open: source staleness.** Fiscal Data `auctions_query` had nothing newer than Oct 7/8 for 10Y/30Y on 2026-11-13 (record_date stops at Oct 30; auctions from Oct 19 have null results). Surfaced via `days_old` / `stale` (> 40 days). A more current official source (TreasuryDirect's auction-results service) is a possible follow-up, not built.
+- **Decision (2026-11-13):** if November's 10Y/30Y auctions still aren't in Fiscal Data by **2026-11-20**, treat the lag as structural and propose the TreasuryDirect switch as its own change.
 
 - **Touches:** ingestion; `get_context_indicators`
 - **Data:** Fiscal Data auction results (bid-to-cover, indirect bidder share).
@@ -178,7 +179,14 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - `red_count` unchanged.
 - **Depends on:** E3
 
-## E6 — Private-credit proxy (BDC ETF) · Priority 7 · Optional · Status: agreed, not built
+## E6 — Private-credit proxy (BDC ETF) · Priority 7 · Optional · Status: backtest FAILED, not built (decision pending)
+
+- **Backtest (2026-11-13, Yahoo BIZD adjusted close = total return, 2013-03 → 2026-10, 3,416 days):** the flag (30d total return ≤ −10%) fires on 1.6% of days, in 10 episodes, almost all during equity selloffs already under way (Jan 2016, Dec 2018, Mar 2020, 2022, Apr 2025).
+  - VIX +5pts within 30d: **24%** after the flag vs **33%** on any day.
+  - S&P −5% within 30d: **31%** after the flag, but **30%** for days when the S&P was already down ≥ 5% over 30d (the control). The flag adds nothing beyond visible equity stress. With the S&P not already down (8 days): 13%, the same as the 14% base rate.
+  - Median S&P 30d forward return after the flag: **+6.9%** (vs +1.4% overall). Flags clustered near bottoms; the proxy is coincident or lagging, not leading.
+  - Price-only variant: 93 flag days vs 55 for total return. 38 days were flagged only because of distributions, which confirms the bias the spec warned about.
+- **Recommendation:** don't ship the flag (same outcome as E2's divergence flag). Options: drop E6 entirely, or track BIZD 7d/30d total return as plain context with no flag.
 
 - **Touches:** ingestion (`massive.ts` `CONTEXT_TICKERS`, not the personal watchlist table); `get_context_indicators`
 - **Data:** BIZD (or similar BDC ETF) from Massive.
