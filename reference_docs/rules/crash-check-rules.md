@@ -735,8 +735,10 @@ change. The review also lists any watchlist ticker without a slot
 
 ## Personal Decision Trigger Types (structure, not live dates)
 
-Four triggers: Fed-event, inflation-print, earnings-guidance, and a
-rate-reset trigger tied to a stable-value fund. Trigger definitions
+Five triggers: Fed-event, inflation-print, fiscal-event (Treasury quarterly
+refunding, added 2026-11-13; see "Fiscal-event trigger" at the end of this
+section), earnings-guidance, and a rate-reset trigger tied to a
+stable-value fund. Trigger definitions
 themselves (dates, exact thresholds) belong in the live master-prompt doc /
 a config the user updates.
 
@@ -832,6 +834,31 @@ with the upcoming event: "Approaching" if it's within 30 days, otherwise
 "Upcoming", with the last event's outcome shown underneath. That label is a
 plain date rule for display only. It doesn't change the stored `status`,
 and it doesn't replace the run's approaching-vs-pending judgment.
+
+### Fiscal-event trigger (Treasury quarterly refunding)
+
+Added 2026-11-13 (build spec E3). It follows the Fed-event and
+inflation-print pattern above in every mechanical respect:
+
+- **Calendar-backed.** `get_trigger_status` returns `fiscal_event_trigger`
+  (`current_target_date`/`label`, `next_target_date`/`label`,
+  `calendar_needs_update`) from the refunding dates in
+  `economicCalendar.ts`. Each date is the Wednesday 8:30am ET Quarterly
+  Refunding Statement; its label also names the Monday borrowing-estimates
+  release. Dates come only from Treasury's own statements, never from a
+  pattern.
+- **Name and dedupe.** Write the entry as `Fiscal-event trigger (<label>)`.
+  `write_snapshot` keeps only the latest entry with that prefix, forces
+  `status` to `fired` once its date has passed, and attaches
+  `next_date`/`next_label`.
+- **`calendar_needs_update` flips roughly quarterly, by design.** Treasury
+  announces only the next refunding date, so the flag turns true once the
+  last known date has passed, until the next date is added from that
+  statement's last paragraph. When it's true, tell the user; don't guess.
+- **The `note` is analyst judgment:** coupon auction sizes (changed or held,
+  and any guidance on future increases), buyback scale, the bill share of
+  issuance, and any yield-targeting or "terming out" language. Like the
+  other calendar triggers, it never feeds `red_count` or wave logic.
 
 ## Recovery / Complacency Watch Bands (informational, always shown — Tier 2 unless noted)
 

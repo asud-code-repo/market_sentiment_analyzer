@@ -17,7 +17,7 @@ import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/wat
 import { computeSeriesDelta } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
-import { computeFedEventTrigger, computeInflationPrintTrigger } from "./lib/economicCalendar.js";
+import { computeFedEventTrigger, computeInflationPrintTrigger, computeFiscalEventTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
 import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
@@ -201,10 +201,11 @@ server.registerTool(
   {
     description:
       "Returns personal decision trigger status (fired/approaching/pending), the Warsh Fed " +
-      "classification, and fed_event_trigger/inflation_print_trigger — computed here from a " +
+      "classification, and fed_event_trigger/inflation_print_trigger/fiscal_event_trigger — computed here from a " +
       "maintained calendar (economicCalendar.ts), not your memory. current_target_date/label identify " +
-      "which FOMC/CPI event is current; you still judge the qualitative outcome (hawkish/dovish, " +
-      "beat/miss). If calendar_needs_update is true, tell the user rather than guessing a date. " +
+      "which FOMC/CPI/Treasury-refunding event is current; you still judge the qualitative outcome (hawkish/dovish, " +
+      "beat/miss; for refunding: coupon sizes, buyback scale, any yield-targeting language). If " +
+      "calendar_needs_update is true, tell the user rather than guessing a date. " +
       "Earnings-guidance dates are deliberately excluded (no fixed public schedule) — stays your call.",
   },
   withLogging("get_trigger_status", async () => {
@@ -219,6 +220,7 @@ server.registerTool(
       warsh_hard_rules_active: latest.warsh_hard_rules_active,
       fed_event_trigger: computeFedEventTrigger(),
       inflation_print_trigger: computeInflationPrintTrigger(),
+      fiscal_event_trigger: computeFiscalEventTrigger(),
     });
   }),
 );
@@ -364,10 +366,10 @@ server.registerTool(
       "which is why the public dashboard couldn't show it; omit it entirely on a run with no prior " +
       "full report to diff against. `trigger_status` is automatically deduplicated server-side, " +
       "keeping only the latest entry (by `date`) per canonical trigger type (Fed-event/inflation-" +
-      "print/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
+      "print/fiscal-event/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
       "remove superseded entries yourself. When a trigger's target rolls to a new occurrence, " +
       "either replace the old entry in place or simply append a new one; the server keeps whichever " +
-      "has the later date. fed-event/inflation-print entries also get their `status` forced to " +
+      "has the later date. fed-event/inflation-print/fiscal-event entries also get their `status` forced to " +
       "'fired' server-side once their own `date` is today or in the past, regardless of what you " +
       "supply -- you still write the qualitative outcome in `note` (was it hawkish/dovish, in-line " +
       "or a beat/miss), just don't worry about the status enum lagging behind it. " +

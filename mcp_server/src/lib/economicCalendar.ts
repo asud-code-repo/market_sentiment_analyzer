@@ -89,6 +89,29 @@ const CPI_RELEASES: CalendarEvent[] = [
   // do not add placeholders here.
 ];
 
+// Treasury Quarterly Refunding announcements (E3, 2026-11-13): the
+// Wednesday 8:30am ET Quarterly Refunding Statement (coupon auction sizes,
+// buyback scale, forward guidance), preceded on the Monday by the
+// marketable-borrowing estimates. Verified 2026-11-13 directly against
+// treasury.gov press releases, each statement's last paragraph naming the
+// next one: sb0384 (Feb 4), sb0489 (May 6), sb0590 (Aug 5), sb0678 (Nov 4,
+// "The next quarterly refunding announcement will take place on Wednesday,
+// February 3, 2027"). Index:
+// https://home.treasury.gov/policy-issues/financing-the-government/quarterly-refunding/most-recent-quarterly-refunding-documents
+//
+// MAINTENANCE: Treasury announces only ONE refunding ahead, so after each
+// refunding add the next date from that statement's last paragraph. Until
+// then calendar_needs_update turns true once the last date here has passed
+// -- that roughly quarterly flip is the reminder, by design. Never add a
+// date by pattern (e.g. "first Wednesday of the month").
+const REFUNDING_ANNOUNCEMENTS: CalendarEvent[] = [
+  { date: "2026-02-04", label: "February 2026 Quarterly Refunding (estimates Feb 2, statement Feb 4)" },
+  { date: "2026-05-06", label: "May 2026 Quarterly Refunding (estimates May 4, statement May 6)" },
+  { date: "2026-08-05", label: "August 2026 Quarterly Refunding (estimates Aug 3, statement Aug 5)" },
+  { date: "2026-11-04", label: "November 2026 Quarterly Refunding (estimates Nov 2, statement Nov 4)" },
+  { date: "2027-02-03", label: "February 2027 Quarterly Refunding (estimates Feb 1, statement Feb 3)" },
+];
+
 /**
  * Pure date-lookup, not a status classification — answers "which meeting/
  * release IS current," never "is it fired/pending." Defensively re-sorts
@@ -153,6 +176,18 @@ export function computeInflationPrintTrigger(today?: string): EconomicEventTrigg
   return toTriggerShape(resolveCalendarEvents(CPI_RELEASES, today));
 }
 
+export function computeFiscalEventTrigger(today?: string): EconomicEventTrigger {
+  return toTriggerShape(resolveCalendarEvents(REFUNDING_ANNOUNCEMENTS, today));
+}
+
+/** Calendar for a trigger_status entry, matched by canonical name prefix; null for non-calendar triggers. */
+function calendarForTriggerName(lowerName: string): CalendarEvent[] | null {
+  if (lowerName.startsWith("fed-event")) return FOMC_MEETINGS;
+  if (lowerName.startsWith("inflation-print")) return CPI_RELEASES;
+  if (lowerName.startsWith("fiscal-event")) return REFUNDING_ANNOUNCEMENTS;
+  return null;
+}
+
 /**
  * Attaches the next scheduled meeting/release to each fed-event /
  * inflation-print trigger entry whose own date has passed, so the public
@@ -169,7 +204,7 @@ export function attachNextScheduledEvents(entries: unknown[], today: string = ne
     const entry = raw as Record<string, unknown>;
     const name = typeof entry.name === "string" ? entry.name.toLowerCase() : "";
     const date = typeof entry.date === "string" ? entry.date : null;
-    const calendar = name.startsWith("fed-event") ? FOMC_MEETINGS : name.startsWith("inflation-print") ? CPI_RELEASES : null;
+    const calendar = calendarForTriggerName(name);
     if (!calendar || !date || date > today) return raw;
     const { next_date: _d, next_label: _l, ...rest } = entry;
     const next = resolveCalendarEvents(calendar, date).next_upcoming;

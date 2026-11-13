@@ -258,6 +258,7 @@ export async function getLatestCrashCheckWithProbability(): Promise<CrashCheckRo
 const CANONICAL_TRIGGER_PREFIXES = [
   "fed-event trigger",
   "inflation-print trigger",
+  "fiscal-event trigger", // Treasury quarterly refunding (E3, 2026-11-13)
   "earnings-guidance trigger",
   "rate-reset trigger",
 ];
@@ -397,7 +398,8 @@ export async function writeSnapshot(qualitative: {
         if (name.includes("rate-reset")) {
           return { ...trigger, status: rateResetTrigger.status, note: rateResetTrigger.note };
         }
-        if ((name.includes("fed-event") || name.includes("inflation-print")) && typeof trigger.date === "string" && trigger.date <= today) {
+        // fiscal-event (Treasury refunding, E3) added 2026-11-13: same calendar-backed, past-date-is-mechanical logic.
+        if ((name.includes("fed-event") || name.includes("inflation-print") || name.includes("fiscal-event")) && typeof trigger.date === "string" && trigger.date <= today) {
           return { ...trigger, status: "fired" };
         }
         return trigger;

@@ -98,7 +98,10 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - `red_count` unchanged.
 - **Depends on:** E9
 
-## E3 — Fiscal-event trigger (Treasury quarterly refunding) · Priority 3 · Status: agreed, not built
+## E3 — Fiscal-event trigger (Treasury quarterly refunding) · Priority 3 · Status: done
+
+- **Built (2026-11-13):** `REFUNDING_ANNOUNCEMENTS` + `computeFiscalEventTrigger()` in `economicCalendar.ts`; `fiscal_event_trigger` in `get_trigger_status`; `"fiscal-event trigger"` added to `CANONICAL_TRIGGER_PREFIXES`, and (separately) to the forced-`fired` check in `supabase.ts`; `attachNextScheduledEvents` covers it; 3 tests in `economicCalendar.test.ts`; rules doc `### Fiscal-event trigger (Treasury quarterly refunding)`; one-line additions to project-instructions steps 2 and 11.
+- **Dates (verified 2026-11-13 on treasury.gov, each statement naming the next):** 2026-02-04 (sb0384), 2026-05-06 (sb0489), 2026-08-05 (sb0590), 2026-11-04 (sb0678), and the next, **2027-02-03** ("The next quarterly refunding announcement will take place on Wednesday, February 3, 2027", sb0678). `calendar_needs_update` turns true from 2027-02-04 until the May 2027 date is added from the Feb 3 statement.
 
 - **Touches:** `economicCalendar.ts`; `get_trigger_status`; `write_snapshot` server-side trigger dedupe; `project-instructions.md` steps 2 and 11
 - **Data:** Treasury quarterly refunding announcement dates from Treasury's official schedule — never guessed.
