@@ -1,3 +1,5 @@
+import { previousBusinessDay } from "./marketHolidays.js";
+
 /**
  * Whether the latest crash_checks row is actually from the expected
  * ingestion date, rather than a stale prior-day row silently being treated
@@ -56,14 +58,6 @@ const daysBetween = (fromDateStr: string, toDateStr: string): number => {
   return Math.round((to - from) / 86_400_000);
 };
 
-/** The weekday strictly before the given YYYY-MM-DD date (Monday -> prior Friday). */
-function previousWeekday(dateStr: string): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  do {
-    d.setUTCDate(d.getUTCDate() - 1);
-  } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * A daily-cadence series (VIX, HY spread, S&P, 10Y) is stale if its
@@ -74,8 +68,11 @@ function previousWeekday(dateStr: string): string {
  * public CSV 2026-09-24, not just our database — the ingest was healthy both
  * days the run aborted "stale"). Requiring today's date (or even yesterday's)
  * made the scheduled run unable to pass on some weekdays. Three or more
- * business days behind is a genuinely missed update. Holidays aren't modeled, so a
- * post-holiday day may still flag conservatively. A monthly series
+ * business days behind is a genuinely missed update. Business days skip
+ * weekends AND market holidays (marketHolidays.ts, added 2026-11-13): before
+ * that, a holiday counted as a business day, so after Veterans Day the
+ * 10-year's newest real reading (Nov 10) read as 3 days old and blocked the
+ * scheduled run, though no newer value existed. A monthly series
  * (Sahm Rule, sourced from BLS employment data) is dated to the 1st of the
  * observed month and published with that month's BLS jobs report (~first
  * Friday of month M+1). So the newest available reading is dated two months
@@ -92,7 +89,7 @@ const MONTHLY_MAX_AGE_DAYS = 75;
 
 function isSeriesFresh(cadence: "daily" | "monthly", observationDate: string, now: Date): boolean {
   if (cadence === "daily") {
-    return observationDate >= previousWeekday(previousWeekday(mostRecentWeekday(easternDateString(now))));
+    return observationDate >= previousBusinessDay(previousBusinessDay(mostRecentWeekday(easternDateString(now))));
   }
   return daysBetween(observationDate, easternDateString(now)) <= MONTHLY_MAX_AGE_DAYS;
 }
