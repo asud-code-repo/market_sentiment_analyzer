@@ -417,6 +417,26 @@
   .scale div.on { background:var(--surface-1); box-shadow: inset 0 2px 0 var(--text-primary), inset 0 0 0 1px var(--hair-strong); }
   .scale div.on b { color:var(--text-primary); }
 
+  /* ---------- distance to red (E7) ---------- */
+  .dtr { border-top:1px solid var(--hair-strong); }
+  .dtr .row { display:grid; align-items:center; column-gap:18px; padding:9px 10px 9px 14px;
+    grid-template-columns: minmax(150px,1fr) minmax(160px,2.2fr) minmax(150px,1.1fr);
+    border-bottom:1px solid var(--hair); box-shadow: inset 3px 0 0 var(--tick, transparent); }
+  .dtr .row[data-status=good] { --tick: var(--good); }
+  .dtr .row[data-status=warning] { --tick: var(--warning); }
+  .dtr .row[data-status=critical] { --tick: var(--critical); background: var(--critical-bg); }
+  .dtr .name b { font-weight:600; }
+  .dtr .name small { display:block; font:var(--t3); color:var(--text-muted); margin-top:1px; }
+  .dtr .bar, .dtr .track, .dtr .fill, .dtr .tick, .dtr .redline { display:block; }
+  .dtr .track { position:relative; height:8px; background:var(--sunk); border-radius:1px; }
+  .dtr .fill { position:absolute; left:0; top:0; bottom:0; background:var(--tick, var(--text-muted)); border-radius:1px; }
+  .dtr .tick { position:absolute; top:-3px; bottom:-3px; width:0; border-left:1px dashed var(--text-muted); }
+  .dtr .redline { position:absolute; right:0; top:-4px; bottom:-4px; width:2px; background:var(--critical); }
+  .dtr .read { text-align:right; font:500 13px/1.25 var(--font-ui); color:var(--text-primary); white-space:nowrap; }
+  .dtr .read small { display:block; font:var(--t3); color:var(--text-muted); white-space:normal; }
+  .dtr .state { font:var(--t3); color:var(--text-secondary); }
+  .dtr-na { font:var(--t3); color:var(--text-muted); padding:10px 0; }
+
   /* ---------- LLM estimate (full reports) ---------- */
   .llm-now { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
   .llm-now .n { font:var(--t1); font-size:22px; }
@@ -632,6 +652,8 @@
     .ledger:not(.fl) .row > .thr::before { content:"green if "; }
     .ledger:not(.fl) .row > .num .chg:not(.flat)::after { content:" 7d"; color:var(--text-muted); font-weight:400; }
     .ledger .streak small { display:none; }
+    .dtr .row { grid-template-columns: 1fr auto; grid-template-areas:"name read" "bar bar"; row-gap:8px; column-gap:10px; padding:10px 8px 10px 12px; }
+    .dtr .row > .name { grid-area:name; } .dtr .row > .read { grid-area:read; } .dtr .row > .bar { grid-area:bar; }
     .spark { width:100px; }
     .hazard { grid-template-columns:1fr; gap:12px; }
     [popover].pop, [popover].pop.wide { max-width:calc(100vw - 24px); }
@@ -3071,6 +3093,65 @@ function renderGateLedger(row, idx) {
   </section>`;
 }
 
+// Distance to red (build spec E7). Every threshold shown here comes from the
+// row's distance_to_red, written by the rule engine from rules.ts
+// PANEL_BANDS. Nothing below hardcodes a band. Bars run from 0 to the RED
+// line; the dashed tick is where AMBER starts.
+const DTR_ROWS = [
+  { k: "vix", name: "VIX", dist: (d) => `${d.toFixed(1)} pts`, line: (v) => `${v}` },
+  { k: "hy_spread", name: "HY spread", dist: (d) => `${Math.round(d)}bp`, line: (v) => `${v}bp` },
+  { k: "sp_drawdown", name: "S&amp;P drawdown", dist: (d) => `${d.toFixed(1)} pts`, line: (v) => `${v}% below the high` },
+  { k: "treasury_10y", name: "10Y Treasury", dist: (d) => `${Math.round(d * 100)}bp`, line: (v) => `${v.toFixed(2)}%` },
+  { k: "sahm_rule", name: "Sahm rule", dist: (d) => d.toFixed(2), line: (v) => v.toFixed(2) },
+];
+
+function renderDistanceToRed(row) {
+  const dtr = row.distance_to_red;
+  const pop = popHtml("i-dtr", "Distance to red · what is this?", `
+    <p><b>What it is.</b> How far each gate indicator is from its red line, using the rule engine's own thresholds. The bar fills from zero toward the red line on the right; the dashed tick marks where amber begins.</p>
+    <p><b>Why it matters.</b> It shows which indicator is closest to flipping before it does. A reading has to sit above the red line on ${dtr?.required_confirmation_days ?? 2} separate dates before it counts.</p>
+    <p><b>What it doesn't mean.</b> One red indicator doesn't authorize a wave. That takes 3 of the 6 at confirmed red at the same time.</p>
+    <p class="fine">Red means strictly above the line, so a reading exactly on it is still amber. For the S&amp;P, the % shown is how far the index itself would have to fall.</p>`);
+  const head = `<div class="sh"><span class="lbl">Distance to red</span><span class="note">Same thresholds as the gate · context, not a signal</span>${ib("i-dtr", "distance to red")}</div>`;
+  if (!dtr?.indicators) {
+    return `<section class="rsec" id="section-distance">${head}<p class="dtr-na">Not computed for this date. This view starts with runs from November 13, 2026.</p>${pop}</section>`;
+  }
+  const rows = DTR_ROWS.map((g) => {
+    const d = dtr.indicators[g.k];
+    if (!d || typeof d.value !== "number") return "";
+    const fill = Math.max(0, Math.min(1, d.value / d.red_above));
+    const amberAt = Math.max(0, Math.min(1, d.amber_from / d.red_above));
+    let read, sub;
+    if (d.color === "RED") {
+      read = "In red";
+      sub = d.red_confirmation_days_needed > 0 ? `${d.red_confirmation_days_needed} more date${d.red_confirmation_days_needed === 1 ? "" : "s"} to confirm` : "confirmed";
+    } else {
+      read = `${g.dist(d.distance_to_red)} to red`;
+      const pct = d.pct_move_to_red;
+      sub = pct == null ? `red above ${g.line(d.red_above)}`
+        : g.k === "sp_drawdown" ? `S&amp;P would need to fall ${Math.abs(pct).toFixed(1)}%`
+        : `needs a ${pct.toFixed(1)}% rise · red above ${g.line(d.red_above)}`;
+    }
+    return `<div class="row" data-status="${STATUS_ATTR[d.color] ?? ""}">
+      <span class="name"><b>${g.name}</b><small>as of ${fmtMd(d.observation_date)}</small></span>
+      <span class="bar"><span class="track" role="img" aria-label="${g.name.replace("&amp;", "and")}: ${Math.round(fill * 100)}% of the way to red">
+        <span class="fill" style="width:${(fill * 100).toFixed(1)}%"></span>
+        <span class="tick" style="left:${(amberAt * 100).toFixed(1)}%"></span>
+        <span class="redline"></span>
+      </span></span>
+      <span class="read">${read}<small>${sub}</small></span>
+    </div>`;
+  }).join("");
+  const fp = dtr.fed_pivot_signal;
+  const word = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "—");
+  const fedRow = fp ? `<div class="row" data-status="${STATUS_ATTR[fp.color] ?? ""}">
+      <span class="name"><b>Fed pivot</b><small>manual judgment</small></span>
+      <span class="bar state">A state, not a distance</span>
+      <span class="read">${word(fp.state === "NONE" ? "None" : fp.state)}<small>red if ${word(fp.red_state)}</small></span>
+    </div>` : "";
+  return `<section class="rsec" id="section-distance">${head}<div class="dtr">${rows}${fedRow}</div>${pop}</section>`;
+}
+
 function renderHazardSection(row) {
   let body;
   if (row.hazard_10pct_status === "ALREADY_BREACHED") {
@@ -3362,7 +3443,7 @@ function renderReport(row, priorFullReport) {
     return;
   }
   renderStressVerdict(row, priorFullReport);
-  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderHazardSection(row) + renderProbabilitySection(row, priorFullReport);
+  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderDistanceToRed(row) + renderHazardSection(row) + renderProbabilitySection(row, priorFullReport);
   rail.innerHTML = renderRail(row);
   const more = document.getElementById("nar-more");
   if (more) more.addEventListener("click", () => { document.getElementById("nar-text").classList.add("open"); more.remove(); });
@@ -4160,7 +4241,7 @@ async function main() {
     // 2026-09-19, F12) — the exact bug this same pagination already fixed
     // for data_points history further down.
     ALL_ROWS = await fetchAllFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status&order=run_at.asc",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,distance_to_red,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status&order=run_at.asc",
     );
 
     if (ALL_ROWS.length === 0) {

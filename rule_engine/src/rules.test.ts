@@ -15,7 +15,10 @@ import {
   drawdownPct,
   isRecoveredFromTrough,
   computeConfirmation,
+  computeDistanceToRed,
+  PANEL_BANDS,
   type ConfirmationEntry,
+  type DistanceInput,
 } from "./rules.js";
 
 describe("band functions — boundary values", () => {
@@ -181,5 +184,72 @@ describe("computeConfirmation — Signal Tiering & Confirmation Windows", () => 
     }
     expect(entry!.days_confirmed).toBe(15);
     expect(entry!.confirmed).toBe(true);
+  });
+});
+
+describe("computeDistanceToRed — distance-to-RED view (E7)", () => {
+  const entry = (color: "GREEN" | "AMBER" | "RED", days = 1): ConfirmationEntry => ({
+    color, observation_date: "2026-11-12", days_confirmed: days, confirmed: days >= 2, first_breach_date: "2026-11-12",
+  });
+  const input = (value: number, color: "GREEN" | "AMBER" | "RED", days = 1): DistanceInput => ({
+    value, observation_date: "2026-11-12", confirmation: entry(color, days),
+  });
+  const base = {
+    vix: input(19.06, "GREEN"),
+    hy_spread: input(300, "GREEN"),
+    sp_drawdown: input(3, "GREEN"),
+    treasury_10y: input(4.98, "AMBER", 5),
+    sahm_rule: input(0.2, "GREEN"),
+  };
+  const sp = { level: 6790, ath: 7000 }; // 3% drawdown
+  const fed = { state: "PAUSE" as const, color: "AMBER" as const };
+
+  it("thresholds come straight from PANEL_BANDS", () => {
+    const d = computeDistanceToRed(base, sp, fed);
+    for (const k of Object.keys(PANEL_BANDS) as (keyof typeof PANEL_BANDS)[]) {
+      expect(d.indicators[k].amber_from).toBe(PANEL_BANDS[k].amber_from);
+      expect(d.indicators[k].red_above).toBe(PANEL_BANDS[k].red_above);
+    }
+  });
+
+  it("10yr at 4.98% is 2bp (0.4%) from RED and needs 2 RED days once it crosses", () => {
+    const t = computeDistanceToRed(base, sp, fed).indicators.treasury_10y;
+    expect(t.color).toBe("AMBER");
+    expect(t.distance_to_red).toBe(0.02);
+    expect(t.pct_move_to_red).toBe(0.4);
+    expect(t.distance_to_amber).toBe(-0.68); // already past AMBER
+    expect(t.red_days_confirmed).toBe(0); // AMBER streak days don't count toward RED
+    expect(t.red_confirmation_days_needed).toBe(2);
+  });
+
+  it("exactly on the red line is still AMBER (RED is strictly above)", () => {
+    const t = computeDistanceToRed({ ...base, treasury_10y: input(5.0, "AMBER") }, sp, fed).indicators.treasury_10y;
+    expect(t.color).toBe("AMBER");
+    expect(t.distance_to_red).toBe(0);
+  });
+
+  it("RED: negative distance, confirmation countdown from the streak", () => {
+    const one = computeDistanceToRed({ ...base, vix: input(40, "RED", 1) }, sp, fed).indicators.vix;
+    expect(one.color).toBe("RED");
+    expect(one.distance_to_red).toBe(-5);
+    expect(one.red_days_confirmed).toBe(1);
+    expect(one.red_confirmation_days_needed).toBe(1);
+    const two = computeDistanceToRed({ ...base, vix: input(40, "RED", 2) }, sp, fed).indicators.vix;
+    expect(two.red_confirmation_days_needed).toBe(0);
+  });
+
+  it("S&P drawdown % move is the index move to the line, not a % of a %", () => {
+    const d = computeDistanceToRed(base, sp, fed).indicators.sp_drawdown;
+    // RED line = 20% below ATH = 5600; from 6790 that's a -17.53% fall.
+    expect(d.pct_move_to_red).toBe(-17.53);
+    expect(d.pct_move_to_amber).toBe(-7.22); // 6300
+    expect(d.distance_to_red).toBe(17); // percentage points of drawdown
+  });
+
+  it("zero base gives a null % move, never a fake number; fed pivot is a state", () => {
+    const d = computeDistanceToRed({ ...base, sahm_rule: input(0, "GREEN") }, sp, fed);
+    expect(d.indicators.sahm_rule.pct_move_to_red).toBeNull();
+    expect(d.indicators.sahm_rule.distance_to_red).toBe(0.5);
+    expect(d.fed_pivot_signal).toEqual({ state: "PAUSE", color: "AMBER", amber_state: "PAUSE", red_state: "CUT" });
   });
 });

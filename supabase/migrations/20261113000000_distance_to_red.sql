@@ -1,0 +1,18 @@
+-- Distance-to-RED view (build spec E7, 2026-11-13). Written daily by the rule
+-- engine (rule_engine/src/rules.ts computeDistanceToRed, called from
+-- classify.ts) and carried forward by mcp_server's write_snapshot, the same
+-- way divergence_flags is. Read by get_indicator_panel and dashboard_site.
+-- Thresholds inside it come from rules.ts PANEL_BANDS, so neither reader
+-- hardcodes them. Informational only: never feeds red_count or wave logic.
+--
+-- Shape: { required_confirmation_days,
+--   indicators: { vix | hy_spread | sp_drawdown | treasury_10y | sahm_rule:
+--     { value, observation_date, color, amber_from, red_above,
+--       distance_to_amber, distance_to_red, pct_move_to_amber,
+--       pct_move_to_red, red_days_confirmed, red_confirmation_days_needed } },
+--   fed_pivot_signal: { state, color, amber_state, red_state } }
+--
+-- Nullable with no default: rows written before this migration stay null,
+-- and readers treat null as "not computed yet". Column-level grants are not
+-- needed: anon's existing table-level SELECT on crash_checks covers it.
+alter table crash_checks add column distance_to_red jsonb;

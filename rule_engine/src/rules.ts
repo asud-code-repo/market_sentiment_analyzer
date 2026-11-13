@@ -5,35 +5,56 @@
 
 export type Color = "GREEN" | "AMBER" | "RED";
 
-export function bandVix(value: number): Color {
-  if (value < 20) return "GREEN";
-  if (value <= 35) return "AMBER";
+/**
+ * The 5 numeric panel bands — the single code source for these thresholds
+ * (exported 2026-11-13 for distance-to-RED, build spec E7, so nothing else
+ * needs to hardcode them). Every band has the same shape: GREEN below
+ * `amber_from`; AMBER from `amber_from` up to AND INCLUDING `red_above`;
+ * RED only when strictly above `red_above`.
+ */
+export interface BandThresholds {
+  amber_from: number;
+  red_above: number;
+}
+
+export type NumericIndicator = "vix" | "hy_spread" | "sp_drawdown" | "treasury_10y" | "sahm_rule";
+
+export const PANEL_BANDS: Record<NumericIndicator, BandThresholds> = {
+  vix: { amber_from: 20, red_above: 35 },
+  hy_spread: { amber_from: 350, red_above: 500 }, // bps
+  sp_drawdown: { amber_from: 10, red_above: 20 }, // % below ATH
+  treasury_10y: { amber_from: 4.3, red_above: 5.0 }, // %
+  sahm_rule: { amber_from: 0.3, red_above: 0.5 },
+};
+
+/** Distinct observation dates a color must hold before it counts (Signal Tiering). */
+export const CONFIRMATION_REQUIRED_DAYS = 2;
+
+function bandByThresholds(value: number, t: BandThresholds): Color {
+  if (value < t.amber_from) return "GREEN";
+  if (value <= t.red_above) return "AMBER";
   return "RED";
+}
+
+export function bandVix(value: number): Color {
+  return bandByThresholds(value, PANEL_BANDS.vix);
 }
 
 /** Expects bps (e.g. 290, not 2.90) — convert FRED's percent reading before calling. */
 export function bandHySpreadBps(bps: number): Color {
-  if (bps < 350) return "GREEN";
-  if (bps <= 500) return "AMBER";
-  return "RED";
+  return bandByThresholds(bps, PANEL_BANDS.hy_spread);
 }
 
 export function bandSpDrawdownPct(drawdownPct: number): Color {
-  if (drawdownPct < 10) return "GREEN";
-  if (drawdownPct <= 20) return "AMBER";
-  return "RED";
+  return bandByThresholds(drawdownPct, PANEL_BANDS.sp_drawdown);
 }
 
 export function bandTreasury10y(pct: number): Color {
-  if (pct < 4.3) return "GREEN";
-  if (pct <= 5.0) return "AMBER";
-  return "RED";
+  return bandByThresholds(pct, PANEL_BANDS.treasury_10y);
 }
 
 export function bandSahmRule(value: number): Color {
-  if (value < 0.3) return "GREEN";
-  if (value <= 0.5) return "AMBER";
-  return "RED";
+  return bandByThresholds(value, PANEL_BANDS.sahm_rule);
 }
 
 export function bandFedPivotSignal(signal: "NONE" | "PAUSE" | "CUT"): Color {
@@ -171,7 +192,7 @@ export function computeConfirmation(
   color: Color,
   observationDate: string,
   prior: ConfirmationEntry | undefined,
-  requiredCount = 2,
+  requiredCount = CONFIRMATION_REQUIRED_DAYS,
 ): ConfirmationEntry {
   if (!prior) {
     // First-ever run for this indicator — bootstrap, same pattern as
@@ -201,4 +222,90 @@ export function computeConfirmation(
   }
   // Color changed on a new observation date — the streak resets.
   return { color, observation_date: observationDate, days_confirmed: 1, confirmed: 1 >= requiredCount, first_breach_date: observationDate };
+}
+
+/**
+ * Distance-to-RED (build spec E7, 2026-11-13): for each numeric panel
+ * indicator, how far today's reading is from its AMBER and RED lines.
+ * Deterministic and judgment-free; the thresholds come from PANEL_BANDS
+ * above, never restated. Persisted daily to crash_checks.distance_to_red
+ * and read by get_indicator_panel and dashboard_site. Never feeds red_count
+ * or wave logic.
+ *
+ * Sign convention: distance = line - value, in the indicator's own units.
+ * Positive = still below the line. Because RED is strictly ABOVE
+ * red_above, distance_to_red = 0 still reads AMBER. pct_move_to_* is the %
+ * move in the underlying needed to reach the line; for S&P drawdown that's
+ * the move in the S&P 500 level itself (negative = a fall), not a % of a %.
+ * Null when the base is not positive (no meaningful % move).
+ */
+export interface IndicatorDistance {
+  value: number;
+  observation_date: string;
+  color: Color;
+  amber_from: number;
+  red_above: number;
+  distance_to_amber: number;
+  distance_to_red: number;
+  pct_move_to_amber: number | null;
+  pct_move_to_red: number | null;
+  /** Consecutive confirming observation dates at RED so far (0 when not RED). */
+  red_days_confirmed: number;
+  /** More observation dates at RED needed before it counts (0 = confirmed RED). */
+  red_confirmation_days_needed: number;
+}
+
+export interface DistanceToRed {
+  required_confirmation_days: number;
+  indicators: Record<NumericIndicator, IndicatorDistance>;
+  /** No numeric series: a state, not a distance. */
+  fed_pivot_signal: { state: "NONE" | "PAUSE" | "CUT"; color: Color; amber_state: "PAUSE"; red_state: "CUT" };
+}
+
+export interface DistanceInput {
+  value: number;
+  observation_date: string;
+  confirmation: ConfirmationEntry;
+}
+
+const round = (n: number, dp: number) => Math.round(n * 10 ** dp) / 10 ** dp;
+
+function pctMove(from: number, to: number): number | null {
+  return from > 0 ? round((to / from - 1) * 100, 2) : null;
+}
+
+export function computeDistanceToRed(
+  inputs: Record<NumericIndicator, DistanceInput>,
+  sp500: { level: number; ath: number },
+  fedPivot: { state: "NONE" | "PAUSE" | "CUT"; color: Color },
+): DistanceToRed {
+  const indicators = {} as Record<NumericIndicator, IndicatorDistance>;
+  for (const key of Object.keys(PANEL_BANDS) as NumericIndicator[]) {
+    const { value, observation_date, confirmation } = inputs[key];
+    const t = PANEL_BANDS[key];
+    const color = bandByThresholds(value, t);
+    // S&P drawdown: express the % move as the S&P level change that would
+    // put the drawdown exactly on the line, ath * (1 - line/100).
+    const moveTo = (line: number) =>
+      key === "sp_drawdown" ? pctMove(sp500.level, sp500.ath * (1 - line / 100)) : pctMove(value, line);
+    const redDays = color === "RED" && confirmation.color === "RED" ? confirmation.days_confirmed : 0;
+    indicators[key] = {
+      value,
+      observation_date,
+      color,
+      amber_from: t.amber_from,
+      red_above: t.red_above,
+      distance_to_amber: round(t.amber_from - value, 4),
+      distance_to_red: round(t.red_above - value, 4),
+      pct_move_to_amber: moveTo(t.amber_from),
+      pct_move_to_red: moveTo(t.red_above),
+      red_days_confirmed: redDays,
+      red_confirmation_days_needed: Math.max(0, CONFIRMATION_REQUIRED_DAYS - redDays),
+    };
+  }
+  return {
+    required_confirmation_days: CONFIRMATION_REQUIRED_DAYS,
+    indicators,
+    fed_pivot_signal: { state: fedPivot.state, color: fedPivot.color, amber_state: "PAUSE", red_state: "CUT" },
+  };
 }

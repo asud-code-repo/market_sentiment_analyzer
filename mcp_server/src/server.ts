@@ -110,7 +110,11 @@ server.registerTool(
       "before proceeding (project-instructions.md step 1). hazard_model_10pct is a separate rule-engine-" +
       "computed estimate, not the same question as your own scenario-distribution judgment (crash_" +
       "probability_pct is derived from that, see write_snapshot) — report its band, not a re-derived " +
-      "percentage.",
+      "percentage. distance_to_red gives, per numeric indicator, the rule engine's own AMBER/RED lines " +
+      "(amber_from, red_above; RED is strictly above red_above, so distance 0 is still AMBER), the " +
+      "signed distance to each (positive = still below), the % move needed (for S&P drawdown, the move " +
+      "in the S&P level), and red_confirmation_days_needed; fed pivot is a state. Quote these, don't " +
+      "recompute them; null = not computed yet. One indicator near RED does not authorize a wave.",
   },
   withLogging("get_indicator_panel", async () => {
     const [latest] = await getRecentCrashChecks(1);
@@ -165,6 +169,9 @@ server.registerTool(
       sp500_level: latest.sp500_level,
       sp500_ath: latest.sp500_ath,
       sp500_ath_date: latest.sp500_ath_date,
+      // Distance-to-RED (E7): deterministic, computed by the rule engine from
+      // its own thresholds — no probability or narrative, safe in step 1.
+      distance_to_red: latest.distance_to_red ?? null,
       hazard_model_10pct: {
         status: latest.hazard_10pct_status,
         calibrated_pct: latest.hazard_10pct_calibrated_pct,

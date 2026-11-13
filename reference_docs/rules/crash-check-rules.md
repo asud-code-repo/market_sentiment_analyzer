@@ -228,8 +228,22 @@ cleared confirmation counts toward the "pending" tally shown in the
 dashboard, not the authorizing tally — e.g. "1 of 6 RED confirmed, 1 pending
 (confirmed on 1 of 2 required days)."
 
+**Distance to RED (added 2026-11-13, build spec E7).** The rule engine also
+writes `crash_checks.distance_to_red`, returned by `get_indicator_panel` and
+shown under the gate panel on the dashboard. For each of the 5 numeric
+indicators it gives the AMBER and RED lines from the table above (read from
+`rule_engine/src/rules.ts` `PANEL_BANDS`, the single code source for these
+bands), the signed distance to each in the indicator's own units (positive =
+still below the line), the % move needed to reach it, and
+`red_confirmation_days_needed`. RED means strictly above `red_above`, so a
+distance of 0 is still AMBER. For S&P drawdown the % move is the S&P 500
+level change, not a % of a %. Fed pivot signal is reported as a state, not a
+distance. It's deterministic and judgment-free, carries no probability or
+narrative (safe in step 1), and never feeds `red_count` or wave logic. One
+indicator near or at RED does not authorize a wave; that still needs 3 of 6
+confirmed.
+
 Additional bond-market bands (Tier 1, elevated priority, informational):
-- 10yr Treasury: amber above 4.5%, RED above 5.0%
 - 30yr Treasury: above 5.0% = bond vigilante signal
 - Rate hike probability (CME FedWatch): flag if >30% for any meeting in the cycle
 - Shiller CAPE: flag above 35x as extreme

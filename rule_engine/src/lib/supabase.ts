@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { ConfirmationEntry } from "../rules.js";
+import type { ConfirmationEntry, DistanceToRed } from "../rules.js";
 import type { DivergenceFlag } from "../divergence.js";
 
 function requireEnv(name: string): string {
@@ -113,6 +113,8 @@ export interface CrashCheckInsert {
   trigger_status: unknown;
   raw_source_data: unknown;
   divergence_flags: DivergenceFlag[];
+  // Distance-to-RED per panel indicator (E7, 2026-11-13) — see rules.ts computeDistanceToRed.
+  distance_to_red: DistanceToRed;
   sp500_trough: number | null;
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;

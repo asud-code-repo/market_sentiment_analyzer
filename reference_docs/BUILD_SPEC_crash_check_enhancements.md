@@ -133,7 +133,12 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
 - **Provisional escalation:** a CoreWeave credit event, or ORCL CDS > 400bp.
 - **Acceptance:** `get_rules` returns the new signal under Type D; step 6 text references it; the "ALL THREE" criteria are unchanged.
 
-## E7 — Distance-to-RED view · Priority 5 · Status: agreed, not built
+## E7 — Distance-to-RED view · Priority 5 · Status: built, waiting on the migration before push
+
+- **Pre-step done (2026-11-13):** user confirmed 4.3% is the intended 10yr AMBER line. The duplicate "10yr Treasury: amber above 4.5%, RED above 5.0%" line was **deleted** from "Additional bond-market bands" (the panel table is the single source); the 30yr, FedWatch and CAPE lines stay.
+- **Built:** `PANEL_BANDS` + `CONFIRMATION_REQUIRED_DAYS` exported from `rules.ts` (band functions now read them; existing boundary tests unchanged and passing); pure `computeDistanceToRed()` + 6 Vitest cases; `classify.ts` writes `crash_checks.distance_to_red` (migration `20261113000000_distance_to_red.sql`); `write_snapshot` carries it forward; `get_indicator_panel` returns it; dashboard "Distance to red" section under the gate panel (bars 0 → RED line, dashed AMBER tick, thresholds read from the row, none hardcoded); rules doc paragraph in "6-Indicator Panel"; one sentence in project-instructions step 1.
+- **Today (real data, 2026-11-13):** 10Y 4.98% is **2bp (+0.4%) from RED**. VIX 16.3 pts, HY 180bp, S&P −17.6% away, Sahm 0.50. All need 2 confirmed RED dates.
+- **Deploy order:** apply the migration **before** pushing. The rule engine's insert and the dashboard's select both name the new column, so pushing first would break the daily rule-engine run and the dashboard query.
 
 - **Touches:** `rule_engine/src/rules.ts`; new `crash_checks` JSONB column (migration); new read-only tool (e.g. `get_distance_to_red`) or an extension of `get_indicator_panel`; public dashboard section
 - **Data:** existing 6-indicator panel + rule-engine band thresholds

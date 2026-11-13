@@ -90,6 +90,11 @@ export interface CrashCheckRow {
   delta_log: { sign: "pos" | "neg"; text: string }[] | null;
   raw_source_data: unknown;
   divergence_flags: DivergenceFlag[] | null;
+  // Distance-to-RED (E7, 2026-11-13): rule-engine-owned, passed through
+  // as-is (shape: rule_engine/src/rules.ts DistanceToRed). Deliberately not
+  // re-typed here, so there is no second copy of the thresholds to drift.
+  // Null on rows from before the column existed.
+  distance_to_red: Record<string, unknown> | null;
   sp500_trough: number | null;
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
@@ -474,6 +479,9 @@ export async function writeSnapshot(qualitative: {
     // full chat-triggered report despite rendering fine on bare automated
     // refreshes (found 2026-08-16).
     divergence_flags: latest.divergence_flags,
+    // Rule-engine-owned too (E7) — dropping it here would blank the
+    // dashboard's distance-to-RED bars on every full report row.
+    distance_to_red: latest.distance_to_red,
     // Also rule-engine-owned (Stage 4 recovery tracking, classify.ts) —
     // carried forward for the same reason as divergence_flags above: these
     // are derived from market data + episode state, not something Claude

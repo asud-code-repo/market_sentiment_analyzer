@@ -18,6 +18,7 @@ import {
   slowBearW3Condition,
   drawdownPct,
   computeConfirmation,
+  computeDistanceToRed,
   type ConfirmationEntry,
   type WaveActive,
 } from "./rules.js";
@@ -84,6 +85,22 @@ export async function classify(): Promise<void> {
   const confirmedRedCount =
     Object.values(confirmationState).filter((c) => c.color === "RED" && c.confirmed).length +
     (fedPivotColor === "RED" ? 1 : 0);
+
+  // Distance-to-RED (E7): read-only view of the same 5 readings and their
+  // confirmation streaks against PANEL_BANDS. Computed from the five panel
+  // entries above (before slow-bear/recovery keys are added to the object)
+  // and never read back by any count or wave decision below.
+  const distanceToRed = computeDistanceToRed(
+    {
+      vix: { value: vix.value, observation_date: vix.observation_date, confirmation: confirmationState.vix },
+      hy_spread: { value: hySpreadBps, observation_date: hySpread.observation_date, confirmation: confirmationState.hy_spread },
+      sp_drawdown: { value: drawdown, observation_date: sp500.observation_date, confirmation: confirmationState.sp_drawdown },
+      treasury_10y: { value: treasury10y.value, observation_date: treasury10y.observation_date, confirmation: confirmationState.treasury_10y },
+      sahm_rule: { value: sahmRule.value, observation_date: sahmRule.observation_date, confirmation: confirmationState.sahm_rule },
+    },
+    { level: sp500.value, ath: sp500Ath.value },
+    { state: fedPivotSignal, color: fedPivotColor },
+  );
   const waveAuthorized = isWaveAuthorized(confirmedRedCount);
 
   // Slow-bear wave pathway (external backtest 2026-09-19, see rules.ts's
@@ -254,6 +271,7 @@ export async function classify(): Promise<void> {
     warsh_hard_rules_active: prior?.warsh_hard_rules_active ?? false,
     trigger_status: prior?.trigger_status ?? [],
     divergence_flags: divergenceFlags,
+    distance_to_red: distanceToRed,
     sp500_trough: sp500Trough,
     sp500_trough_date: sp500TroughDate,
     recovery_confirmed: recoveryConfirmed,
