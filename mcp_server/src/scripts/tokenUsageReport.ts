@@ -11,10 +11,12 @@
  * What this does and doesn't capture:
  *   + MCP tool request/response payloads (the variable part — this is the
  *     only thing that was previously invisible).
- *   + The static floor: project-instructions.md + crash-check-rules.md,
- *     sized fresh from disk each run of this script (so it doesn't silently
- *     go stale if those docs grow). dashboard-template.html dropped out
- *     2026-11-13 when the run stopped rendering an HTML artifact.
+ *   + The static floor: whatever is attached as Claude Desktop project
+ *     knowledge -- project-instructions.md + portfolio-review-template.html
+ *     -- sized fresh from disk each run of this script (so it doesn't
+ *     silently go stale if those docs grow). Since 2026-11-13
+ *     crash-check-rules.md is NOT attached (runs read it via get_rules, which
+ *     is logged like any tool payload) and dashboard-template.html is gone.
  *   - The MCP tool *schema* floor (names/descriptions/input schemas sent
  *     once per conversation) — approximated as a rough constant below;
  *     update it if server.ts's tool count/descriptions change materially.
@@ -37,7 +39,7 @@ import { TOKEN_LOG_PATH } from "../lib/tokenLog.js";
 const MCP_SCHEMA_FLOOR_TOKENS = 3500;
 
 const RULES_DIR = path.resolve(fileURLToPath(import.meta.url), "../../../../reference_docs/rules");
-const STATIC_DOCS = ["project-instructions.md", "crash-check-rules.md"];
+const STATIC_DOCS = ["project-instructions.md", "portfolio-review-template.html"];
 
 function easternDateString(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(

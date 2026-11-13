@@ -28,7 +28,7 @@ the steps in order.
   tools. Report them as-is and never re-derive or override them. If a
   field is `null`, say "unavailable", never zero.
 - **Rules are fixed and proposals stay separate.** `crash-check-rules.md`
-  is the operating policy: wave triggers, dry-powder deployment, the
+  (read it with the `get_rules` tool, section by section) is the operating policy: wave triggers, dry-powder deployment, the
   universal core, and the crash-type layers. Keep two lists in the
   output: (a) actions that fit inside the current rules, and (b)
   proposals that would *change* the rules. Each proposal needs evidence
@@ -158,7 +158,7 @@ wave-gated dry powder. Measure what holding it costs right now:
    (if it's positive, bonds aren't diversifying), sector rotation,
    positioning, and divergence flags. Don't combine these into a single
    composite score.
-2. **Crash-type exposure.** For each crash type in `crash-check-rules.md`
+2. **Crash-type exposure.** For each crash type in `crash-check-rules.md` (`get_rules` "Stage 1")
    (A stagflation, B recession, C credit/liquidity, D AI/tech bubble,
    E hybrid), say which current holdings are most exposed and which
    would hold up, and whether the rules' Stage 3 layer for that type

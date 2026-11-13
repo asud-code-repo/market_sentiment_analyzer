@@ -225,9 +225,11 @@ job (`.github/workflows/ingest.yml`).
 
 For Claude Desktop: point an MCP server entry at
 `mcp_server/src/server.ts` (via `npx tsx`), and attach
-`reference_docs/rules/crash-check-rules.md` +
 `reference_docs/rules/portfolio-review-template.html` +
-`reference_docs/rules/project-instructions.md` as project knowledge.
+`reference_docs/rules/project-instructions.md` as project knowledge. Don't
+attach `crash-check-rules.md`: runs read it section by section through the
+`get_rules` MCP tool (attached, it came back as search fragments once
+project knowledge outgrew what Claude Desktop loads in full).
 
 For `full_report_site`: a separate Cloudflare Pages project (root
 directory `full_report_site`), `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`

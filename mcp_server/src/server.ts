@@ -23,6 +23,7 @@ import { logTokenUsage } from "./lib/tokenLog.js";
 import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
+import { readRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -47,6 +48,27 @@ function withLogging(name: string, handler: (...args: any[]) => Promise<any>) {
     return result;
   };
 }
+
+server.registerTool(
+  "get_rules",
+  {
+    description:
+      "Returns crash-check-rules.md -- the rules source of truth (bands, wave triggers, crash-type " +
+      "criteria, formatting) -- read fresh from disk, one section at a time. It is NOT attached as " +
+      "project knowledge; use this whenever a step or another tool's description cites a section by " +
+      "name. No `section`: lists all sections with sizes. With `section`: that section in full " +
+      "(case-insensitive, partial names work, e.g. \"Formatting Requirements\", \"Stage 1\").",
+    inputSchema: { section: z.string().optional() },
+  },
+  withLogging("get_rules", async ({ section }) => {
+    const sections = parseSections(readRulesDoc());
+    if (!section) return json({ sections: tableOfContents(sections) });
+    const r = findSection(sections, section);
+    if ("found" in r) return json({ title: r.found.title, ...(r.found.parent ? { within: r.found.parent } : {}), content: r.found.content });
+    const candidates = "ambiguous" in r ? r.ambiguous.map((x) => x.title) : tableOfContents(sections).map((t) => t.title);
+    return json({ error: "ambiguous" in r ? `"${section}" matches several sections; ask for one.` : `No section matches "${section}".`, candidates });
+  }),
+);
 
 server.registerTool(
   "get_latest_snapshot",
