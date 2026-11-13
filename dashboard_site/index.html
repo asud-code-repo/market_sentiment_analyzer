@@ -3303,8 +3303,9 @@ function renderStressVerdict(row, priorFullReport) {
   const waveTxt = !wave ? '<b class="ok">No wave authorized</b>'
     : row.wave_authorized ? `<b class="bad">${escHtml(wave)} authorized</b>` : `<b class="warn">${escHtml(wave)} observed, not authorized</b>`;
   const band = row.hazard_10pct_band;
+  // Dot: green for Low, amber for Transitioning/High -- never red, so a High band can't be mistaken for a gating RED.
   const hazard = row.hazard_10pct_status === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
-    : band ? `<span class="dot"></span>${HAZARD_BAND_LABELS[band] ?? band} <small>${HAZARD_BAND_HIT_RATE[band] ?? ""} hist.</small>` : "Unavailable";
+    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${HAZARD_BAND_LABELS[band] ?? band} <small>${HAZARD_BAND_HIT_RATE[band] ?? ""} hist.</small>` : "Unavailable";
   const regime = row.warsh_classification
     ? `${escHtml(row.warsh_classification.charAt(0) + row.warsh_classification.slice(1).toLowerCase())} <small>${row.warsh_hard_rules_active ? "hard rules on" : "hard rules off"}</small>` : "—";
   const llmRow = row.crash_probability_pct != null ? row : priorFullReport;
