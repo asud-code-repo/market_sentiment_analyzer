@@ -58,6 +58,8 @@ const PLAUSIBILITY_RULES: Record<string, PlausibilityRule> = {
   // SOFR - IORB, bps (derived). History runs -21 to +315 (Sept 17 2019's
   // repo spike); a value far outside that is a unit or parsing bug.
   SOFR_IORB_SPREAD_BPS: { kind: "absolute", min: -100, max: 1000 },
+  // MOVE index: 2002-2026 closes ran 36.6 (Sept 2020) to 264.6 (Oct 2008).
+  MOVE: { kind: "absolute", min: 15, max: 500 },
 };
 
 export interface PlausibilityResult {

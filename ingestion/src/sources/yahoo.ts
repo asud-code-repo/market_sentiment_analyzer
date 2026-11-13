@@ -139,6 +139,44 @@ export async function fetchYahoo(): Promise<DataPoint[]> {
   }));
 }
 
+// ICE BofA MOVE index (Treasury implied volatility, the bond-market analog
+// to VIX), added 2026-11-13 (E2; crash-check-rules.md "Bond volatility
+// (MOVE)"). Previously rejected because Yahoo's endpoint is unofficial —
+// but VIX already depends on this same endpoint, so that objection no
+// longer stands on its own; the shared-dependency risk is accepted and
+// documented in the rules doc. Unlike VIX, MOVE is context-only, so it is
+// wired as an OPTIONAL source in ingest.ts: a failure logs a warning and
+// the tool reports the last stored value (or null), never failing the run.
+// Yahoo serves daily ^MOVE closes from 2002-11-12.
+const YAHOO_MOVE_SYMBOL = "^MOVE";
+
+function toMovePoint(obs: { date: string; close: number }): DataPoint {
+  return {
+    series_id: "MOVE",
+    source: "YAHOO",
+    source_series_code: YAHOO_MOVE_SYMBOL,
+    observation_date: obs.date,
+    value: obs.close,
+    unit: "index",
+    raw_payload: obs,
+  };
+}
+
+export async function fetchYahooMove(): Promise<DataPoint[]> {
+  const series = await fetchYahooDailyCloses(YAHOO_MOVE_SYMBOL, "range=3mo");
+  if (series.length === 0) {
+    throw new Error("Yahoo MOVE request returned no completed sessions in the last 3 months");
+  }
+  return series.map(toMovePoint);
+}
+
+export async function fetchYahooMoveBackfill(): Promise<DataPoint[]> {
+  const period2 = Math.floor(Date.now() / 1000);
+  const series = await fetchYahooDailyCloses(YAHOO_MOVE_SYMBOL, `period1=0&period2=${period2}`);
+  console.log(`  Yahoo backfill: MOVE — ${series.length} observations since ${series[0]?.date ?? "n/a"}`);
+  return series.map(toMovePoint);
+}
+
 export async function fetchYahooBackfill(): Promise<DataPoint[]> {
   // Explicit period1=0 (epoch) with interval=1d returns true daily
   // resolution back to VIX's actual 1990 inception (verified: 9,585

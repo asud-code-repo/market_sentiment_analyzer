@@ -74,7 +74,7 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
   - `red_count` / `wave_authorized` unchanged.
 - **Depends on:** E9
 
-## E2 — Bond volatility (MOVE) + divergence flag · Priority 2 · Status: agreed, not built
+## E2 — Bond volatility (MOVE) + divergence flag · Priority 2 · Status: MOVE built; divergence flag pending decision
 
 - **Touches:** ingestion; `data_points`; `get_context_indicators`; `divergence_flags`
 - **Data — Decision:** the watchlist feed (Massive grouped-daily) carries no indexes. Pull `^MOVE` through the existing Yahoo module (`yahoo.ts`), **optional and non-fatal** (log a warning, return null). Update the "Investigated and rejected" MOVE entry in `crash-check-rules.md` in the same change, and state the accepted risk there: VIX depends on the same unofficial Yahoo endpoint, so a Yahoo break takes out both.
@@ -84,6 +84,12 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
 - **Provisional thresholds:**
   - Elevated > 130; stress > 160.
   - **Decision — divergence, absolute deltas to match the schema:** MOVE 7d change ≥ +15pts while VIX 7d change < +3pts (reuses the existing VIX convention). Check against the backfill the same way as E1 before shipping.
+- **Built (2026-11-13):** `fetchYahooMove` / `fetchYahooMoveBackfill` in `yahoo.ts` (optional source `YahooMOVE` in `ingest.ts`, try/catch in `backfill.ts`), series `MOVE`, plausibility 15–500; `get_context_indicators.bond_volatility_move` (value, date, 3d/7d deltas, provisional level); bands in `mcp_server/src/lib/bondVolatility.ts`; the rules doc's "rejected" MOVE entry replaced with the accepted-risk note.
+- **Base rate (Yahoo daily closes 2002-11-12 → 2026-11-12, 5,930 days with both MOVE and VIX):**
+  - Levels: > 130 on 8.2% of days, > 160 on 2.5% (mostly 2008-09, 2022-23).
+  - Absolute divergence rule: 2.1% of days, 65 episodes (mostly 1–2 days), at real bond-vol events (2003, 2013 taper, 2022, Mar 2023).
+  - **No forward edge:** VIX rose ≥ 5pts within 30 days after 26% of flagged days vs 29% of all calm-VIX days. The original % rule: 1.0% of days, 34% hit rate on 62 days (noise).
+  - **Pending decision:** ship the flag as purely descriptive ("bonds moving, equities not"), or skip it and keep MOVE as level + deltas only.
 - **Acceptance:**
   - MOVE value + 3d/7d deltas returned.
   - New divergence flag appears in `get_indicator_panel` / `get_latest_snapshot` output in the same format as existing flags.

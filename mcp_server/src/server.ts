@@ -24,6 +24,7 @@ import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, 
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
 import { computeFundingPressureFlag } from "./lib/repoStress.js";
+import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { readRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
@@ -457,7 +458,7 @@ server.registerTool(
     description:
       "Returns supplementary macro context — financial stress/conditions indices, breakeven " +
       "inflation, bank lending standards, reverse repo, 2s10s curve, jobless claims, credit-card " +
-      "delinquencies, WTI, retail sales, IG credit spread, SOFR, the SOFR−IORB repo-stress spread, broad dollar index, NFCI " +
+      "delinquencies, WTI, retail sales, IG credit spread, SOFR, the SOFR−IORB repo-stress spread, MOVE bond volatility, broad dollar index, NFCI " +
       "sub-indices, TIPS real yield, two external recession-probability models, small-cap " +
       "breadth, gold price (GLD), copper price, Bitcoin price, and sector capital-rotation. " +
       "Informational only — never part of the 6-indicator wave-authorization gate. gold_price is " +
@@ -531,7 +532,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, repoStressSpread, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, repoStressSpread, moveDelta, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -586,6 +587,7 @@ server.registerTool(
         computeInsiderClusterSignals(),
         computeMarketPositioning(),
         getLatestRepoStressSpread(),
+        computeSeriesDelta("MOVE"),
         getRecentCrashChecks(1),
       ]);
     const divergenceFlags = latestCrashCheck?.divergence_flags ?? [];
@@ -782,6 +784,23 @@ server.registerTool(
           "on 3.1% of days, not backtested against outcomes); null = too little history, not false. Context only — " +
           "never part of red_count or wave authorization. 3d/7d deltas: get_series_deltas SOFR_IORB_SPREAD_BPS (already bps).",
       },
+      bond_volatility_move:
+        moveDelta.latest_value !== null
+          ? {
+              value: Math.round(moveDelta.latest_value * 100) / 100,
+              observation_date: moveDelta.latest_date,
+              delta_3d: moveDelta.delta_3d,
+              delta_7d: moveDelta.delta_7d,
+              level: classifyMoveLevel(moveDelta.latest_value),
+              level_bands: { elevated_above: MOVE_ELEVATED_ABOVE, stress_above: MOVE_STRESS_ABOVE, provisional: true },
+              signal:
+                "ICE BofA MOVE index — Treasury implied volatility, the bond-market analog to VIX (Yahoo ^MOVE, daily " +
+                "close). Level bands are PROVISIONAL (base rate 2002-2026: above 130 on 8.2% of days, above 160 on 2.5%, " +
+                "mostly 2008-09 and 2022-23), not backtested against outcomes. A delta is null when there is no " +
+                "observation that far back — report it as unavailable. Context only — never part of red_count or wave " +
+                "authorization.",
+            }
+          : null,
       broad_dollar_index: dtwexbgs && { ...dtwexbgs, signal: "rising = dollar strength, tightens global dollar-funding conditions and pressures EM/commodities" },
       nfci_risk_subindex: nfciRisk && { ...nfciRisk, signal: nfciRisk.value > 0 ? "elevated financial-sector volatility/funding risk" : "below-average" },
       nfci_credit_subindex: nfciCredit && { ...nfciCredit, signal: nfciCredit.value > 0 ? "tighter credit conditions specifically" : "looser than average" },

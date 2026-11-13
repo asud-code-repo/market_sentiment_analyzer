@@ -922,7 +922,7 @@ Four indicators are covered by this section:
 | ID | Indicator | Status |
 |---|---|---|
 | E1 | Repo-stress spread, SOFR − IORB (`repo_stress_spread`) | Live, with a provisional funding-pressure flag (> +5bp × 3 days) |
-| E2 | Bond volatility (MOVE) + `move_spike_vix_calm` divergence flag | Not built |
+| E2 | Bond volatility (MOVE) + `move_spike_vix_calm` divergence flag | MOVE level + deltas live (`bond_volatility_move`); divergence flag **not built** (base rate showed no forward edge — decision pending) |
 | E4 | 10Y/30Y auction quality vs trailing 6 same-tenor auctions | Not built |
 | E6 | Private-credit proxy (BDC ETF, BIZD) | Not built, optional |
 
@@ -978,6 +978,36 @@ Four indicators are covered by this section:
   observations exist. The threshold was chosen from this base rate, not
   backtested against market outcomes. Constants:
   `mcp_server/src/lib/repoStress.ts`.
+- Context only, per the rules above.
+
+### Bond volatility (MOVE)
+
+- **Definition:** the ICE BofA MOVE index, Treasury options' implied
+  volatility (the bond-market analog to VIX). Daily close from Yahoo
+  `^MOVE`, stored as `MOVE`; history from 2002-11-12. Returned by
+  `get_context_indicators` as `bond_volatility_move` (value, date, 3d/7d
+  deltas, level); `get_series_deltas MOVE` also works.
+- **Source risk (accepted):** Yahoo's chart endpoint is unofficial and
+  undocumented. VIX already depends on the same endpoint, so a Yahoo break
+  would take out both VIX (a gating indicator, which fails the ingest run
+  loudly) and MOVE (optional: a failure logs a warning and the tool reports
+  the last stored value, or `null`). This shared dependency is an accepted
+  risk, not an oversight.
+- **Level bands (provisional):** above 130 = elevated, above 160 = stress.
+  Base rate 2002-11-12 to 2026-11-12: above 130 on 8.2% of days, above 160
+  on 2.5%, concentrated in 2008-09 and 2022-23. Constants:
+  `mcp_server/src/lib/bondVolatility.ts`.
+- **Divergence flag (`move_spike_vix_calm`) — not built.** The proposed
+  rule (MOVE 7d change ≥ +15pts while VIX 7d change < +3pts, 7-calendar-day
+  lookback as in the other divergence flags) fires on 2.1% of days, 65
+  episodes, mostly 1–2 days long, at real bond-volatility events (summer
+  2003, the 2013 taper tantrum, 2022, March 2023). But it carries **no
+  forward edge for equity volatility:** after it fired, VIX rose 5+ points
+  within 30 days 26% of the time, versus 29% on any day with VIX calm. The
+  spec's original %-based rule (MOVE ≥ +20%, VIX ≤ +10%) fires on 1.0% of
+  days with a 34% hit rate, which is within noise on 62 days. So the flag
+  would *describe* bonds moving while equities don't; it would not *warn*.
+  Whether to ship it on that basis is pending.
 - Context only, per the rules above.
 
 ---
@@ -1086,15 +1116,12 @@ file was before being trusted:
 | Stock-bond correlation (`stock_bond_correlation`) | Derived: `SPY` (Massive) vs. a bond-price proxy built from `DGS10` (FRED), 180-day rolling, day-over-day changes | The classic 60/40-portfolio diversification signal — stocks and bonds normally move oppositely (equity selloffs drive flight-to-safety bond buying) | The proxy negates DGS10's daily change (yield falling = bond price proxy rising) so the sign convention matches the commonly-quoted stock-*bond-price* correlation, not a "stock vs. yield" relationship, which would read backwards. A near-zero-or-positive reading means the two are moving in the *same* direction day to day — not necessarily both down; a positive correlation just as easily reflects both rallying together, and the sign alone doesn't distinguish the two. 2022's well-known case happened to be a joint selloff (inflation drove both risk assets down together), but that's one instance of the pattern, not what the number itself asserts — verified live 2026-09-22: the real 180-day reading came back +0.52, a genuinely positive result, worth reading carefully rather than assuming the 2022 selloff framing applies by default. Not backtested/calibrated — a first cut, same tier as every other rolling-correlation check in this system |
 
 **Investigated and rejected — real gaps, not oversights:**
-- **MOVE Index** (bond-market volatility, the fixed-income analog to VIX):
-  no reliable free source found. ICE's own MOVE index has no free FRED
-  mirror; Yahoo Finance's `^MOVE` ticker only works through unofficial,
-  undocumented endpoints (Yahoo's official API was discontinued in 2017
-  and never restored) — exactly the kind of fragile dependency this
-  project has avoided elsewhere (see `BAMLH0A0HYM2`'s own documented ICE-
-  licensing quirks). A genuinely free, stable source would make this a
-  strong addition (VIX-vs-HY already has a divergence flag; VIX-vs-MOVE
-  would fit the same pattern) — revisit if one surfaces.
+- **MOVE Index** — *no longer rejected (2026-11-13).* It was rejected here
+  because Yahoo's `^MOVE` endpoint is unofficial, but VIX moved onto that
+  same endpoint on 2026-09-28, so the objection no longer held on its own.
+  MOVE is now ingested from Yahoo with the shared-dependency risk accepted;
+  see "Bond volatility (MOVE)" under Context-Only Enhancement Indicators.
+  ICE's own index still has no free FRED mirror.
 - **CDS spreads** (sovereign/corporate default risk): re-confirmed no free
   source exists. This was already investigated and rejected once (see the
   "Missing indicators" review status table above) — an external review

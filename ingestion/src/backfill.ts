@@ -1,6 +1,6 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
-import { fetchYahooBackfill } from "./sources/yahoo.js";
+import { fetchYahooBackfill, fetchYahooMoveBackfill } from "./sources/yahoo.js";
 import { fetchMassiveBackfill } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
@@ -60,6 +60,14 @@ async function main() {
   console.log("Backfilling VIX (full history via Yahoo)...");
   const yahooPoints = await fetchYahooBackfill();
   console.log(`Yahoo backfill: ${yahooPoints.length} total observations.`);
+
+  // MOVE is context-only (E2), so a failure here doesn't abort the backfill.
+  try {
+    console.log("Backfilling MOVE (2002-present via Yahoo)...");
+    yahooPoints.push(...(await fetchYahooMoveBackfill()));
+  } catch (err) {
+    console.error(`MOVE backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+  }
 
   console.log("Backfilling watchlist ticker prices (2yr via Massive)...");
   const tickerPoints = await fetchMassiveBackfill();

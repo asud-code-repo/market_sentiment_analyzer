@@ -268,7 +268,8 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // 2026-09-22 additions — external review (Grok), the "macro regime
   // detection" suggestions. Two of six checked out as real free FRED
   // series; MOVE index and CDS spreads were investigated and rejected (no
-  // reliable free source — see BACKLOG.md/crash-check-rules.md), GPR index
+  // reliable free source — see BACKLOG.md/crash-check-rules.md; MOVE was
+  // later added via Yahoo on 2026-11-13, see sources/yahoo.ts), GPR index
   // and TIC foreign-holdings data are real but not FRED-shaped (see
   // gpr.ts/tic.ts), and the "term premium" ask turned out to already have
   // a free FRED-hosted model, just not the specific one (ACM) first assumed.
