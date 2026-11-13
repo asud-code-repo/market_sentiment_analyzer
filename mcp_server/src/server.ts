@@ -924,19 +924,18 @@ server.registerTool(
           "underperformance (e.g. +2.9% over 180d while SPY did +15%). flow_pct_of_assets expresses " +
           "flow_estimate_usd as a % of assets at the start of that window, so a $1B flow into a $10B " +
           "sector and a $1B flow into a $1T one don't read as equally significant. " +
-          "institutional_13f_tilt_pct_qoq (added 2026-10-01) is a DIFFERENT signal, not a " +
-          "duplicate -- it's institutional-ONLY positioning from SEC 13F bulk filings, aggregated " +
-          "across the full universe of 13F filers (not a curated 'top investors' list), vs. this " +
-          "field's ETF-vehicle flow which mixes retail + institutional money. 13F is quarterly and " +
-          "45+ days lagged, refreshed only ~4x/year -- it answers 'did institutions specifically " +
-          "back this move,' never 'is the move happening sooner.' institutional_13f_as_of surfaces " +
-          "exactly how stale that reading is. institutional_vs_etf_flow_agreement compares the " +
-          "SIGN of the 13F QoQ change against the 90d ETF-flow window only (the closest existing " +
-          "window to one quarter, not an exact period match) -- a directional cross-check, not a " +
-          "reconciliation. Coverage is limited to stocks currently held by one of the 11 tracked " +
-          "sector SPDRs (a large/mid-cap universe) -- all fields are null for SPY/GLD and for any " +
-          "sector ticker with fewer than 2 quarters of data yet. Informational " +
-          "only, Tier 2 -- never part of the 3-of-6 wave-authorization gate.",
+          "The institutional_* fields are a DIFFERENT signal: institutional-only positioning from " +
+          "SEC 13F filings (all filers, not a curated list) in the sector's underlying STOCKS, not " +
+          "the SPDR fund. institutional_net_buying_pct_qoq = change in shares held vs the prior " +
+          "quarter at constant prices, over institutions that filed both quarters, options " +
+          "excluded -- price moves can't drive it. Most sectors usually move together, so lead " +
+          "with institutional_net_buying_vs_sector_avg_pts and institutional_13f_read " +
+          "(tilting_toward / tilting_away / in_line, +/-1pt band, uncalibrated): which sectors " +
+          "institutions favoured relative to the rest. Quarterly and 45+ days lagged -- always " +
+          "state institutional_13f_as_of; it answers 'did institutions back this sector last " +
+          "quarter,' never 'is a move happening now,' and is not comparable to the ETF-flow " +
+          "windows above. Null for SPY/GLD. Informational only, Tier 2 -- never part of the " +
+          "3-of-6 wave-authorization gate.",
       },
       insider_activity: {
         tickers: insiderActivity,
