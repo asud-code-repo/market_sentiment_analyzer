@@ -205,92 +205,281 @@ function formatFundName(fundKey: string, label?: string): string {
     .join(" ");
 }
 
-function waveLabel(ws: WaveStatus | null | undefined): string {
-  if (!ws) return "—";
-  if (!ws.wave_active || ws.wave_active === "NONE") return "NONE";
-  const reason = ws.wave_active_reason === "SLOW_BEAR" ? " (slow bear)" : "";
-  return `${ws.wave_active}${reason} — ${ws.wave_authorized ? "authorized" : "observed, not authorized"}`;
+// ---------------------------------------------------------------------------
+// Rendering (restyled 2026-11-14 to match the public dashboard: top bar with
+// a segmented tab control, a verdict header, hairline "ledger" tables with a
+// coloured status edge, and a side rail on desktop). Two tabs: Deployment
+// (waves, watchlist, insider activity, crash type, triggers, context) and
+// Portfolio (drift, thesis re-underwrite, summary, macro cross-reference).
+// ---------------------------------------------------------------------------
+
+const PUBLIC_DASHBOARD_URL = "https://market-sentiment.abhaysudhakaran.com/";
+
+type Tone = "good" | "warning" | "critical" | "muted";
+
+const toneAttr = (t: Tone | "") => (t ? ` data-status="${t}"` : "");
+const pill = (text: string, tone: Tone) => `<span class="pill"${toneAttr(tone)}>${escapeHtml(text)}</span>`;
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+function formatShortDate(isoDate: string | null | undefined): string {
+  if (!isoDate) return "—";
+  const d = new Date(isoDate.length === 10 ? `${isoDate}T12:00:00Z` : isoDate);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(d);
 }
 
-function statusBadgeClass(status: WatchlistEntry["status"]): string {
+// "WAVE_2" -> "Wave 2"
+const waveName = (w: string) => w.replace(/^WAVE_(\d)$/, "Wave $1");
+// WaveActive is "NONE" | "WAVE_1".."WAVE_3"; anything else counts as no wave.
+const isWave = (w: string | null | undefined) => !!w && /^WAVE_\d$/.test(w);
+
+// Free-text statuses written by the run (criteria, personal triggers):
+// highlight the ones that mean "this is happening", keep the rest quiet.
+function toneForText(status: string): Tone {
+  const s = status.trim().toLowerCase();
+  if (/\bnot\b|^no\b|pending|none|n\/a|unchanged|^ok\b|clear/.test(s)) return "muted";
+  if (/met|fired|triggered|active|red|due|yes|breach/.test(s)) return "warning";
+  return "muted";
+}
+
+function watchTone(status: WatchlistEntry["status"]): Tone {
   if (status === "BUY_ZONE") return "good";
   if (status === "WATCH") return "warning";
   return "muted";
 }
 
-function renderPortfolioReviewSection(
-  review: PortfolioReviewRow,
-  watchlistBySymbol: Map<string, WatchlistEntry>,
-): string {
-  const driftRows = (review.drift?.accounts ?? [])
-    .map((acct) => {
-      const rows = acct.entries
-        .map(
-          (e) => `<div class="drift-row">
-          <div class="drift-name">${escapeHtml(formatFundName(e.fund, e.label))}</div>
-          <div class="drift-track"><div class="drift-fill" style="width:${Math.min(100, Math.max(0, e.actual_pct))}%;"></div><div class="drift-target" style="left:${Math.min(100, Math.max(0, e.target_pct))}%;"></div></div>
-          <div class="drift-val">${e.actual_pct}% <span class="muted">(target ${e.target_pct}%)</span></div>
-        </div>`,
-        )
-        .join("");
-      return `<div class="drift-account-group">
-        <p class="drift-account-label">${escapeHtml(acct.label)}</p>
-        ${rows}
-      </div>`;
-    })
-    .join("");
+function confirmationCell(e: ConfirmationEntry | null | undefined): { reading: string; status: string; tone: Tone } {
+  if (!e) return { reading: "—", status: "No data", tone: "muted" };
+  if (e.color !== "RED") return { reading: titleCase(e.color), status: "Not triggered", tone: e.color === "AMBER" ? "warning" : "good" };
+  return e.confirmed
+    ? { reading: `Red since ${formatShortDate(e.observation_date)}`, status: "Confirmed", tone: "critical" }
+    : { reading: `Red, ${e.days_confirmed} date${e.days_confirmed === 1 ? "" : "s"} so far`, status: "Pending", tone: "warning" };
+}
 
-  const standingFlags = (review.drift?.standing_flags ?? [])
-    .map((flag) => `<div class="flag-card">${escapeHtml(flag)}</div>`)
-    .join("");
+function renderTopbar(activeTab: string, runAt: string | null, withTabs: boolean): string {
+  const tabs = withTabs
+    ? `<nav class="tab-bar" id="tab-bar" aria-label="Sections">
+        <button class="tab-btn${activeTab === "deploy" ? " active" : ""}" data-tab="deploy">Deployment</button>
+        <button class="tab-btn${activeTab === "portfolio" ? " active" : ""}" data-tab="portfolio">Portfolio</button>
+      </nav>`
+    : "<span></span>";
+  return `<header class="topbar">
+    <div class="brand">Stress Monitor <i>· private report</i></div>
+    ${tabs}
+    <div class="topright">
+      ${runAt ? `<span class="when">Run ${escapeHtml(formatRunAt(runAt))}</span>` : ""}
+      <a class="ext" href="${PUBLIC_DASHBOARD_URL}">Public dashboard ↗</a>
+      <button class="dn-btn" id="refresh-btn" title="Refresh">&#8635;</button>
+    </div>
+  </header>`;
+}
 
-  const driftSection =
-    driftRows || standingFlags
-      ? `<section class="card"><p class="eyebrow">Portfolio Drift</p>${driftRows}${standingFlags}</section>`
-      : "";
+function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | undefined): string {
+  const ws = report.wave_status;
+  const confirmed = crashCheck?.confirmed_red_count ?? null;
 
-  const tickerCards = review.tickers
+  // ---- verdict header ----
+  let big = "No wave";
+  let subTone = "ok";
+  let subLead = "Stress gate not met";
+  if (ws && isWave(ws.wave_active)) {
+    big = waveName(ws.wave_active);
+    subTone = ws.wave_authorized ? "bad" : "warn";
+    subLead = `${ws.wave_active_reason === "SLOW_BEAR" ? "Slow bear · " : ws.wave_active_reason === "FAST_PANIC" ? "Fast panic · " : ""}${ws.wave_authorized ? "authorized" : "observed, not authorized"}`;
+  } else if (ws?.wave_authorized) {
+    subTone = "warn";
+    subLead = "Stress gate met";
+  } else if (!ws) {
+    big = "Wave status n/a";
+    subTone = "";
+    subLead = "Snapshot predates wave status";
+  }
+  const firing = ws
+    ? [isWave(ws.fast_panic_wave), ws.slow_bear?.w2?.color === "RED", ws.slow_bear?.w3?.color === "RED"].filter(Boolean).length
+    : null;
+  const buyZone = report.watchlist.filter((t) => t.status === "BUY_ZONE").length;
+  const verdict = `<div class="verdict">
+    <div class="headline"><span class="big">${escapeHtml(big)}</span><span class="sub"><b class="${subTone}">${escapeHtml(subLead)}</b>${confirmed != null ? ` · ${confirmed} of 6 confirmed red` : ""}${firing != null ? ` · ${firing} of 3 pathways firing` : ""}</span></div>
+    <div class="facts">
+      ${crashCheck ? `<div class="fact"><span class="lbl">Fed regime</span><span class="v">${escapeHtml(titleCase(crashCheck.warsh_classification ?? "Pending"))}</span></div>` : ""}
+      ${crashCheck?.crash_probability_pct != null ? `<div class="fact"><span class="lbl">LLM crash est.</span><span class="v">${crashCheck.crash_probability_pct}% <small>discretionary</small></span></div>` : ""}
+      <div class="fact"><span class="lbl">Crash type</span><span class="v">${report.crash_type_diagnosis ? "Diagnosed <small>see right</small>" : "None <small>this run</small>"}</span></div>
+      <div class="fact"><span class="lbl">Watchlist</span><span class="v">${buyZone} in buy zone <small>of ${report.watchlist.length}</small></span></div>
+    </div>
+    <div class="stamp"><b>As of ${escapeHtml(formatRunAt(report.run_at))}</b>${ws?.as_of_observation_date ? `<br>S&amp;P reading ${escapeHtml(formatShortDate(ws.as_of_observation_date))}` : ""}</div>
+  </div>`;
+
+  // ---- wave pathways ----
+  let pathways = "";
+  if (ws) {
+    const fast = isWave(ws.fast_panic_wave);
+    const w2 = confirmationCell(ws.slow_bear?.w2);
+    const w3 = confirmationCell(ws.slow_bear?.w3);
+    const rows: [string, string, string, string, Tone][] = [
+      ["Stress gate", "3 of 6 indicators at confirmed red", confirmed != null ? `${confirmed} of 6 confirmed` : "—", ws.wave_authorized ? "Met" : "Not met", ws.wave_authorized ? "critical" : "good"],
+      ["Fast panic", "S&amp;P drawdown + VIX, same day", fast ? waveName(ws.fast_panic_wave) : "None", fast ? "Triggered" : "Not triggered", fast ? "critical" : "good"],
+      ["Slow bear · Wave 2", "Drawdown held at a fresh low", escapeHtml(w2.reading), w2.status, w2.tone],
+      ["Slow bear · Wave 3", "Deeper drawdown, held", escapeHtml(w3.reading), w3.status, w3.tone],
+    ];
+    pathways = `<section class="rsec">
+      <div class="sh"><span class="lbl">Wave pathways</span><span class="note">Evaluated locally from the private deployment policy</span></div>
+      <div class="ledger pw">
+        <div class="row hdr"><span>Pathway</span><span>Reading</span><span class="r">Status</span></div>
+        ${rows.map(([n, s, r, st, t]) => `<div class="row"${toneAttr(t)}><div class="name"><b>${n}</b><small>${s}</small></div><div class="det">${r}</div><div class="r">${pill(st, t)}</div></div>`).join("")}
+      </div>
+    </section>`;
+  }
+
+  // ---- watchlist: price against the wave targets ----
+  const wlRows = report.watchlist
     .map((t) => {
-      const wl = watchlistBySymbol.get(t.symbol);
-      return `<div class="pr-ticker-card">
-        <div class="ticker-head">
-          <span class="ticker-symbol">${escapeHtml(t.symbol)}</span>
-          ${wl ? `<span class="badge ${statusBadgeClass(wl.status)}">${escapeHtml(wl.status.replace("_", " "))}</span>` : ""}
-        </div>
-        ${wl ? `<div class="muted">${escapeHtml(wl.theme)} · $${wl.current_price?.toLocaleString("en-US") ?? "—"}</div>` : ""}
-        <div class="thesis-verdict">${escapeHtml(t.thesis_verdict)}</div>
-        <p class="narrative">${escapeHtml(t.reasoning)}</p>
-        ${t.proposed_change ? `<div class="proposed-change"><b>Proposed:</b> ${escapeHtml(t.proposed_change)}</div>` : ""}
+      const tone = watchTone(t.status);
+      const p = t.current_price;
+      const lo = Math.min(t.wave3_target, p ?? t.wave3_target) * 0.9;
+      const hi = Math.max(t.wave1_target, p ?? t.wave1_target) * 1.12;
+      const x = (v: number) => (((v - lo) / (hi - lo)) * 100).toFixed(1);
+      const marks = (t.wave3_only ? [[t.wave3_target, "W3"]] : [[t.wave3_target, "W3"], [t.wave2_target, "W2"], [t.wave1_target, "W1"]]) as [number, string][];
+      const buyEdge = t.wave3_only ? t.wave3_target : t.wave1_target;
+      const rail = `<div class="wrail" style="--w1:${x(buyEdge)}%"><span class="ln"></span>
+        ${marks.map(([v, l]) => `<span class="tk" style="left:${x(v)}%"></span><span class="tl" style="left:${x(v)}%">${l} ${v.toLocaleString("en-US")}</span>`).join("")}
+        ${p != null ? `<span class="dot"${toneAttr(tone)} style="left:${x(p)}%"></span>` : ""}</div>`;
+      const vs = t.pct_above_wave1;
+      return `<div class="row"${toneAttr(tone)}>
+        <div class="name"><b>${escapeHtml(t.symbol)}</b> <span class="sub">${escapeHtml(t.name)}</span><small>${escapeHtml(t.theme)}${t.wave3_only ? " · Wave 3 only" : ""}</small></div>
+        <div class="num">${p != null ? "$" + p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</div>
+        <div class="railc">${rail}</div>
+        <div class="num vs">${vs != null ? `${vs >= 0 ? "+" : "−"}${Math.abs(vs).toFixed(1)}<small>%</small>` : "—"}</div>
+        <div class="r">${pill(t.status.replace("_", " "), tone)}</div>
       </div>`;
     })
     .join("");
+  const watchlist = `<section class="rsec">
+    <div class="sh"><span class="lbl">Watchlist</span><span class="note">Price against the wave entry targets · green stretch = buy zone</span></div>
+    ${wlRows ? `<div class="ledger wl"><div class="row hdr"><span>Ticker</span><span class="r">Price</span><span>vs wave targets</span><span class="r">vs W1</span><span class="r">Status</span></div>${wlRows}</div>` : `<p class="nar auto">No watchlist tickers.</p>`}
+  </section>`;
 
-  const tickerSection = tickerCards
-    ? `<section class="card"><p class="eyebrow">Watchlist Thesis Re-Underwrite</p><div class="pr-ticker-grid">${tickerCards}</div></section>`
+  // ---- insider activity ----
+  const ins = report.insider_activity ?? [];
+  const insider = ins.length
+    ? `<section class="rsec">
+        <div class="sh"><span class="lbl">Insider activity · watchlist</span><span class="note">SEC Form 4, last 30 days</span></div>
+        <div class="ledger ins">
+          <div class="row hdr"><span>Ticker</span><span>Signal</span><span class="r">Officer/director buyers</span><span class="r">Sells</span><span class="r">Latest filing</span></div>
+          ${ins.map((i) => `<div class="row"${toneAttr(i.cluster_buy_signal ? "good" : "")}>
+            <div class="name"><b>${escapeHtml(i.ticker)}</b></div>
+            <div>${i.cluster_buy_signal ? pill("Cluster buy", "good") : `<span class="sub">—</span>`}</div>
+            <div class="num">${i.distinct_officer_director_buyers_30d}<small class="ph"> buyers</small></div>
+            <div class="num">${i.total_sell_count_30d}<small class="ph"> sells</small></div>
+            <div class="r sub dt">${escapeHtml(formatShortDate(i.latest_transaction_date))}</div>
+          </div>`).join("")}
+        </div>
+      </section>`
     : "";
 
-  const crossReferenceParagraphs = (review.macro_cross_reference ?? "")
+  // ---- rail ----
+  const d = report.crash_type_diagnosis;
+  const diagnosis = `<section class="rsec">
+    <div class="sh"><span class="lbl">Crash-type diagnosis</span></div>
+    ${d ? `<p class="dtype">${escapeHtml(d.type)}</p>
+      <ul class="crit">${d.criteria.map((c) => `<li><b>${escapeHtml(c.name)}</b>${pill(c.status, toneForText(c.status))}<span class="d">${escapeHtml(c.detail)}</span></li>`).join("")}</ul>`
+      : `<p class="nar auto">No crash type diagnosed this run.</p>`}
+  </section>`;
+  const trig = report.personal_triggers ?? [];
+  const triggers = trig.length
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Personal triggers</span></div>
+        <ul class="crit">${trig.map((t) => `<li><b>${escapeHtml(t.name)}</b>${pill(titleCase(t.status), toneForText(t.status))}<span class="d">${escapeHtml(t.note)}</span></li>`).join("")}</ul></section>`
+    : "";
+  const context = report.portfolio_context
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Portfolio context</span><span class="note">Qualitative only</span></div><p class="nar">${escapeHtml(report.portfolio_context)}</p></section>`
+    : "";
+
+  return `${verdict}
+    <div class="cols">
+      <div class="col-main">${pathways}${watchlist}${insider}</div>
+      <aside class="col-rail">${diagnosis}${triggers}${context}</aside>
+    </div>`;
+}
+
+function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistBySymbol: Map<string, WatchlistEntry>): string {
+  if (!review) {
+    return `<div class="verdict"><div class="headline"><span class="big">No review yet</span><span class="sub">Run a Portfolio Opportunity Review in Claude to fill this tab.</span></div></div>`;
+  }
+  const accounts = review.drift?.accounts ?? [];
+  const funds = accounts.reduce((n, a) => n + a.entries.length, 0);
+  const drifted = accounts.reduce((n, a) => n + a.entries.filter((e) => e.status === "DRIFTED").length, 0);
+  const proposed = review.tickers.filter((t) => t.proposed_change).length;
+  const verdictText = review.verdict ?? "Review";
+  const verdict = `<div class="verdict">
+    <div class="headline"><span class="big${verdictText.length > 18 ? " long" : ""}">${escapeHtml(verdictText)}</span>
+      <span class="sub">${drifted ? `<b class="warn">${drifted} fund${drifted === 1 ? "" : "s"} drifted</b>` : `<b class="ok">On target</b>`} · ${proposed} proposed change${proposed === 1 ? "" : "s"}</span></div>
+    <div class="facts">
+      <div class="fact"><span class="lbl">Accounts</span><span class="v">${accounts.length} <small>${funds} funds</small></span></div>
+      <div class="fact"><span class="lbl">Drifted</span><span class="v"${drifted ? ' style="color:var(--warning)"' : ""}>${drifted} <small>of ${funds}</small></span></div>
+      <div class="fact"><span class="lbl">Theses reviewed</span><span class="v">${review.tickers.length}</span></div>
+    </div>
+    <div class="stamp"><b>Reviewed ${escapeHtml(formatRunAt(review.run_at))}</b><br>Portfolio Opportunity Review</div>
+  </div>`;
+
+  const summary = review.summary
+    ? `<div class="sh"><span class="lbl">Summary</span></div><p class="nar">${escapeHtml(review.summary)}</p>`
+    : "";
+
+  // ---- drift ----
+  const driftGroups = accounts
+    .map((acct) => {
+      const n = acct.entries.filter((e) => e.status === "DRIFTED").length;
+      const rows = acct.entries
+        .map((e) => {
+          const off = e.status === "DRIFTED";
+          const clamp = (v: number) => Math.min(100, Math.max(0, v));
+          return `<div class="row"${toneAttr(off ? "warning" : "")}>
+            <div class="name"><b>${escapeHtml(formatFundName(e.fund, e.label))}</b></div>
+            <div class="barc"><div class="dbar"><span class="f"${toneAttr(off ? "warning" : "")} style="width:${clamp(e.actual_pct)}%"></span><span class="t" style="left:${clamp(e.target_pct)}%"></span></div></div>
+            <div class="num">${e.actual_pct}<small>% · target ${e.target_pct}%</small></div>
+            <div class="r">${pill(`${e.drift_pts >= 0 ? "+" : "−"}${Math.abs(e.drift_pts).toFixed(1)} pts`, off ? "warning" : "muted")}</div>
+          </div>`;
+        })
+        .join("");
+      return `<div class="grp">${escapeHtml(acct.label)}<small>${n ? `${n} drifted` : "on target"}</small></div><div class="ledger dr">${rows}</div>`;
+    })
+    .join("");
+  const flags = (review.drift?.standing_flags ?? []).map((f) => `<div class="flagnote"><b>Standing flag:</b> ${escapeHtml(f)}</div>`).join("");
+  const drift = driftGroups || flags
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Allocation drift</span><span class="note">Bar = actual · blue mark = target</span></div>${driftGroups}${flags}</section>`
+    : "";
+
+  // ---- thesis re-underwrite ----
+  const thRows = review.tickers
+    .map((t) => {
+      const wl = watchlistBySymbol.get(t.symbol);
+      return `<div class="row"${toneAttr(t.proposed_change ? "warning" : "")}>
+        <div class="name"><b>${escapeHtml(t.symbol)}</b>${wl ? `<small>${pill(wl.status.replace("_", " "), watchTone(wl.status))}</small>` : ""}</div>
+        <div class="body"><div class="verd">${escapeHtml(t.thesis_verdict)}</div><div class="why">${escapeHtml(t.reasoning)}</div></div>
+        <div class="r">${t.proposed_change ? `<span class="chip">${escapeHtml(t.proposed_change)}</span>` : `<span class="sub">No change</span>`}</div>
+      </div>`;
+    })
+    .join("");
+  const thesis = thRows
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Watchlist thesis re-underwrite</span></div>
+        <div class="ledger th"><div class="row hdr"><span>Ticker</span><span>Verdict and reasoning</span><span class="r">Proposed</span></div>${thRows}</div></section>`
+    : "";
+
+  const crossRef = (review.macro_cross_reference ?? "")
     .split(/\n+/)
     .map((p) => p.trim())
     .filter(Boolean)
-    .map((p) => `<p class="narrative">${escapeHtml(p)}</p>`)
+    .map((p) => `<p class="nar">${escapeHtml(p)}</p>`)
     .join("");
 
-  const crossReferenceSection = crossReferenceParagraphs
-    ? `<section class="card"><p class="eyebrow">Macro / Geopolitical Cross-Reference</p>${crossReferenceParagraphs}</section>`
-    : "";
-
-  return `
-    <section class="card">
-      <p class="eyebrow">Portfolio Opportunity Review</p>
-      <p class="verdict">${escapeHtml(review.verdict ?? "")}</p>
-      <p class="narrative">${escapeHtml(review.summary ?? "")}</p>
-      <p class="subtitle" style="margin-top:10px;">Reviewed at ${escapeHtml(formatRunAt(review.run_at))}</p>
-    </section>
-    ${driftSection}
-    ${tickerSection}
-    ${crossReferenceSection}
-  `;
+  // Summary appears at the top on narrow screens (under the verdict) and in
+  // the rail on wide ones -- rendered twice, one copy hidden per layout.
+  return `${verdict}
+    <div class="cols">
+      <div class="col-main">${summary ? `<section class="rsec narrow-only">${summary}</section>` : ""}${drift}${thesis}</div>
+      <aside class="col-rail">
+        ${summary ? `<section class="rsec wide-only">${summary}</section>` : ""}
+        ${crossRef ? `<section class="rsec"><div class="sh"><span class="lbl">Macro cross-reference</span></div><div class="nars">${crossRef}</div></section>` : ""}
+      </aside>
+    </div>`;
 }
 
 function renderPage(
@@ -298,115 +487,18 @@ function renderPage(
   crashCheck: CrashCheckRow | undefined,
   portfolioReview: PortfolioReviewRow | undefined,
 ): string {
-  const contextStrip = crashCheck
-    ? `<div class="context-strip">
-        <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div><div class="stat-note">Discretionary LLM estimate, not calibrated</div></div>
-        <div class="stat"><div class="stat-label">Confirmed RED</div><div class="stat-value">${crashCheck.confirmed_red_count ?? 0} / 6</div></div>
-        <div class="stat"><div class="stat-label">Wave Status</div><div class="stat-value">${escapeHtml(waveLabel(report.wave_status))}</div></div>
-        <div class="stat"><div class="stat-label">Fed Regime</div><div class="stat-value">${escapeHtml(crashCheck.warsh_classification ?? "PENDING")}</div></div>
-      </div>`
-    : "";
-
-  const diagnosis = report.crash_type_diagnosis
-    ? `<section class="card">
-        <p class="eyebrow">Crash-Type Diagnosis</p>
-        <h2 class="diagnosis-type">${escapeHtml(report.crash_type_diagnosis.type)}</h2>
-        <ul class="criteria-list">
-          ${report.crash_type_diagnosis.criteria
-            .map((c) => `<li><b>${escapeHtml(c.name)}:</b> ${escapeHtml(c.status)} — ${escapeHtml(c.detail)}</li>`)
-            .join("")}
-        </ul>
-      </section>`
-    : "";
-
-  const watchlistRows = report.watchlist
-    .map(
-      (t) => `<tr>
-        <td class="ticker-symbol">${escapeHtml(t.symbol)}</td>
-        <td>${escapeHtml(t.name)}</td>
-        <td class="muted">${escapeHtml(t.theme)}</td>
-        <td>${t.current_price != null ? "$" + t.current_price.toLocaleString("en-US") : "—"}</td>
-        <td class="muted">W1 ${t.wave1_target.toLocaleString("en-US")} / W2 ${t.wave2_target.toLocaleString("en-US")} / W3 ${t.wave3_target.toLocaleString("en-US")}</td>
-        <td>${t.pct_above_wave1 != null ? t.pct_above_wave1 + "%" : "—"}</td>
-        <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status.replace("_", " "))}</span></td>
-      </tr>`,
-    )
-    .join("");
-
-  const ws = report.wave_status;
-  const confirmationText = (e: ConfirmationEntry | null | undefined) =>
-    e ? `${e.color}${e.color === "RED" ? (e.confirmed ? " (confirmed)" : ` (pending, ${e.days_confirmed} day)`) : ""}` : "—";
-  const waveSection = ws
-    ? `<section class="card">
-        <p class="eyebrow">Wave Status</p>
-        <ul class="criteria-list">
-          <li><b>Active wave:</b> ${escapeHtml(waveLabel(ws))}</li>
-          <li><b>Stress gate:</b> ${ws.wave_authorized ? "met" : "not met"} (confirmed RED ${crashCheck?.confirmed_red_count ?? "—"} / 6)</li>
-          <li><b>Fast-panic pathway (drawdown + VIX, same day):</b> ${escapeHtml(ws.fast_panic_wave)}</li>
-          <li><b>Slow-bear pathway:</b> Wave 2 ${escapeHtml(confirmationText(ws.slow_bear?.w2))} · Wave 3 ${escapeHtml(confirmationText(ws.slow_bear?.w3))}</li>
-        </ul>
-        <p class="subtitle">Evaluated locally from the private deployment policy, as of the S&amp;P reading on ${escapeHtml(ws.as_of_observation_date ?? "—")}.</p>
-      </section>`
-    : "";
-
-  const personalTriggers = (report.personal_triggers ?? [])
-    .map((t) => `<li><b>${escapeHtml(t.name)}:</b> ${escapeHtml(t.status)} — ${escapeHtml(t.note)}</li>`)
-    .join("");
-  const triggersSection = personalTriggers
-    ? `<section class="card"><p class="eyebrow">Personal Triggers</p><ul class="criteria-list">${personalTriggers}</ul></section>`
-    : "";
-
-  const insiderRows = (report.insider_activity ?? [])
-    .map(
-      (i) => `<tr>
-        <td class="ticker-symbol">${escapeHtml(i.ticker)}</td>
-        <td>${i.cluster_buy_signal ? '<span class="badge good">Cluster buy</span>' : '<span class="muted">—</span>'}</td>
-        <td>${i.distinct_officer_director_buyers_30d}</td>
-        <td>${i.total_sell_count_30d}</td>
-        <td class="muted">${escapeHtml(i.latest_transaction_date ?? "—")}</td>
-      </tr>`,
-    )
-    .join("");
-  const insiderSection = insiderRows
-    ? `<section class="card">
-        <p class="eyebrow">Watchlist Insider Activity (SEC Form 4, last 30 days)</p>
-        <table class="watchlist-table">
-          <thead><tr><th>Ticker</th><th>Signal</th><th>Officer/director buyers</th><th>Sells (count)</th><th>Latest filing</th></tr></thead>
-          <tbody>${insiderRows}</tbody>
-        </table>
-      </section>`
-    : "";
-
-  const portfolioContext = report.portfolio_context
-    ? `<section class="card"><p class="eyebrow">Personal Portfolio Context</p><p class="narrative">${escapeHtml(report.portfolio_context)}</p></section>`
-    : "";
-
   const watchlistBySymbol = new Map(report.watchlist.map((t) => [t.symbol, t]));
-  const portfolioReviewSection = portfolioReview
-    ? renderPortfolioReviewSection(portfolioReview, watchlistBySymbol)
-    : "";
-
-  const body = `
-    <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · Stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
-    ${contextStrip}
-    ${waveSection}
-    ${triggersSection}
-    ${diagnosis}
-    <section class="card">
-      <p class="eyebrow">Watchlist</p>
-      <table class="watchlist-table">
-        <thead><tr><th>Ticker</th><th>Name</th><th>Theme</th><th>Price</th><th>Wave Targets</th><th>vs W1</th><th>Status</th></tr></thead>
-        <tbody>${watchlistRows}</tbody>
-      </table>
-    </section>
-    ${insiderSection}
-    ${portfolioContext}
-    ${portfolioReviewSection}
-  `;
-  return renderShell("Private Portfolio Report", body);
+  const body = `${renderTopbar("deploy", report.run_at, true)}
+    <div class="tab-panel" id="tab-deploy">${renderDeploymentTab(report, crashCheck)}</div>
+    <div class="tab-panel" id="tab-portfolio" hidden>${renderPortfolioTab(portfolioReview, watchlistBySymbol)}</div>
+    <p class="foot">Stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast.</p>`;
+  return renderShell("Private Portfolio Report", body, true);
 }
 
-function renderShell(title: string, body: string): string {
+function renderShell(title: string, body: string, full = false): string {
+  const content = full
+    ? body
+    : `${renderTopbar("", null, false)}<div class="verdict"><div class="headline"><span class="big long">${escapeHtml(title)}</span></div></div><div class="nar" style="padding-top:16px">${body}</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -423,94 +515,187 @@ function renderShell(title: string, body: string): string {
 </head>
 <body>
 <div class="wrap">
-  <div class="header-row">
-    <h1>${escapeHtml(title)}</h1>
-    <button class="badge muted" id="refresh-btn" title="Refresh" style="display:none; cursor:pointer; border:none;">&#8635; Refresh</button>
-  </div>
-  ${body}
+${content}
 </div>
 <script>
-  // navigator.standalone is the older iOS-Safari-specific check; the
-  // display-mode media query is the standard, broader one. Either being
-  // true means this is the installed PWA, not a normal browser tab -- a
-  // normal tab already has its own reload affordance that standalone mode
-  // strips away.
+  // Installed-PWA refresh button: a normal browser tab has its own reload.
   if (window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches) {
     var refreshBtn = document.getElementById("refresh-btn");
     refreshBtn.style.display = "inline-block";
     refreshBtn.addEventListener("click", function () { location.reload(); });
   }
+  // Tabs: remembered per browser; the page renders fine without storage.
+  (function () {
+    var bar = document.getElementById("tab-bar");
+    if (!bar) return;
+    function show(id) {
+      var btns = bar.querySelectorAll(".tab-btn"), i;
+      for (i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-tab") === id);
+      var panels = document.querySelectorAll(".tab-panel");
+      for (i = 0; i < panels.length; i++) panels[i].hidden = panels[i].id !== "tab-" + id;
+      try { localStorage.setItem("frTab", id); } catch (e) {}
+    }
+    bar.addEventListener("click", function (e) {
+      var b = e.target.closest(".tab-btn");
+      if (b) show(b.getAttribute("data-tab"));
+    });
+    try { var saved = localStorage.getItem("frTab"); if (saved === "portfolio") show(saved); } catch (e) {}
+  })();
 </script>
 </body>
 </html>`;
 }
 
+// Same tokens and building blocks as dashboard_site (body.rd), copied rather
+// than shared: the two sites deploy separately and this one has no build step.
 const PAGE_CSS = `
   :root {
-    --surface-1: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b; --text-secondary: #52514e;
-    --text-muted: #898781; --grid: #e1e0d9; --border: rgba(11,11,11,0.10);
-    --good: #0ca30c; --good-bg: #e8f7e6; --warning: #b8790a; --warning-bg: #fdf1d8;
-    --critical: #d03b3b; --critical-bg: #fbe7e6; --neutral-blue: #2a78d6;
+    color-scheme: light dark;
+    --page:#f9f9f7; --surface-1:#fcfcfb; --sunk:#f1f0ec; --hair:rgba(11,11,11,.09); --hair-strong:rgba(11,11,11,.16);
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#6f6d67;
+    --good:#0a8a0a; --warning:#a86e08; --warning-bg:#fbf1dc; --critical:#c73434; --critical-bg:#fbe7e6;
+    --accent:#2a78d6;
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --t1: 600 26px/1.1 var(--font-ui); --t2: 400 13px/1.4 var(--font-ui); --t2-num: 600 15px/1.2 var(--font-ui);
+    --t3: 400 11px/1.35 var(--font-ui); --label: 600 10.5px/1 var(--font-ui);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff; --text-secondary: #c3c2b7;
-      --text-muted: #898781; --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
-      --good: #0ca30c; --good-bg: #10250f; --warning: #fab219; --warning-bg: #2c2109;
-      --critical: #e66767; --critical-bg: #2c1211; --neutral-blue: #3987e5;
-    }
+  @media (prefers-color-scheme: dark) { :root {
+    --page:#0d0d0d; --surface-1:#161615; --sunk:#121211; --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.15);
+    --text-primary:#f4f4f1; --text-secondary:#c3c2b7; --text-muted:#9a988f;
+    --good:#2fb52f; --warning-bg:#251c08; --critical-bg:#2c1211; --accent:#5a9cec;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--text-primary); font:var(--t2); font-variant-numeric:tabular-nums lining-nums; -webkit-font-smoothing:antialiased; }
+  button { font:inherit; color:inherit; }
+  .wrap { max-width:1440px; margin:0 auto; padding:0 28px 40px; }
+  .lbl { font:var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--text-muted); }
+  [data-status=good] { --tick:var(--good); } [data-status=warning] { --tick:var(--warning); }
+  [data-status=critical] { --tick:var(--critical); } [data-status=muted] { --tick:var(--text-muted); }
+
+  /* top bar + tabs */
+  .topbar { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:28px; height:46px; border-bottom:1px solid var(--hair); }
+  .brand { font:600 13px/1 var(--font-ui); letter-spacing:.01em; white-space:nowrap; }
+  .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
+  .tab-bar { display:flex; gap:2px; padding:3px; border:1px solid var(--hair-strong); border-radius:8px; }
+  .tab-btn { all:unset; box-sizing:border-box; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:6px 14px; border-radius:6px;
+    font:500 13px/1.15 var(--font-ui); color:var(--text-secondary); white-space:nowrap; }
+  .tab-btn:hover { color:var(--text-primary); background:color-mix(in srgb, var(--text-primary) 6%, transparent); }
+  .tab-btn.active { color:var(--text-primary); font-weight:600; background:color-mix(in srgb, var(--text-primary) 14%, transparent); }
+  .tab-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .topright { justify-self:end; display:flex; align-items:center; gap:12px; min-width:0; }
+  .topright .when { font:var(--t3); color:var(--text-muted); white-space:nowrap; }
+  .topright .ext { font:var(--t3); color:var(--accent); text-decoration:none; white-space:nowrap; }
+  #refresh-btn { display:none; background:none; border:1px solid var(--hair-strong); border-radius:4px; min-width:26px; height:22px; padding:0 6px; cursor:pointer; color:var(--text-secondary); font:500 13px/1 var(--font-ui); }
+
+  /* verdict header */
+  .verdict { display:grid; grid-template-columns:auto 1fr auto; align-items:end; gap:40px; padding:22px 0 18px; border-bottom:1px solid var(--hair); }
+  .headline { display:flex; align-items:baseline; gap:14px; min-width:0; }
+  .headline .big { font:var(--t1); white-space:nowrap; }
+  .headline .big.long { font-size:21px; white-space:normal; max-width:520px; }
+  .headline .sub { font:500 13px/1.3 var(--font-ui); color:var(--text-secondary); }
+  .headline .sub b { font-weight:600; color:var(--text-primary); }
+  .headline .sub b.ok { color:var(--good); } .headline .sub b.warn { color:var(--warning); } .headline .sub b.bad { color:var(--critical); }
+  .facts { display:flex; gap:28px; flex-wrap:wrap; }
+  .fact { display:flex; flex-direction:column; gap:5px; }
+  .fact .v { font:600 14px/1 var(--font-ui); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .fact .v small { font:var(--t3); color:var(--text-muted); font-weight:400; }
+  .stamp { text-align:right; font:var(--t3); color:var(--text-muted); line-height:1.5; }
+  .stamp b { color:var(--text-secondary); font-weight:500; }
+
+  /* layout + sections */
+  .cols { display:grid; grid-template-columns:minmax(0,1fr) 340px; column-gap:36px; }
+  .col-main { min-width:0; }
+  .col-rail { min-width:0; border-left:1px solid var(--hair); padding-left:28px; }
+  .rsec { padding:18px 0 4px; }
+  .rsec + .rsec { border-top:1px solid var(--hair); margin-top:14px; }
+  .sh { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .sh .lbl { color:var(--text-secondary); }
+  .sh .note { font:var(--t3); color:var(--text-muted); }
+  .nar { margin:0; font:var(--t3); font-size:12px; line-height:1.55; color:var(--text-secondary); white-space:pre-wrap; }
+  .nar.auto { color:var(--text-muted); white-space:normal; }
+  .nars .nar + .nar { margin-top:8px; }
+  .narrow-only { display:none; }
+  .foot { font:var(--t3); color:var(--text-muted); margin:28px 0 0; padding-top:12px; border-top:1px solid var(--hair); }
+
+  /* ledger tables */
+  .ledger { border-top:1px solid var(--hair-strong); }
+  .ledger .row { display:grid; align-items:center; column-gap:18px; padding:9px 10px 9px 14px; border-bottom:1px solid var(--hair); box-shadow:inset 3px 0 0 var(--tick, transparent); }
+  .ledger .hdr { padding-top:7px; padding-bottom:7px; box-shadow:none; }
+  .ledger .hdr span { white-space:nowrap; font:var(--label); letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+  .ledger .r { text-align:right; }
+  .ledger .name { min-width:0; }
+  .ledger .name b { font-weight:600; }
+  .ledger .name small { display:block; font:var(--t3); color:var(--text-muted); margin-top:2px; }
+  .ledger .sub { font:var(--t3); color:var(--text-muted); }
+  .ledger .num { font:var(--t2-num); white-space:nowrap; text-align:right; }
+  .ledger .num small { font:var(--t3); color:var(--text-muted); font-weight:400; }
+  .ledger .num small.ph { display:none; }
+  .ledger .det { font:var(--t3); font-size:12px; color:var(--text-secondary); }
+  .pill { font:700 10.5px/1 var(--font-ui); letter-spacing:.06em; text-transform:uppercase; color:var(--tick, var(--text-muted)); white-space:nowrap; }
+  .ledger.pw .row { grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 120px; }
+  .ledger.wl .row { grid-template-columns:minmax(150px,1.2fr) 84px minmax(170px,1.6fr) 74px 84px; }
+  .ledger.ins .row { grid-template-columns:minmax(120px,1fr) 110px 150px 80px 100px; }
+  .ledger.dr .row { grid-template-columns:minmax(150px,1fr) minmax(160px,1.5fr) 130px 76px; }
+  .ledger.dr .row[data-status=warning], .ledger.th .row[data-status=warning] { background:var(--warning-bg); }
+  .ledger.th .row { grid-template-columns:110px minmax(0,1fr) 170px; align-items:start; }
+
+  /* watchlist rail: price against the wave targets */
+  .wrail { position:relative; height:26px; }
+  .wrail .ln { position:absolute; left:0; right:0; top:9px; height:3px; border-radius:2px; background:var(--sunk);
+    background-image:linear-gradient(90deg, color-mix(in srgb, var(--good) 30%, transparent) 0 var(--w1), transparent var(--w1)); }
+  .wrail .tk { position:absolute; top:5px; width:1px; height:11px; background:var(--text-muted); }
+  .wrail .tl { position:absolute; top:17px; transform:translateX(-50%); font:500 9.5px/1 var(--font-ui); color:var(--text-muted); white-space:nowrap; }
+  .wrail .dot { position:absolute; top:6px; width:9px; height:9px; margin-left:-4.5px; border-radius:50%; background:var(--text-primary); box-shadow:0 0 0 2.5px var(--page); }
+  .wrail .dot[data-status=good] { background:var(--good); } .wrail .dot[data-status=warning] { background:var(--warning); }
+
+  /* drift */
+  .grp { font:600 12px/1 var(--font-ui); color:var(--text-primary); padding:14px 0 8px; display:flex; justify-content:space-between; }
+  .grp small { font:var(--t3); color:var(--text-muted); font-weight:400; }
+  .dbar { position:relative; height:6px; border-radius:3px; background:var(--sunk); }
+  .dbar .f { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:color-mix(in srgb, var(--text-primary) 45%, transparent); }
+  .dbar .f[data-status=warning] { background:var(--warning); }
+  .dbar .t { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; background:var(--accent); border-radius:1px; }
+  .flagnote { margin-top:10px; padding:10px 12px; border-left:3px solid var(--warning); background:var(--warning-bg); font:var(--t3); font-size:12px; color:var(--text-secondary); line-height:1.5; }
+  .flagnote b { color:var(--text-primary); }
+
+  /* criteria / trigger lists */
+  .dtype { font:600 17px/1.25 var(--font-ui); margin:0 0 6px; }
+  .crit { list-style:none; margin:0; padding:0; }
+  .crit li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; padding:9px 0; border-bottom:1px solid var(--hair); }
+  .crit li b { font:600 12.5px/1.3 var(--font-ui); }
+  .crit li .pill { align-self:start; padding-top:2px; }
+  .crit li .d { grid-column:1 / -1; font:var(--t3); font-size:12px; color:var(--text-secondary); }
+
+  /* thesis */
+  .chip { display:inline-block; text-align:left; font:500 11px/1.35 var(--font-ui); padding:4px 8px; border-radius:4px; background:var(--sunk); box-shadow:inset 0 0 0 1px var(--hair-strong); }
+  .verd { font:600 13px/1.35 var(--font-ui); }
+  .why { font:var(--t3); font-size:12px; line-height:1.5; color:var(--text-secondary); margin-top:3px; }
+
+  @media (max-width: 1180px) {
+    .cols { grid-template-columns:minmax(0,1fr); }
+    .col-rail { border-left:0; padding-left:0; border-top:1px solid var(--hair); margin-top:14px; }
+    .verdict { grid-template-columns:minmax(0,1fr); gap:14px; }
+    .stamp { text-align:left; }
+    .narrow-only { display:block; }
+    .wide-only { display:none; }
   }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page); color: var(--text-primary); margin: 0; padding: 24px; }
-  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
-  h1 { font-size: 20px; margin: 0; }
-  .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
-  .subtitle a { color: var(--neutral-blue); }
-  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
-  .context-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .stat { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
-  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-  .stat-value { font-size: 22px; font-weight: 600; }
-  .stat-note { font-size: 10px; font-style: italic; color: var(--text-muted); margin-top: 4px; }
-  .diagnosis-type { font-size: 18px; margin: 0 0 12px; }
-  .criteria-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
-  .watchlist-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .watchlist-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--grid); }
-  .watchlist-table td { padding: 8px; border-bottom: 1px solid var(--grid); }
-  .ticker-symbol { font-weight: 600; }
-  .muted { color: var(--text-muted); }
-  .narrative { font-size: 14px; line-height: 1.6; color: var(--text-secondary); margin: 0; white-space: pre-wrap; }
-  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-  .badge.good { background: var(--good-bg); color: var(--good); }
-  .badge.warning { background: var(--warning-bg); color: var(--warning); }
-  .badge.muted { background: var(--grid); color: var(--text-muted); }
-
-  .verdict { font-size: 17px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; }
-
-  .drift-account-group { margin-bottom: 14px; }
-  .drift-account-group:last-of-type { margin-bottom: 0; }
-  .drift-account-label { font-size: 12px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px; }
-  .drift-row { display: grid; grid-template-columns: 160px 1fr 140px; gap: 12px; align-items: center; padding: 7px 0; }
-  .drift-name { font-size: 12px; color: var(--text-secondary); }
-  .drift-track { position: relative; height: 8px; border-radius: 999px; background: var(--grid); }
-  .drift-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--neutral-blue); }
-  .drift-target { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); opacity: 0.55; }
-  .drift-val { font-size: 12px; text-align: right; color: var(--text-secondary); }
-  .flag-card { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: var(--warning-bg); border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
-
-  .pr-ticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  .pr-ticker-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-  .ticker-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-  .thesis-verdict { font-size: 12px; font-weight: 600; margin: 8px 0 4px; }
-  .proposed-change { font-size: 12px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-
-
-  @media (max-width: 700px) {
-    .context-strip { grid-template-columns: repeat(2, 1fr); }
-    .watchlist-table { display: block; overflow-x: auto; }
-    .pr-ticker-grid { grid-template-columns: 1fr; }
-    .drift-row { grid-template-columns: 1fr; gap: 4px; }
+  @media (max-width: 640px) {
+    .wrap { padding:0 14px 28px; }
+    .topbar { display:flex; flex-wrap:wrap; height:auto; gap:0; padding-top:10px; }
+    .brand { order:1; padding-bottom:8px; }
+    .tab-bar { order:2; width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); margin:0 0 10px; }
+    .topright { order:3; margin-left:auto; padding-bottom:8px; }
+    .verdict { padding:16px 0 14px; gap:12px; }
+    .headline { flex-direction:column; align-items:flex-start; gap:6px; }
+    .headline .big { font-size:30px; } .headline .big.long { font-size:20px; }
+    .facts { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+    .fact .v { flex-wrap:wrap; line-height:1.3; white-space:normal; }
+    .ledger .hdr { display:none; }
+    .ledger.pw .row { grid-template-columns:minmax(0,1fr) auto; row-gap:4px; } .ledger.pw .row .det { grid-column:1 / -1; order:5; }
+    .ledger.wl .row { grid-template-columns:minmax(0,1fr) auto auto; row-gap:8px; } .ledger.wl .row .railc { grid-column:1 / -1; order:5; } .ledger.wl .row .vs { display:none; }
+    .ledger.ins .row { grid-template-columns:minmax(0,1fr) auto auto auto; column-gap:12px; } .ledger.ins .row .dt { display:none; }
+    .ledger .num small.ph { display:inline; }
+    .ledger.dr .row { grid-template-columns:minmax(0,1fr) auto auto; row-gap:6px; } .ledger.dr .row .barc { grid-column:1 / -1; order:5; }
+    .ledger.th .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.th .row .body { grid-column:1 / -1; order:5; }
   }
 `;
