@@ -4,268 +4,298 @@
   <img src="docs/demo.gif" alt="Demo of the public Stress Monitor dashboard" width="900">
 </p>
 
-A market-crash-monitoring system that replaced a giant static prompt
-(hand-updated numbers pasted into an LLM chat every time) with a small
-pipeline: live data ingestion, a deterministic rule engine, a local MCP
-server, and three reporting surfaces — a chat-rendered deep-dive report, a
-public historical dashboard, and a "Private Portfolio Report" page.
+<p align="center">
+  <b><a href="https://market-sentiment.abhaysudhakaran.com/">Live dashboard →</a></b> · free, no sign-up, updated daily
+</p>
+
+> **Not investment advice.** This is a personal, educational project. The
+> dashboard's bands, stress gate and crash probability apply the author's own
+> rules to public data; they are not recommendations to buy or sell anything,
+> and the data can be delayed, revised or wrong. The code is shared as-is,
+> with no warranty.
+
+A market-stress monitoring system. It started as a giant static prompt (numbers
+hand-pasted into an LLM chat on every run) and became a small pipeline: daily
+data ingestion, a deterministic rule engine, a local MCP server for Claude
+Desktop, and two reporting sites.
 
 The core idea: **numeric classification is never an LLM's job.** Every
-threshold, band, and RED/AMBER/GREEN color is computed by plain code from
-real market data. The LLM's job is qualitative — reading news, judging Fed
-communication, synthesizing a narrative — and it always renders what the
-rule engine already decided, never re-derives it.
+threshold, band and RED/AMBER/GREEN colour is computed by plain code from real
+market data. The LLM does the qualitative work (reading news, judging Fed
+communication, writing the narrative) and always reports what the code
+already decided; it never re-derives it.
 
-**This is a stress-monitoring and discretionary deployment dashboard, not a
-calibrated crash-probability model.** The 6-indicator panel, band colors,
-confirmation windows, and wave-trigger thresholds are genuinely deterministic.
-Crash probability, crash-type diagnosis, and the Fed/Warsh classification are
-not — they're LLM/human qualitative judgment with no defined forecast
-horizon, no historical labels, and no back-testing behind the displayed
-percentage. Both public-facing report pages say this explicitly now (added
-2026-08-15, after an external review flagged the gap between the system's
-framing and what it actually does) — see
-`reference_docs/architecture-summary-for-external-review.md` for the full
-findings-and-status writeup.
+## What's deterministic and what's judgment
+
+This is a stress-monitoring and discretionary deployment dashboard, **not a
+calibrated crash-probability model**. Both reporting pages say so.
+
+| Output | How it's produced | Validated? |
+|---|---|---|
+| 6-indicator panel, bands, confirmation windows, stress gate | Code (`rule_engine/`), thresholds in `config/monitoring.yaml` | Deterministic and reproducible |
+| Deployment waves | Code (`mcp_server/`), triggers in a private local policy file | Deterministic. The pathways were replayed against every ≥20% S&P drawdown since 1993, but the thresholds are a personal choice, not an optimised fit |
+| Hazard model: P(10%+ drawdown within ~21 trading days) | Offline-fit logistic regression, run daily in code | Replayed in-sample: it ranks risk better than drawdown alone, but its raw percentages ran about 2× too high, so the dashboard shows measured historical hit rates instead |
+| Crash probability | Derived by formula from an LLM-committed bull/base/bear/crash scenario split | No: it's a considered opinion, not a statistic |
+| Crash-type diagnosis, Fed classification | LLM judgment informed by the panel and web research | No |
+
+The full write-up is in
+[`reference_docs/rules/crash-check-rules.md`](reference_docs/rules/crash-check-rules.md)
+("What this system actually is") and
+[`reference_docs/hazard-model-explained.md`](reference_docs/hazard-model-explained.md).
 
 ## Architecture
 
 ```
-FRED / EIA / Massive (market data)
+FRED · Yahoo · Treasury · EIA · CBOE · CFTC · FINRA · SEC EDGAR
+State Street · Caldara-Iacoviello GPR · Polymarket · Massive
         │
-        ▼  (GitHub Action, 10am ET daily, Mon-Sat)
-┌───────────────┐     ┌──────────────────────┐     ┌──────────────┐
-│  ingestion/    │────▶│  Supabase             │◀────│ rule_engine/ │
-│  (plausibility │     │  (data_points,        │     │ (deterministic│
-│  guard on the  │     │  crash_checks,        │     │  classify +  │
-│  way in)       │     │  watchlist_tickers,   │     │  ntfy push)  │
-└───────────────┘     │  full_report_snapshots,│     └──────────────┘
-                       │  portfolio_review_     │
-                       │  snapshots)            │
-                       └──────────┬─────────────┘
-                                  │
-             ┌────────────────────┼────────────────────┬───────────────────┐
-             ▼                    ▼                     ▼                   ▼
-   ┌──────────────────┐ ┌──────────────┐    ┌────────────────────┐ ┌──────────────────┐
-   │  mcp_server/      │ │ dashboard_   │    │ full_report_site/   │ │ Claude Desktop    │
-   │  (local, stdio,   │ │ site/        │    │ (Cloudflare Pages    │ │ chat — renders    │
-   │  14 tools, incl.  │ │ (Cloudflare  │    │ Function, service_   │ │ dashboard-        │
-   │  5 write/persist  │ │ Pages,       │    │ role key, Cloudflare │ │ template.html /   │
-   │  tools + a data-  │ │ public,      │    │ Access-gated: OTP    │ │ portfolio-review-  │
-   │  freshness check) │ │ read-only)   │    │ or GitHub login)     │ │ template.html     │
-   └────────┬──────────┘ └──────────────┘    └──────────────────────┘ └───────────────────┘
-            │
-   scheduled: Claude Desktop task,
-   "run crash check" daily at 2pm ET
+        ▼  GitHub Actions, 10am ET Mon–Sat (SEC 13F: manual, quarterly)
+┌────────────────┐     ┌───────────────────────┐     ┌────────────────┐
+│ ingestion/      │────▶│ Supabase              │◀───▶│ rule_engine/   │
+│ fetch, normalise│     │ public: market data,  │     │ panel, stress  │
+│ plausibility    │     │   rule output         │     │ gate, hazard   │
+│ guard           │     │ private: snapshots,   │     │ model, ntfy    │
+└────────────────┘     │   watchlist prices    │     └────────────────┘
+                        │ No dollar figures.    │
+                        └──────────┬────────────┘
+          ┌────────────────────────┼─────────────────────────┐
+          ▼                        ▼                          ▼
+┌──────────────────┐   ┌──────────────────────┐   ┌──────────────────────┐
+│ mcp_server/       │   │ dashboard_site/       │   │ full_report_site/     │
+│ local stdio, 20   │   │ public, static,       │   │ private, Cloudflare   │
+│ tools. Reads      │   │ public market data    │   │ Access, server-side   │
+│ local_state/ and  │   │ only                  │   │ Pages Function        │
+│ evaluates waves   │   │                       │   │                       │
+└────────┬─────────┘   └──────────────────────┘   └──────────────────────┘
+         │
+   Claude Desktop: "run crash check" (scheduled daily, 2pm ET)
+   and "run portfolio review" (on demand)
 ```
 
-### Layers
+| Component | What it does |
+|---|---|
+| [`ingestion/`](ingestion/) | Pulls each source into Supabase. A plausibility guard quarantines implausible values before they're written. A backfill script loads each series' full history. No LLM and no classification logic. |
+| [`rule_engine/`](rule_engine/) | Pure functions: the 6-indicator panel, confirmation windows, the stress gate, cross-indicator divergence flags and the hazard model. Writes `crash_checks`, and sends an ntfy.sh push when the confirmed-RED count rises to 2 or more. Vitest suite. |
+| [`mcp_server/`](mcp_server/) | Local stdio MCP server for Claude Desktop. 20 tools: market state, context indicators, rules lookup, portfolio drift, watchlist, wave evaluation, deployment planning and fire drill, fund-filing watch, and write/persist tools. Runs locally because it's the only component that reads personal data. `node:test` suite. |
+| [`dashboard_site/`](dashboard_site/) | Public static site (Cloudflare Pages, no build step). Reads only public market data with the anon key. |
+| [`full_report_site/`](full_report_site/) | Private page behind Cloudflare Access: wave status, personal triggers, the watchlist with insider activity, crash-type diagnosis and the portfolio review. Rendered server-side, so no credential reaches the browser. |
+| [`config/`](config/) | `monitoring.yaml`: the public panel bands, confirmation days, stress gate and push-alert count, read by both `rule_engine` and `mcp_server`. |
+| [`supabase/migrations/`](supabase/migrations/) | Schema and row-level-security history. |
 
-| Layer | What it does | Where |
-|---|---|---|
-| **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` |
-| **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase. The one-time backfill script pulls each FRED series' full available history (since 2026-08-15 — previously a rolling 5yr window), not just enough for the "All" chart toggle | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET Mon-Sat) |
-| **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (ATH-relative drawdown % triggers, not fixed S&P levels), cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
-| **MCP server** | Local stdio server exposing 14 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 5 persistence tools | `mcp_server/` |
-| **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Portfolio Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
+## The 6-indicator panel and the stress gate
 
-## The 6-indicator panel
+The panel tracks VIX, HY credit spreads, S&P drawdown from its all-time high,
+the 10-year Treasury yield, the Sahm Rule and a Fed-pivot signal. A RED
+reading only counts once it holds across two or more distinct ingestion dates,
+so a single noisy print can't trigger anything. The **stress gate** is met
+when 3 or more of the 6 are confirmed RED. All of these thresholds live in
+[`config/monitoring.yaml`](config/monitoring.yaml).
 
-VIX, HY credit spreads, S&P drawdown from ATH, 10yr Treasury yield, the
-Sahm Rule, and Fed pivot signal. Wave deployment (a staged, 3-tranche
-dry-powder deployment plan) authorizes only when 3 or more are
-simultaneously RED — and, per the Signal Tiering confirmation-window rule,
-only once a RED reading holds across 2+ distinct ingestion dates, not just
-a single noisy print. Full thresholds and the wave-deployment math live in
-`reference_docs/rules/crash-check-rules.md`.
+**Wave deployment** is a staged, three-tranche plan for deploying a cash
+reserve. A wave needs two things at once:
 
-**Wave deployment** triggers on ATH-relative S&P drawdown % (16/24/35 for
-Waves 1/2/3), not fixed nominal index levels — a fixed level decays in
-meaning as the market's all-time high rises over time; a drawdown
-percentage doesn't. `get_deployment_plan` requires *both* the price/VIX
-trigger and `wave_authorized` (the confirmed 3-of-6-RED gate) before
-returning a dollar plan — previously it only checked the former. Deployment
-is cumulative and execution-aware: a fast, deep drawdown that satisfies
-Wave 3's condition without Wave 1/2 ever separately confirming still
-returns the combined breakdown for every not-yet-executed wave, and
-`record_wave_deployment` tracks which waves have actually been executed
-(`local_state/wave_deployment_state.yaml`) so an executed wave isn't
-re-proposed.
+1. **Its own trigger:** S&P drawdown from the all-time high plus a VIX level
+   (same day), or a separate "slow-bear" pathway (deep drawdown plus a fresh
+   one-year low, confirmed on two dates) for grinding, low-volatility bears
+   like 2000–02 and 2022, which the drawdown+VIX pathway missed in
+   backtesting.
+2. **The stress gate.**
 
-Supplementary Tier 2 context — financial stress indices, breakeven
-inflation, continuing jobless claims, investment-grade credit spreads,
-2s10s curve, WTI, retail sales, repo/liquidity stress (SOFR), the broad
-dollar index, bank-funding/credit-conditions stress (NFCI risk/credit
-subindexes), the 10yr TIPS real yield, recent-grad unemployment (a FRED
-proxy for the NY Fed's own research, `CGBD2024`), the NY Fed's published
-Estrella-Mishkin yield-curve recession-probability model (computed locally
-from `DGS10`/`DGS3MO` — no FRED series exists for it), and an 11-sector +
-SPY/GLD sector-rotation panel (State Street's free NAV-history files),
-etc. — is available via `get_context_indicators` and on `dashboard_site`,
-informational only, never part of the gate. `get_series_deltas` provides
-real 3-day/7-day historical lookback for any series, fulfilling the rules
-doc's delta-reporting requirement.
+Trigger levels and the percentage split of each wave are personal policy, so
+they live in a gitignored local file, not in this repo, and waves are
+evaluated on the local machine from public inputs the rule engine publishes
+(drawdown, VIX, days since a one-year low). Deployment is cumulative and
+execution-aware: a fast crash that skips straight to Wave 3 returns every
+not-yet-executed wave, and executed waves are tracked locally so they're
+never proposed twice.
 
-**Statistical hazard model (additive, non-gating)**: alongside the panel,
-`rule_engine/src/hazardModel.ts` runs a logistic-regression model — fit
-once, offline, on real crisis history and isotonic-recalibrated — that
-estimates P(S&P reaches a 10%+ drawdown within ~21 trading days | not
-already past it). Shown as its own LOW/TRANSITIONING/HIGH card, never
-blended with `crash_probability_pct` (which stays 100% LLM judgment). See
-[`reference_docs/hazard-model-explained.md`](reference_docs/hazard-model-explained.md)
-for a full plain-language walkthrough of the data flow and math, including
-its documented limitations (a confirmed data-leakage issue in one input
-feature, tracked in `BACKLOG.md`).
+## Beyond the panel (context only, never gates)
 
-**Risk Radar — retired 2026-11-13.** A 6-axis discretionary 0-100 score ran
-on crash checks and portfolio reviews from 2026-09-15. It never gated
-anything, mostly restated series shown directly elsewhere, and swung run to
-run on the same data, so it was removed everywhere; its database columns are
-kept for history (see `crash-check-rules.md`'s "Risk Radar (retired)").
+- **Contextual indicators:** financial-conditions and stress indices,
+  breakevens, jobless claims, IG spreads, the yield curve and the NY Fed's
+  recession-probability model, the SOFR−IORB repo-stress spread, MOVE bond
+  volatility, Treasury auction quality, copper, recent-grad unemployment and
+  more.
+- **Distance to RED:** how far each panel indicator is from its RED band.
+- **Divergence detection:** pairs that normally move together (IG vs HY
+  spreads, initial vs continuing claims, VIX vs HY, gold vs silver), flagged
+  when they decouple.
+- **Positioning and flows:** CFTC Commitments of Traders, CBOE put/call and
+  FINRA margin debt as historical percentiles; sector rotation; 13F
+  institutional net buying by sector.
+- **Fiscal dominance checklist:** Taylor-rule gap, primary balance, net
+  interest as a share of GDP, and the gold/real-yield relationship.
+- **Event-conditional scenarios** for scheduled events such as FOMC
+  meetings.
 
-**Cross-indicator divergence detection**: three pairs of normally-correlated
-series (IG-vs-HY credit spreads, initial-vs-continuing jobless claims,
-VIX-vs-HY credit spreads) are checked daily for a 7-day-delta split large
-enough to suggest they've decoupled — a relationship-level signal the
-6-indicator panel's individual bands can't see. Computed once in
-`classify()` and persisted to `crash_checks.divergence_flags`, so
-`get_context_indicators` and `dashboard_site`'s "Signal Relationships" card
-both read the same value rather than recomputing it independently. VIX-vs-HY
-is the one pair where a flagged divergence is the *reassuring* reading
-(equity-specific noise, not confirmed credit stress) — the opposite of the
-other two.
+## The public dashboard
 
-## Security model — split storage
+Four tabs, all read-only:
 
-This system deliberately never lets personal financial data reach a cloud
-service:
+- **Stress:** the panel, the stress gate, distance to RED, the hazard model,
+  the LLM crash-estimate history, upcoming market events, and indicator
+  history charts with their bands.
+- **Smart Money:** market positioning, sector rotation and institutional
+  13F tilt.
+- **Macro & Fiscal:** the fiscal dominance checklist, contextual
+  indicators, the yield curve and rates decomposition.
+- **Notable Views:** what well-known macro voices are saying, set against
+  today's data. Short attributed paraphrases with links and dates, reviewed
+  by hand before publishing.
 
-- **Supabase** holds macro/market data and — as of the Private Portfolio Report page —
-  crash-type diagnosis narrative and Portfolio Opportunity Review content
-  (drift %, ticker thesis). **No dollar figures, no
-  account balances, ever** — enforced in code, not just by convention:
-  every write path that persists free text (`write_snapshot`,
-  `write_full_report`, `write_portfolio_review`) cross-references the real
-  local portfolio file's actual dollar figures and throws before writing
-  if any appear.
-- **`local_state/`** (gitignored, never committed) holds the real
-  portfolio file — account balances, dry powder, allocation targets, the
-  BrokerageLink watchlist's position sizing (`max_position_usd`, which
-  never reaches Supabase even though everything else about the watchlist
-  now does), and which wave-deployment tranches have actually been
-  executed (`wave_deployment_state.yaml`) — action state tied to real
-  trades, same trust boundary as the rest of this directory. Read only by
-  the local MCP server.
-- **The MCP server runs locally via stdio**, not as a hosted service —
-  because it's the one component that touches `local_state/`.
-- **Two access tiers in Supabase**: `crash_checks`/`data_points`/
-  `watchlist_tickers` are anon-readable (RLS + GRANT scoped to macro-only
-  data — safe to share publicly, which is exactly what `dashboard_site`
-  does). `full_report_snapshots`/`portfolio_review_snapshots` are **never**
-  anon-readable (RLS deny-all for anon/authenticated) — the only reader is
-  the `full_report_site` Cloudflare Pages Function, which holds the
-  `service_role` key server-side (never shipped to the browser) behind
-  Cloudflare Access.
+You can browse past reports with a calendar picker, check each source's
+freshness, and install the dashboard as a home-screen app (PWA).
 
-Wave-deployment amounts in the committed rules doc are percentages of "dry
-powder," not dollar figures — the MCP server combines that percentage with
-the real, local-only balance at read time, and that output is chat-only,
-never persisted.
+## Two chat workflows (Claude Desktop)
 
-## Two reporting sites
+- **"Run crash check"** runs daily as a Claude Desktop scheduled task. It
+  confirms ingestion actually ran, pulls the panel and context, and commits
+  to a scenario distribution **before** it can see the previous report's
+  number. That anti-anchoring rule is enforced by tool order: no tool used in
+  the first six steps exposes a prior probability. It then does the
+  qualitative research, persists the result (`write_snapshot` for the public
+  row, `write_full_report` for the private page) and ends with a plain-text
+  summary. Steps:
+  [`project-instructions.md`](reference_docs/rules/project-instructions.md).
+- **"Run portfolio review"** runs on demand. It covers portfolio drift
+  against targets, watchlist status, a deployment fire drill, fund-filing
+  checks and a re-underwrite of each watchlist thesis. It's rendered from
+  [`portfolio-review-template.html`](reference_docs/rules/portfolio-review-template.html)
+  and merged into the private Full Report page.
 
-- **`dashboard_site`** (public, `market-sentiment-analyzer.pages.dev`, page
-  title "Macro Market Stress Monitor" as of 2026-08-16 — renamed from
-  "Macro Crash Check" since that name implied prediction/detection rather
-  than monitoring) — historical trend charts and the current indicator
-  panel, reading only anon-safe macro data. Intentionally left
-  unauthenticated so it can be shared with others.
-- **`full_report_site`** (private, `market-sentiment-full-report.pages.dev`,
-  Cloudflare Access-gated via email one-time-PIN or GitHub login) — the BrokerageLink
-  watchlist with live status, crash-type diagnosis, qualitative portfolio
-  context, and the full Portfolio Opportunity Review (drift bars, ticker
-  thesis re-underwrite, macro cross-reference). Rendered server-side by a Cloudflare Pages Function using
-  the `service_role` key — no client-embedded credential to leak.
+## How changes get made
 
-Both are installable as a home-screen PWA (manifest + icons, no service
-worker — deliberately avoids caching the Access-gated site's content past
-a logged-out session). The installed app shows a refresh button (standalone
-mode strips the browser's own pull-to-refresh/URL bar); a normal browser
-tab doesn't show it, since it doesn't need it.
+- **Every new signal must earn its place.** A new flag is backtested for a
+  base rate and a forward edge before it ships, and ideas that fail stay
+  documented with their evidence so they aren't re-proposed. Examples: a
+  MOVE-vs-VIX divergence flag, a BDC-ETF private-credit proxy and
+  high-frequency positioning signals were all rejected. See "Investigated
+  and rejected" in the rules doc and
+  [`BUILD_SPEC_crash_check_enhancements.md`](reference_docs/BUILD_SPEC_crash_check_enhancements.md).
+- **Low-signal features get cut.** A discretionary "Risk Radar" score was
+  retired, and later deleted, after its readings swung run to run on
+  unchanged data.
+- **Self-corrections are published.** The hazard model's overstated
+  probabilities were relabeled rather than hidden. External reviews and
+  their outcomes are in
+  [`architecture-summary-for-external-review.md`](reference_docs/architecture-summary-for-external-review.md).
+- **Refactors are checked for identical behaviour.** Moving thresholds into
+  config files and wave evaluation onto the local machine was verified by
+  diffing old and new code over every input combination and the full real
+  history before switching over.
+
+## Security model: public engine, private policy
+
+Personal financial data never reaches a cloud service, and personal policy
+never reaches the public repo or the public tables.
+
+- **Three kinds of configuration.**
+  - Public monitoring thresholds: [`config/monitoring.yaml`](config/monitoring.yaml).
+  - Personal policy, local and gitignored: `local_state/policy.yaml` (wave
+    triggers, wave and crash-type splits, hard rules, private terms) and
+    `local_state/personal-rules.md` (the personal sections of the rules doc,
+    merged in by the `get_rules` tool).
+  - Dollar data, local and gitignored: balances, cash reserve, position
+    sizing, executed waves, the exchange log.
+
+  The repo tracks only `*.example.yaml` templates with illustrative numbers.
+- **Two access tiers in Supabase.** `crash_checks` and `data_points` are
+  readable with the public anon key, which is how the dashboard works; they
+  hold market data, rule output and market-event triggers only. Everything
+  personal, including the private report snapshots, watchlist ticker prices
+  (`private_data_points`), the watchlist and its insider activity, is
+  readable only with the server-side key that the local MCP server and the
+  Access-gated Pages Function hold.
+- **Guardrails in code, not just instructions.** Every write path that
+  persists free text checks it against the real local portfolio and throws
+  on any dollar figure. `write_snapshot` also refuses public text containing
+  any of the policy's private terms (account names, "watchlist") and keeps
+  only market-event triggers on the public row.
+- **Dollar amounts are computed at read time.** The policy stores wave
+  splits as percentages of the cash reserve; the MCP server applies them to
+  the local balance, and the result stays in chat.
 
 ## Repo structure
 
 ```
-ingestion/            Stage 2 — pulls FRED/EIA/Massive data into Supabase, plausibility-guarded
-rule_engine/           Stage 3 — deterministic classification + threshold-crossing push notification
-mcp_server/            Stage 4 — local MCP tools for Claude Desktop (14 tools)
-dashboard_site/        Public Cloudflare Pages reporting site
-full_report_site/      Private Cloudflare Pages Function — Access-gated Private Portfolio Report page
-reference_docs/rules/  Source-of-truth rules doc + the two chat-report HTML templates
-supabase/migrations/   Schema history
-local_state/           Gitignored — real portfolio/watchlist data lives here, never committed
-.github/workflows/     Daily ingestion+classification cron, one-time backfill
+ingestion/            data sources → Supabase, plausibility-guarded
+rule_engine/          deterministic panel, stress gate, hazard model, push alert
+mcp_server/           local MCP tools for Claude Desktop (20 tools), wave evaluation
+dashboard_site/       public dashboard (static)
+full_report_site/     private Full Report page (Cloudflare Pages Function)
+config/               public monitoring thresholds
+reference_docs/rules/ rules doc, chat instructions, review template
+reference_docs/       hazard-model explainer, external-review summary, enhancement specs
+supabase/migrations/  schema + row-level security
+local_state/          *.example.yaml templates; real files are gitignored
+.github/workflows/    daily ingest + classify, backfill, SEC 13F
 ```
 
 ## Setup
 
-Each of `ingestion/`, `rule_engine/`, and `mcp_server/` has a `.env.example`
-— copy to `.env` and fill in:
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — from your Supabase project
-- `FRED_API_KEY` — free at fred.stlouisfed.org/docs/api/api_key.html
-- `EIA_API_KEY` — free at eia.gov/opendata/register.php
-- `MASSIVE_API_KEY` — free tier at massive.com, for watchlist ticker prices
-- `NTFY_TOPIC` (optional) — a random, unguessable ntfy.sh topic name for
-  push notifications on a confirmed-RED threshold crossing
+**Run it yourself at your own risk.** This is one person's working setup,
+not a packaged product. You'll need your own Supabase project, Cloudflare
+Pages, GitHub Actions, several free API keys and Claude Desktop. If you only
+want the signals, use the
+[live dashboard](https://market-sentiment.abhaysudhakaran.com/).
 
-`mcp_server/.env.example` additionally has `PORTFOLIO_PATH`,
-`WATCHLIST_PATH`, and `WAVE_DEPLOYMENT_STATE_PATH` — absolute paths to the
-three local, gitignored YAML files under `local_state/` (copy each
-`*.example.yaml` there first).
+Requires Node 22+. Each of `ingestion/`, `rule_engine/` and `mcp_server/` is
+an independent package (`npm ci` inside each; no root workspace) with a
+`.env.example` to copy to `.env`:
 
-Apply `supabase/migrations/` in order via the Supabase SQL editor or CLI.
-GitHub Actions secrets mirror the same values for the scheduled ingestion
-job (`.github/workflows/ingest.yml`).
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: from your Supabase project
+- `FRED_API_KEY` (free, fred.stlouisfed.org) and `EIA_API_KEY` (free,
+  eia.gov/opendata)
+- `MASSIVE_API_KEY`: free tier at massive.com, for watchlist prices
+- `SEC_EDGAR_CONTACT_EMAIL`: SEC requires a contact address in automated
+  requests
+- `POLYMARKET_SLUGS` (optional): Polymarket markets to track
+- `NTFY_TOPIC` (optional): a random, unguessable ntfy.sh topic for push
+  alerts
 
-For Claude Desktop: point an MCP server entry at
-`mcp_server/src/server.ts` (via `npx tsx`), and attach
-`reference_docs/rules/portfolio-review-template.html` +
-`reference_docs/rules/project-instructions.md` as project knowledge. Don't
-attach `crash-check-rules.md`: runs read it section by section through the
-`get_rules` MCP tool (attached, it came back as search fragments once
-project knowledge outgrew what Claude Desktop loads in full).
+Then:
 
-For `full_report_site`: a separate Cloudflare Pages project (root
-directory `full_report_site`), `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
-as encrypted environment variables, and a Cloudflare Access Application
-with a One-Time-PIN identity provider scoped to your email — see
-`full_report_site/README.md` for the exact steps and gotchas. A GitHub
-OAuth identity provider can be added alongside OTP for lower-friction
-login (register a GitHub OAuth App with callback
-`https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback`,
-add it under Zero Trust → Settings → Authentication, then allow your
-GitHub account's email in the Access policy).
+1. Copy each `local_state/*.example.yaml` to the same name without
+   `.example` and fill in your own values, starting with `policy.yaml`
+   (your wave triggers and splits) and `portfolio.yaml`. Optionally add a
+   `local_state/personal-rules.md` with your own versions of the rules
+   doc's personal sections, under the same headings.
+2. Tune [`config/monitoring.yaml`](config/monitoring.yaml) if you want
+   different bands or a different stress gate.
+3. Apply `supabase/migrations/` in order (SQL editor or Supabase CLI).
+4. Add the same values as GitHub Actions secrets for
+   `.github/workflows/ingest.yml`. Run `backfill.yml` once to load history.
+5. Claude Desktop: merge
+   [`mcp_server/claude_desktop_config.example.json`](mcp_server/claude_desktop_config.example.json)
+   into your config (the MCP server needs `PORTFOLIO_PATH` and
+   `WAVE_DEPLOYMENT_STATE_PATH`; the other local files default to sitting
+   next to `PORTFOLIO_PATH`), and attach `project-instructions.md` and
+   `portfolio-review-template.html` as project knowledge. Don't attach the
+   rules doc: runs read it section by section through the `get_rules` tool.
+6. `dashboard_site/`: a Cloudflare Pages project with no build step. Swap
+   in your own Supabase URL and anon key.
+7. `full_report_site/`: a second Pages project behind Cloudflare Access.
+   See [`full_report_site/README.md`](full_report_site/README.md).
 
-## Two chat-triggered workflows
+Tests: `npm test` in `rule_engine/` (Vitest) and `mcp_server/` (`node:test`);
+`npm run typecheck` in all three packages. Tests use the example policy,
+never your real one.
 
-- **"Run crash check"** (also runs unattended via a daily Claude Desktop
-  scheduled task, 2pm ET — after a data-freshness check confirms
-  ingestion actually ran) — pulls the current indicator panel, contextual
-  macro indicators, and (if a wave is active) the deployment plan; commits
-  to a crash-probability estimate before ever seeing the prior one
-  (anti-anchoring); does qualitative research; persists via `write_snapshot` and
-  `write_full_report`; ends with a plain-text summary plus links to the
-  dashboard and the Full Report page (no HTML artifact since 2026-11-13 —
-  the old template is in `reference_docs/archive/`).
-- **"Run portfolio review"** (on-demand, no fixed schedule) — checks
-  portfolio drift against long-term targets, watchlist ticker status
-  against Wave price targets, cross-references macro/geopolitical sources,
-  and re-underwrites the BrokerageLink watchlist thesis; renders
-  `portfolio-review-template.html`; persists via `write_portfolio_review`
-  (merged into the Private Portfolio Report page) and, if the user approves ticker
-  changes, `write_watchlist`.
+## Known gaps
 
-## Known gaps / backlog
+See [`BACKLOG.md`](BACKLOG.md): open items, deliberately deferred rather
+than forgotten.
 
-See [`BACKLOG.md`](BACKLOG.md) for open items — things deliberately
-deferred rather than forgotten.
+## Data sources
+
+Each data source (FRED and the series' original providers, Treasury, EIA,
+CBOE, CFTC, FINRA, SEC EDGAR, State Street, Polymarket, Yahoo Finance,
+Massive) keeps its own terms, and you're responsible for complying with them
+when you run the code with your own keys.
+
+## Project status
+
+A personal project with a single maintainer, shared as-is. It runs daily and
+is actively used, but there's no support commitment: questions and
+suggestions are welcome, and responses aren't guaranteed. No open-source
+license has been chosen yet, so all rights are reserved for now.
