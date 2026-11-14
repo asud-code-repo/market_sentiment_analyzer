@@ -295,13 +295,17 @@
   .rd .loading { font:var(--t3); color:var(--text-muted); }
 
   /* ---------- top bar ---------- */
-  .topbar { display:flex; align-items:center; gap:28px; height:46px; border-bottom:1px solid var(--hair); }
+  /* Three fixed columns so the tabs sit in the same place on every tab:
+     the right-hand controls differ (date picker on Stress, a short note
+     elsewhere) and used to push the centred tabs sideways. */
+  .topbar { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:28px; height:46px; border-bottom:1px solid var(--hair); }
+  .topright { justify-self:end; display:flex; align-items:center; gap:8px; min-width:0; }
   .brand { font:600 13px/1 var(--font-ui); letter-spacing:.01em; white-space:nowrap; }
   .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
   /* Tabs as a segmented control (2026-11-14): as plain grey text next to
      the brand they read like a subtitle, and readers missed that there are
      four views. Centred between the brand and the date controls. */
-  .rd .tab-bar { display:flex; gap:2px; flex-wrap:nowrap; padding:3px; margin-inline:auto; border:1px solid var(--hair-strong); border-radius:8px; }
+  .rd .tab-bar { display:flex; gap:2px; flex-wrap:nowrap; padding:3px; border:1px solid var(--hair-strong); border-radius:8px; }
   .rd .tab-btn { all:unset; box-sizing:border-box; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:6px 14px; border-radius:6px;
     font:500 13px/1.15 var(--font-ui); color:var(--text-secondary); white-space:nowrap; }
   .rd .tab-btn:hover { color:var(--text-primary); background:color-mix(in srgb, var(--text-primary) 6%, transparent); }
@@ -707,12 +711,14 @@
   }
   @media (max-width: 640px) {
     .rd .wrap { padding:0 14px 28px; }
-    .topbar { flex-wrap:wrap; height:auto; gap:0; padding-top:10px; }
+    .topbar { display:flex; flex-wrap:wrap; height:auto; gap:0; padding-top:10px; }
+    /* Phone: tabs right under the brand on every tab; the date controls
+       (Stress only) go below them, so the tabs never move vertically. */
+    .topright { order:3; margin-left:auto; padding-bottom:8px; }
     .brand { order:1; padding-bottom:8px; }
-    .datenav, .datenav-static { order:2; padding-bottom:8px; }
     .datenav .dn-trig { max-width:170px; overflow:hidden; } .datenav .dn-trig small { display:none; }
     /* All four tabs always visible: equal columns, long names wrap. */
-    .rd .tab-bar { order:3; width:100%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 10px; }
+    .rd .tab-bar { order:2; width:100%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 10px; }
     .rd .tab-btn { white-space:normal; text-align:center; font-size:12px; padding:7px 4px; min-height:34px; }
     .verdict { position:static; padding:16px 0 14px; gap:12px; }
     .headline { flex-direction:column; align-items:flex-start; gap:6px; }
@@ -829,6 +835,7 @@
       <button class="tab-btn" data-tab="macro">Macro &amp; Fiscal</button>
       <button class="tab-btn" data-tab="analysts">Notable Views</button>
     </nav>
+    <div class="topright">
     <div class="datenav" id="datenav">
       <button class="dn-btn" id="prev-btn" aria-label="Older report">‹</button>
       <button class="dn-trig" id="date-trigger" popovertarget="date-cal" aria-haspopup="dialog" aria-label="Pick a report"></button>
@@ -838,6 +845,7 @@
     </div>
     <div class="datenav-static" id="datenav-static" hidden>Latest available data</div>
     <button class="dn-btn" id="refresh-btn" title="Refresh">&#8635;</button>
+    </div>
   </header>
 
   <div id="error-container"></div>
