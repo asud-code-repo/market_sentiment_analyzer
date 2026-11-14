@@ -306,14 +306,48 @@
   .rd .tab-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .datenav { margin-left:auto; display:flex; align-items:center; gap:6px; font:var(--t3); color:var(--text-muted); }
   .datenav[hidden] { display:none; }
-  .datenav select { background:transparent; border:1px solid var(--hair-strong); border-radius:4px; padding:3px 6px; font:500 12px/1.2 var(--font-ui); color:var(--text-primary); max-width:300px; }
-  /* The open list is drawn by the browser: without these it came up white
-     with the dark theme's near-white text (unreadable). color-scheme makes
-     native controls follow the theme; the option colours cover browsers
-     that ignore it. */
+  /* Native controls (scrollbars, inputs) follow the theme. */
   :root { color-scheme: light dark; }
-  .datenav select option { background:var(--page); color:var(--text-primary); }
-  .datenav select option:checked { background:var(--accent); color:#fff; }
+  /* Report picker (2026-11-13): a calendar instead of a 230-entry list.
+     One cell per day; the day's runs are listed under the grid. */
+  .datenav .dn-trig { display:flex; align-items:center; gap:8px; background:none; border:1px solid var(--hair-strong); border-radius:4px; padding:3px 8px; height:22px; cursor:pointer;
+    font:500 12px/1.2 var(--font-ui); color:var(--text-primary); max-width:320px; white-space:nowrap; }
+  .datenav .dn-trig small { font:400 11px/1 var(--font-ui); color:var(--text-muted); }
+  .datenav .dn-trig::after { content:""; width:5px; height:5px; margin:-3px 0 0 2px; border:solid var(--text-muted); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
+  [popover].pop.cal { width:316px; max-width:calc(100vw - 24px); padding:12px 12px 10px; }
+  .cal .mh { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .cal .mh b { font:600 13px/1 var(--font-ui); color:var(--text-primary); }
+  .cal .mh button { all:unset; cursor:pointer; padding:2px 8px; font:500 15px/1 var(--font-ui); color:var(--text-secondary); border-radius:3px; }
+  .cal .mh button:disabled { opacity:.2; cursor:default; }
+  .cal .mh button:not(:disabled):hover { background:var(--sunk); }
+  .cal .grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal .wd { font:600 9.5px/1 var(--font-ui); letter-spacing:.06em; color:var(--text-muted); text-align:center; padding:4px 0; }
+  .cal .d { all:unset; box-sizing:border-box; position:relative; height:40px; border-radius:5px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    font:500 12px/1 var(--font-ui); color:var(--text-primary); background:var(--sunk); cursor:pointer; }
+  .cal .d small { font:500 9.5px/1 var(--font-ui); color:var(--text-secondary); }
+  .cal .d.upd { background:none; box-shadow:inset 0 0 0 1px var(--hair); }
+  .cal .d.upd small { color:var(--text-muted); }
+  .cal .d.none { background:none; color:var(--text-muted); opacity:.45; cursor:default; }
+  .cal .d.high { box-shadow:inset 0 0 0 1.5px var(--warning); }
+  .cal .d.high small { color:var(--warning); font-weight:700; }
+  .cal .d:not(.none):hover { box-shadow:inset 0 0 0 1px var(--hair-strong); }
+  .cal .d.sel, .cal .d.sel:hover { box-shadow:inset 0 0 0 2px var(--accent); }
+  .cal .d.today::after { content:""; position:absolute; bottom:3px; left:50%; width:10px; margin-left:-5px; height:2px; border-radius:1px; background:var(--accent); }
+  .cal .d i { position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:var(--critical); }
+  .cal .d i.better { background:var(--good); }
+  .cal .leg { display:flex; flex-wrap:wrap; gap:5px 12px; margin-top:9px; padding-top:8px; border-top:1px solid var(--hair); font:400 10.5px/1.3 var(--font-ui); color:var(--text-muted); align-items:center; }
+  .cal .leg .sw { display:inline-block; width:11px; height:9px; border-radius:2px; margin-right:4px; vertical-align:-1px; box-shadow:inset 0 0 0 1.5px var(--warning); }
+  .cal .leg .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:4px; vertical-align:1px; background:var(--critical); }
+  .cal .leg .dot.better { background:var(--good); }
+  .cal .runs { margin-top:9px; padding-top:8px; border-top:1px solid var(--hair); }
+  .cal .runs .h { font:400 11px/1.35 var(--font-ui); color:var(--text-muted); margin-bottom:6px; }
+  .cal .runs .h b { color:var(--text-primary); font-weight:600; }
+  .cal .runs .chg { display:block; margin-top:2px; color:var(--text-secondary); }
+  .cal .chips { display:flex; flex-wrap:wrap; gap:5px; }
+  .cal .chips button { all:unset; cursor:pointer; font:500 11px/1 var(--font-ui); padding:6px 8px; border-radius:4px; background:var(--sunk); color:var(--text-secondary); box-shadow:inset 0 0 0 1px var(--hair); }
+  .cal .chips button b { color:var(--text-primary); font-weight:600; }
+  .cal .chips button:hover { box-shadow:inset 0 0 0 1px var(--hair-strong); }
+  .cal .chips button.on { box-shadow:inset 0 0 0 1.5px var(--accent); color:var(--text-primary); }
   .datenav .dn-btn { background:none; border:1px solid var(--hair-strong); border-radius:4px; min-width:24px; height:22px; padding:0 6px; cursor:pointer; color:var(--text-secondary); font:500 12px/1 var(--font-ui); }
   .datenav .dn-btn:disabled { opacity:.35; cursor:default; }
   .datenav-static { margin-left:auto; font:var(--t3); color:var(--text-muted); }
@@ -662,7 +696,7 @@
     .topbar { flex-wrap:wrap; height:auto; gap:0; padding-top:10px; }
     .brand { order:1; padding-bottom:8px; }
     .datenav, .datenav-static { order:2; padding-bottom:8px; }
-    .datenav select { max-width:150px; }
+    .datenav .dn-trig { max-width:170px; overflow:hidden; } .datenav .dn-trig small { display:none; }
     .rd .tab-bar { order:3; width:100%; overflow-x:auto; gap:18px; height:38px; scrollbar-width:none; }
     .rd .tab-bar::-webkit-scrollbar { display:none; }
     .verdict { position:static; padding:16px 0 14px; gap:12px; }
@@ -782,7 +816,8 @@
     </nav>
     <div class="datenav" id="datenav">
       <button class="dn-btn" id="prev-btn" aria-label="Older report">‹</button>
-      <select id="date-select" aria-label="Report"></select>
+      <button class="dn-trig" id="date-trigger" popovertarget="date-cal" aria-haspopup="dialog" aria-label="Pick a report"></button>
+      <div id="date-cal" popover class="pop cal" role="dialog" aria-label="Reports by day"></div>
       <button class="dn-btn" id="next-btn" aria-label="Newer report">›</button>
       <button class="dn-btn" id="latest-btn">Latest</button>
     </div>
@@ -3512,15 +3547,121 @@ function renderReport(row, priorFullReport) {
   if (more) more.addEventListener("click", () => { document.getElementById("nar-text").classList.add("open"); more.remove(); });
 }
 
+// ---------- Report picker: calendar (2026-11-13) ----------
+// Storage is unchanged: the rule engine and the scheduled Claude run each
+// insert their own crash_checks row, so a day usually has 2-5 rows. The
+// picker groups them by (local) day: picking a day opens its latest Full
+// Report, and that day's individual runs are listed under the grid.
+//   - "high" fill: the day's latest Full Report put the LLM crash estimate
+//     at or above CAL_HIGH_PCT (a fixed line, chosen 2026-11-13; the estimate
+//     is discretionary and noisy, so the level isn't shaded day by day).
+//   - dot: the gate changed that day (an indicator went into or out of RED,
+//     the confirmed red count moved, or wave authorization flipped) --
+//     red if anything got worse, green if it only improved.
+const CAL_HIGH_PCT = 20;
+const GATE_COLOR_FIELDS = [["vix_color", "VIX"], ["hy_spread_color", "HY spread"], ["sp_drawdown_color", "S&P drawdown"], ["treasury_10y_color", "10Y Treasury"], ["sahm_rule_color", "Sahm rule"], ["fed_pivot_color", "Fed pivot"]];
+const dayKey = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+let CAL_DAYS = new Map(); // dayKey -> { idx: [row indexes], changes: [text], worse: bool }
+let CAL_MONTH = null; // "YYYY-MM" being shown
+
+function gateChanges(prev, cur) {
+  const out = []; let worse = false;
+  for (const [f, name] of GATE_COLOR_FIELDS) {
+    const was = prev[f] === "RED", is = cur[f] === "RED";
+    if (was !== is) { out.push(`${name} ${is ? "turned red" : "left red"}`); if (is) worse = true; }
+  }
+  const a = prev.confirmed_red_count ?? 0, b = cur.confirmed_red_count ?? 0;
+  if (a !== b) { out.push(`confirmed red ${a} → ${b}`); if (b > a) worse = true; }
+  if (!!prev.wave_authorized !== !!cur.wave_authorized) { out.push(cur.wave_authorized ? "wave authorized" : "wave authorization ended"); if (cur.wave_authorized) worse = true; }
+  return { out, worse };
+}
+
+function buildCalendarIndex() {
+  CAL_DAYS = new Map();
+  ALL_ROWS.forEach((r, i) => {
+    const k = dayKey(r.run_at);
+    if (!CAL_DAYS.has(k)) CAL_DAYS.set(k, { idx: [], changes: [], worse: false });
+    const day = CAL_DAYS.get(k);
+    day.idx.push(i);
+    if (i > 0) {
+      const { out, worse } = gateChanges(ALL_ROWS[i - 1], r);
+      for (const c of out) if (!day.changes.includes(c)) day.changes.push(c);
+      day.worse ||= worse;
+    }
+  });
+}
+
+// The row a day click opens: its latest Full Report, else its latest row.
+function dayPick(k) {
+  const idx = CAL_DAYS.get(k).idx;
+  return [...idx].reverse().find((i) => ALL_ROWS[i].notes) ?? idx[idx.length - 1];
+}
+
+function renderCalendar() {
+  const el = document.getElementById("date-cal");
+  if (!el || !ALL_ROWS.length) return;
+  const cur = ALL_ROWS[CURRENT_INDEX];
+  const selKey = dayKey(cur.run_at);
+  const todayKey = dayKey(new Date().toISOString());
+  const [y, m] = CAL_MONTH.split("-").map(Number);
+  const firstMonth = dayKey(ALL_ROWS[0].run_at).slice(0, 7), lastMonth = dayKey(ALL_ROWS[ALL_ROWS.length - 1].run_at).slice(0, 7);
+  const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Monday-first
+  const nDays = new Date(y, m, 0).getDate();
+  let cells = ["M", "T", "W", "T", "F", "S", "S"].map((w) => `<div class="wd">${w}</div>`).join("") + "<div></div>".repeat(lead);
+  for (let d = 1; d <= nDays; d++) {
+    const k = `${CAL_MONTH}-${String(d).padStart(2, "0")}`;
+    const day = CAL_DAYS.get(k);
+    if (!day) { cells += `<span class="d none">${d}</span>`; continue; }
+    const rep = ALL_ROWS[dayPick(k)];
+    const hasReport = !!rep.notes;
+    const p = rep.crash_probability_pct;
+    const cls = ["d", hasReport ? "" : "upd", hasReport && p != null && p >= CAL_HIGH_PCT ? "high" : "", k === selKey ? "sel" : "", k === todayKey ? "today" : ""].filter(Boolean).join(" ");
+    const dot = day.changes.length ? `<i class="${day.worse ? "" : "better"}"></i>` : "";
+    const label = `${d}: ${hasReport ? `Full Report, crash estimate ${p}%` : "indicator updates only"}${day.changes.length ? `; gate change: ${day.changes.join(", ")}` : ""}`;
+    cells += `<button class="${cls}" data-day="${k}" aria-label="${escHtml(label)}" title="${escHtml(label)}">${dot}${d}<small>${hasReport && p != null ? `${p}%` : "upd"}</small></button>`;
+  }
+  const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const selDay = CAL_DAYS.get(selKey);
+  const selDate = new Date(cur.run_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const chips = selDay.idx.map((i) => {
+    const r = ALL_ROWS[i];
+    const t = new Date(r.run_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return `<button data-idx="${i}" class="${i === CURRENT_INDEX ? "on" : ""}">${t} · ${r.notes ? `<b>Report</b>${r.crash_probability_pct != null ? ` ${r.crash_probability_pct}%` : ""}` : "Update"}</button>`;
+  }).join("");
+  el.innerHTML = `
+    <div class="mh"><button data-month="-1" aria-label="Previous month" ${CAL_MONTH <= firstMonth ? "disabled" : ""}>‹</button><b>${monthName}</b><button data-month="1" aria-label="Next month" ${CAL_MONTH >= lastMonth ? "disabled" : ""}>›</button></div>
+    <div class="grid">${cells}</div>
+    <div class="leg"><span><span class="sw"></span>Crash est. ${CAL_HIGH_PCT}%+</span><span><span class="dot"></span>Gate worsened</span><span><span class="dot better"></span>Gate improved</span><span>upd = no report</span></div>
+    <div class="runs"><div class="h"><b>${selDate}</b> · ${selDay.idx.length} run${selDay.idx.length === 1 ? "" : "s"}${selDay.changes.length ? `<span class="chg">Gate: ${escHtml(selDay.changes.join(" · "))}</span>` : ""}</div><div class="chips">${chips}</div></div>`;
+}
+
 function populateDateSelect() {
-  const sel = document.getElementById("date-select");
-  sel.innerHTML = ALL_ROWS
-    .map((r, i) => {
-      const label = `${fmtDate(r.run_at)}${r.notes ? " — Full Report" : " — Indicator Update"}`;
-      return `<option value="${i}">${label}</option>`;
-    })
-    .reverse() // newest first in the dropdown list
-    .join("");
+  buildCalendarIndex();
+  const cal = document.getElementById("date-cal");
+  // Opening always starts on the selected report's month.
+  cal.addEventListener("beforetoggle", (e) => { if (e.newState === "open") { CAL_MONTH = dayKey(ALL_ROWS[CURRENT_INDEX].run_at).slice(0, 7); renderCalendar(); } });
+  cal.addEventListener("click", (e) => {
+    const mb = e.target.closest("[data-month]");
+    if (mb) {
+      const [y, m] = CAL_MONTH.split("-").map(Number);
+      const d = new Date(y, m - 1 + Number(mb.dataset.month), 1);
+      CAL_MONTH = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      renderCalendar();
+      return;
+    }
+    const db = e.target.closest("[data-day]");
+    if (db) { selectIndex(dayPick(db.dataset.day)); return; } // stays open so a specific run can be picked
+    const rb = e.target.closest("[data-idx]");
+    if (rb) { selectIndex(Number(rb.dataset.idx)); cal.hidePopover(); }
+  });
+}
+
+function updateDatePicker() {
+  const r = ALL_ROWS[CURRENT_INDEX];
+  if (!r) return;
+  document.getElementById("date-trigger").innerHTML = `${escHtml(fmtDate(r.run_at))}<small>${r.notes ? "Full Report" : "Indicator Update"}</small>`;
+  CAL_MONTH = dayKey(r.run_at).slice(0, 7);
+  renderCalendar();
 }
 
 // Section jump-nav -- which chips to show depends on the SELECTED report,
@@ -3534,7 +3675,7 @@ function populateDateSelect() {
 
 function selectIndex(i) {
   CURRENT_INDEX = Math.max(0, Math.min(ALL_ROWS.length - 1, i));
-  document.getElementById("date-select").value = String(CURRENT_INDEX);
+  updateDatePicker();
   document.getElementById("prev-btn").disabled = CURRENT_INDEX === 0;
   document.getElementById("next-btn").disabled = CURRENT_INDEX === ALL_ROWS.length - 1;
 
@@ -4677,7 +4818,6 @@ async function main() {
       document.getElementById("positioning-wrap").innerHTML = `<p class="loading">Failed to load market positioning: ${err.message}</p>`;
     }
 
-    document.getElementById("date-select").addEventListener("change", (e) => selectIndex(Number(e.target.value)));
     document.getElementById("prev-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX - 1));
     document.getElementById("next-btn").addEventListener("click", () => selectIndex(CURRENT_INDEX + 1));
     document.getElementById("latest-btn").addEventListener("click", () => selectIndex(ALL_ROWS.length - 1));
