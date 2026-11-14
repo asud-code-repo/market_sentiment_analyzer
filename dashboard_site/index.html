@@ -459,6 +459,20 @@
   .rd .range-btn.active { background:var(--sunk); color:var(--text-primary); box-shadow: inset 0 0 0 1px var(--hair-strong); }
   .rd .chart-line { stroke-width:1.5px; }
   .rd .chart-grid-line { stroke:var(--hair); }
+  /* Gate zones (2026-11-13): the old fills were the card -bg tints at 55%
+     opacity, which on the dark theme came out near-black. Tints now come
+     from the status colours themselves, and each threshold gets a solid
+     line + label in the colour of the zone it opens. */
+  .rd .chart-band { opacity:1; }
+  .rd .chart-band.band-good { fill:color-mix(in srgb, var(--good) 10%, transparent); }
+  .rd .chart-band.band-warning { fill:color-mix(in srgb, var(--warning) 18%, transparent); }
+  .rd .chart-band.band-critical { fill:color-mix(in srgb, var(--critical) 12%, transparent); }
+  .rd .chart-band-line { stroke-dasharray:none; opacity:.75; }
+  .rd .chart-band-line.to-warning { stroke:var(--warning); }
+  .rd .chart-band-line.to-critical { stroke:var(--critical); }
+  .rd .axis-label.to-warning { fill:var(--warning); }
+  .rd .axis-label.to-critical { fill:var(--critical); }
+  .rd .chart-endlabel { font-weight:600; fill:var(--text-primary); }
   .history-charts > div { margin-top:14px; }
 
   /* ---------- rail lists ---------- */
@@ -3547,16 +3561,24 @@ function selectIndex(i) {
 // sane ceiling per indicator rather than an unbounded RED zone, since RED
 // has no upper bound (">35") and showing all the way to a historic spike
 // would flatten the normal range into unreadable noise.
-function renderLineChart(containerId, { title, allPoints, unit, formatValue, bands }) {
+function renderLineChart(containerId, { title, allPoints, unit, formatValue: rawFormat, bands, defaultRange }) {
   const container = document.getElementById(containerId);
+  // Values arrive as stored floats (VIX came through as 18.700000762939453);
+  // round to 2 dp before any caller formatting.
+  const formatValue = (v) => rawFormat(typeof v === "number" ? Math.round(v * 100) / 100 : v);
   const ranges = { "1M": 30, "3M": 90, "1Y": 365, All: Infinity };
-  let currentRange = "All";
+  // defaultRange: 10Y and Sahm open on 1Y -- on All, their old peaks (1980s
+  // yields, the 2020 Sahm spike) turn most of the chart red and squash the
+  // band that matters now into a sliver at the bottom.
+  let currentRange = defaultRange || "All";
   let currentTableId = null;
 
   function draw() {
     const cutoff = ranges[currentRange] === Infinity ? -Infinity : Date.now() - ranges[currentRange] * 86400000;
     const valid = allPoints.filter((p) => p.value != null && new Date(p.rawDate).getTime() >= cutoff);
-    const width = 900, height = 140, padL = 8, padR = 48, padT = 10, padB = 20;
+    // viewBox width = the real rendered width, so preserveAspectRatio="none"
+    // no longer stretches text and strokes sideways on wide screens.
+    const width = Math.round(container.clientWidth) || 900, height = 140, padL = 8, padR = 48, padT = 10, padB = 20;
 
     if (valid.length === 0) {
       container.querySelector(".chart-body").innerHTML = '<p class="loading">No data in this range.</p>';
@@ -3573,7 +3595,9 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue, ban
 
     const pathD = valid.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
     const last = valid[valid.length - 1];
-    const gridY = [rawMinV, (rawMinV + rawMaxV) / 2, rawMaxV];
+    // With gate bands drawn, the zone edges are the reference lines; extra
+    // min/mid/max gridlines just looked like more thresholds.
+    const gridY = bands ? [] : [rawMinV, (rawMinV + rawMaxV) / 2, rawMaxV];
 
     const shadeRects = [];
     let shadeStart = null;
@@ -3590,6 +3614,7 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue, ban
     // threshold can fall outside the domain on a range where data never
     // approaches it (e.g. 1M view sitting entirely in GREEN).
     let bandZones = "";
+    const rightLabels = [{ y: y(last.value), text: formatValue(last.value), cls: "chart-endlabel" }];
     if (bands) {
       const [greenAmber, amberRed] = bands.thresholds;
       const zones = [
@@ -3604,12 +3629,20 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue, ban
           return `<rect class="chart-band ${z.cls}" x="${padL}" y="${y(zTo).toFixed(1)}" width="${width - padL - padR}" height="${(y(zFrom) - y(zTo)).toFixed(1)}" />`;
         })
         .join("");
-      bandZones += [greenAmber, amberRed]
-        .filter((t) => t > minV && t < maxV)
-        .map((t) => `<line class="chart-band-line" x1="${padL}" x2="${width - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" />
-          <text class="axis-label" x="${width - padR + 5}" y="${(y(t) + 3).toFixed(1)}">${t}</text>`)
-        .join("");
+      const shown = [[greenAmber, "to-warning"], [amberRed, "to-critical"]].filter(([t]) => t > minV && t < maxV);
+      bandZones += shown.map(([t, cls]) => `<line class="chart-band-line ${cls}" x1="${padL}" x2="${width - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" />`).join("");
+      const dp = Math.max(...bands.thresholds.map((t) => (String(t).split(".")[1] || "").length));
+      shown.forEach(([t, cls]) => rightLabels.push({ y: y(t), text: t.toFixed(dp), cls: `axis-label ${cls}` })); // 5.0 next to 4.3, not 5
     }
+    // Right-margin labels (thresholds + the latest value) nudged apart so
+    // they never print on top of each other, e.g. 10Y at 4.98 next to 5.0.
+    const GAP = 11;
+    rightLabels.sort((p, q) => p.y - q.y);
+    for (let i = 1; i < rightLabels.length; i++) rightLabels[i].y = Math.max(rightLabels[i].y, rightLabels[i - 1].y + GAP);
+    const over = rightLabels.length ? rightLabels[rightLabels.length - 1].y - (height - 4) : 0;
+    if (over > 0) rightLabels.forEach((l) => { l.y -= over; });
+    for (let i = rightLabels.length - 2; i >= 0; i--) rightLabels[i].y = Math.min(rightLabels[i].y, rightLabels[i + 1].y - GAP);
+    const labelSvg = rightLabels.map((l) => `<text class="${l.cls}" x="${width - padR + 6}" y="${l.y.toFixed(1)}" dominant-baseline="middle">${l.text}</text>`).join("");
 
     const id = containerId + "-svg";
     const tooltipId = containerId + "-tooltip";
@@ -3625,7 +3658,7 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue, ban
           <path class="chart-line" d="${pathD}" />
           <circle class="chart-dot" id="${id}-dot" r="4" />
           <line class="chart-crosshair" id="${id}-crosshair" y1="${padT}" y2="${height - padB}" />
-          <text class="chart-endlabel" x="${x(valid.length - 1) + 6}" y="${y(last.value).toFixed(1)}" dominant-baseline="middle">${formatValue(last.value)}</text>
+          ${labelSvg}
         </svg>
         <div class="chart-tooltip" id="${tooltipId}"></div>
       </div>
@@ -3697,6 +3730,21 @@ function renderLineChart(containerId, { title, allPoints, unit, formatValue, ban
     e.target.textContent = showing ? "Table view" : "Chart view";
   });
   draw();
+  // Redraw when the width changes (window resize, or the section being
+  // un-hidden after drawing at the 900px fallback), keeping the table
+  // view open if it was.
+  let drawnWidth = Math.round(container.clientWidth), resizeTimer = null;
+  new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const w = Math.round(container.clientWidth);
+      if (!w || w === drawnWidth) return;
+      drawnWidth = w;
+      const tableOpen = document.getElementById(currentTableId)?.style.display === "table";
+      draw();
+      if (tableOpen) container.querySelector(".table-toggle").click();
+    }, 150);
+  }).observe(container);
 }
 
 // navigator.standalone is the older iOS-Safari-specific check; the
@@ -4672,8 +4720,8 @@ async function main() {
       // BAMLH0A0HYM2 is FRED percent (e.g. 2.67) — x100 to bps, matching
       // rule_engine/src/classify.ts's hySpreadBps = hySpread.value * 100.
       renderLineChart("chart-hy-spread", { title: "HY Credit Spread", unit: " bps", formatValue: (v) => v, allPoints: toChartPoints(hySpreadHistory, (v) => Math.round(v * 100)), bands: { thresholds: [350, 500], domainMax: 600 } });
-      renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: toChartPoints(treasuryHistory), bands: { thresholds: [4.3, 5.0], domainMax: 5.5 } });
-      renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: toChartPoints(sahmHistory), bands: { thresholds: [0.3, 0.5], domainMax: 0.7 } });
+      renderLineChart("chart-10y", { title: "10yr Treasury Yield", unit: "%", formatValue: (v) => v, allPoints: toChartPoints(treasuryHistory), bands: { thresholds: [4.3, 5.0], domainMax: 5.5 }, defaultRange: "1Y" });
+      renderLineChart("chart-sahm", { title: "Sahm Rule", unit: "", formatValue: (v) => v, allPoints: toChartPoints(sahmHistory), bands: { thresholds: [0.3, 0.5], domainMax: 0.7 }, defaultRange: "1Y" });
 
       // Drawdown isn't a raw FRED series — compute a running max-to-date
       // over the SP500 level history and derive drawdown per point, matching
