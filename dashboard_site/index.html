@@ -298,13 +298,25 @@
   .topbar { display:flex; align-items:center; gap:28px; height:46px; border-bottom:1px solid var(--hair); }
   .brand { font:600 13px/1 var(--font-ui); letter-spacing:.01em; white-space:nowrap; }
   .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
-  .rd .tab-bar { display:flex; gap:22px; height:100%; flex-wrap:nowrap; }
-  .rd .tab-btn { all:unset; cursor:pointer; display:flex; align-items:center; font:500 13px/1 var(--font-ui); color:var(--text-muted);
-    border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
-  .rd .tab-btn:hover { color:var(--text-secondary); }
-  .rd .tab-btn.active { color:var(--text-primary); border-color:var(--text-primary); background:none; }
-  .rd .tab-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .datenav { margin-left:auto; display:flex; align-items:center; gap:6px; font:var(--t3); color:var(--text-muted); }
+  /* Tabs as a segmented control (2026-11-14): as plain grey text next to
+     the brand they read like a subtitle, and readers missed that there are
+     four views. Centred between the brand and the date controls. */
+  .rd .tab-bar { display:flex; gap:2px; flex-wrap:nowrap; padding:3px; margin-inline:auto; border:1px solid var(--hair-strong); border-radius:8px; }
+  .rd .tab-btn { all:unset; box-sizing:border-box; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:6px 14px; border-radius:6px;
+    font:500 13px/1.15 var(--font-ui); color:var(--text-secondary); white-space:nowrap; }
+  .rd .tab-btn:hover { color:var(--text-primary); background:color-mix(in srgb, var(--text-primary) 6%, transparent); }
+  .rd .tab-btn.active { color:var(--text-primary); font-weight:600; background:color-mix(in srgb, var(--text-primary) 14%, transparent); }
+  .rd .tab-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  /* "Next view" link at the foot of every tab. */
+  .next-tab { all:unset; box-sizing:border-box; cursor:pointer; display:flex; align-items:center; gap:14px; width:100%; margin-top:28px; padding:14px 16px;
+    border:1px solid var(--hair-strong); border-radius:8px; }
+  .next-tab:hover { background:color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .next-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .next-tab .k { font:var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--text-muted); }
+  .next-tab .t { display:block; font:600 14px/1.3 var(--font-ui); color:var(--text-primary); margin-top:4px; }
+  .next-tab .d { display:block; font:var(--t3); font-size:12px; color:var(--text-secondary); margin-top:2px; }
+  .next-tab .ar { margin-left:auto; font:400 20px/1 var(--font-ui); color:var(--text-secondary); }
+  .datenav {  display:flex; align-items:center; gap:6px; font:var(--t3); color:var(--text-muted); }
   .datenav[hidden] { display:none; }
   /* Native controls (scrollbars, inputs) follow the theme. */
   :root { color-scheme: light dark; }
@@ -350,7 +362,7 @@
   .cal .chips button.on { box-shadow:inset 0 0 0 1.5px var(--accent); color:var(--text-primary); }
   .datenav .dn-btn { background:none; border:1px solid var(--hair-strong); border-radius:4px; min-width:24px; height:22px; padding:0 6px; cursor:pointer; color:var(--text-secondary); font:500 12px/1 var(--font-ui); }
   .datenav .dn-btn:disabled { opacity:.35; cursor:default; }
-  .datenav-static { margin-left:auto; font:var(--t3); color:var(--text-muted); }
+  .datenav-static { font:var(--t3); color:var(--text-muted); }
   .datenav-static[hidden] { display:none; }
   /* PWA-only (shown by JS in standalone mode): same outlined look as the date-nav buttons */
   .rd #refresh-btn { flex-shrink:0; background:none; border:1px solid var(--hair-strong); border-radius:4px; min-width:26px; height:22px; padding:0 6px;
@@ -699,8 +711,9 @@
     .brand { order:1; padding-bottom:8px; }
     .datenav, .datenav-static { order:2; padding-bottom:8px; }
     .datenav .dn-trig { max-width:170px; overflow:hidden; } .datenav .dn-trig small { display:none; }
-    .rd .tab-bar { order:3; width:100%; overflow-x:auto; gap:18px; height:38px; scrollbar-width:none; }
-    .rd .tab-bar::-webkit-scrollbar { display:none; }
+    /* All four tabs always visible: equal columns, long names wrap. */
+    .rd .tab-bar { order:3; width:100%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 10px; }
+    .rd .tab-btn { white-space:normal; text-align:center; font-size:12px; padding:7px 4px; min-height:34px; }
     .verdict { position:static; padding:16px 0 14px; gap:12px; }
     .headline { flex-direction:column; align-items:flex-start; gap:6px; }
     .headline .big { font-size:30px; }
@@ -4054,6 +4067,24 @@ function activateTab(tabId) {
 }
 
 function setupTabs() {
+  // A "Next" link at the foot of each tab, so readers who scroll to the end
+  // find the other views. The last tab loops back to Stress.
+  const NEXT_TAB = {
+    stressmonitor: ["smartmoney", "Next", "Smart Money", "Where institutions and market positioning are leaning"],
+    smartmoney: ["macro", "Next", "Macro &amp; Fiscal", "The slower backdrop: growth, inflation, rates and debt"],
+    macro: ["analysts", "Next", "Notable Views", "What well-known macro voices are saying, set against the data"],
+    analysts: ["stressmonitor", "Back to the start", "Stress", "The crash gate: is a deployment wave close?"],
+  };
+  for (const [from, [to, k, t, d]] of Object.entries(NEXT_TAB)) {
+    document.getElementById(`tab-${from}`).insertAdjacentHTML("beforeend",
+      `<button class="next-tab" data-goto="${to}"><span><span class="k">${k}</span><span class="t">${t}</span><span class="d">${d}</span></span><span class="ar" aria-hidden="true">→</span></button>`);
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".next-tab");
+    if (!b) return;
+    activateTab(b.dataset.goto);
+    window.scrollTo({ top: 0 });
+  });
   document.getElementById("tab-bar").addEventListener("click", (e) => {
     const btn = e.target.closest(".tab-btn");
     if (!btn) return;
