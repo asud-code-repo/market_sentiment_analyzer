@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1e1c"/><stop offset="1" stop-color="#0b0b0a"/></linearGradient>
+<radialGradient id="sheen" cx=".3" cy="0" r="1"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" fill="url(#bg)"/><g><rect x="76" y="96" width="360" height="320" rx="34" fill="#000" fill-opacity=".25"/>
+   <clipPath id="cp"><rect x="76" y="96" width="360" height="320" rx="34"/></clipPath>
+   <g clip-path="url(#cp)"><rect x="76" y="96" width="360" height="150" fill="#34c759" fill-opacity=".28"/>
+   <rect x="76" y="246" width="360" height="92" fill="#f0a92e" fill-opacity=".42"/>
+   <rect x="76" y="338" width="360" height="78" fill="#ff5b55" fill-opacity=".44"/>
+   <line x1="76" y1="246" x2="436" y2="246" stroke="#0b0b0a" stroke-width="6"/><line x1="76" y1="338" x2="436" y2="338" stroke="#0b0b0a" stroke-width="6"/></g></g>
+   <polyline points="106,176 164,150 210,200 254,180 304,250 348,228 396,300" fill="none" stroke="#f4f4f1" stroke-width="24" stroke-linejoin="round" stroke-linecap="round"/>
+   <circle cx="396" cy="300" r="28" fill="#f0a92e" stroke="#2a2210" stroke-width="10"/><rect width="512" height="512" fill="url(#sheen)"/></svg>
