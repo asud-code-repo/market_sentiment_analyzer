@@ -52,6 +52,19 @@ const CONTEXT_TICKERS = ["GLD", "SLV"];
 // CONTEXT_TICKERS.
 const CRYPTO_CONTEXT_TICKERS = ["X:BTCUSD"];
 
+// Massive series that are public market context and stay in data_points.
+// Every other Massive series is a watchlist ticker: personal, so it goes to
+// private_data_points (service-role only), where the anon key used by the
+// public dashboard can't list it. A ticker that is both (e.g. GLD) stays
+// public, which reveals nothing about the watchlist.
+const PUBLIC_MASSIVE_SERIES = new Set([...BREADTH_TICKERS, ...CONTEXT_TICKERS, ...CRYPTO_CONTEXT_TICKERS]);
+
+/** Splits points into those for data_points and those for private_data_points. */
+export function partitionPrivatePoints(points: DataPoint[]): { publicPoints: DataPoint[]; privatePoints: DataPoint[] } {
+  const isPrivate = (p: DataPoint) => p.source === "MASSIVE" && !PUBLIC_MASSIVE_SERIES.has(p.series_id);
+  return { publicPoints: points.filter((p) => !isPrivate(p)), privatePoints: points.filter(isPrivate) };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

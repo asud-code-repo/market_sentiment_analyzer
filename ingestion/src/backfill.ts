@@ -1,7 +1,7 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
 import { fetchYahooBackfill, fetchYahooMoveBackfill } from "./sources/yahoo.js";
-import { fetchMassiveBackfill } from "./sources/massive.js";
+import { fetchMassiveBackfill, partitionPrivatePoints } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
@@ -128,7 +128,9 @@ async function main() {
 
   const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints, ...positioningPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
-  await writeDataPoints(allPoints);
+  const { publicPoints, privatePoints } = partitionPrivatePoints(allPoints);
+  await writeDataPoints(publicPoints);
+  await writeDataPoints(privatePoints, "private_data_points");
   console.log("Backfill complete.");
 }
 

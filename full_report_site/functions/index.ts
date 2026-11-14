@@ -23,7 +23,6 @@ interface CrashCheckRow {
   crash_probability_pct: number | null;
   confirmed_red_count: number | null;
   red_count: number;
-  wave_active: string | null;
   wave_authorized: boolean | null;
   warsh_classification: string | null;
 }
@@ -49,11 +48,46 @@ interface CrashTypeCriterion {
   detail: string;
 }
 
+interface ConfirmationEntry {
+  color: string;
+  confirmed: boolean;
+  days_confirmed: number;
+  observation_date: string;
+}
+
+// Written by mcp_server's write_full_report from the local policy; null on
+// snapshots from before 2026-11-14.
+interface WaveStatus {
+  wave_active: string;
+  wave_active_reason: string | null;
+  fast_panic_wave: string;
+  slow_bear: { w2: ConfirmationEntry | null; w3: ConfirmationEntry | null };
+  wave_authorized: boolean;
+  as_of_observation_date: string | null;
+}
+
+interface PersonalTrigger {
+  name: string;
+  status: string;
+  note: string;
+}
+
+interface InsiderSignal {
+  ticker: string;
+  distinct_officer_director_buyers_30d: number;
+  cluster_buy_signal: boolean;
+  total_sell_count_30d: number;
+  latest_transaction_date: string | null;
+}
+
 interface FullReportRow {
   run_at: string;
   watchlist: WatchlistEntry[];
   crash_type_diagnosis: { type: string; criteria: CrashTypeCriterion[] } | null;
   portfolio_context: string | null;
+  wave_status?: WaveStatus | null;
+  personal_triggers?: PersonalTrigger[] | null;
+  insider_activity?: InsiderSignal[] | null;
 }
 
 interface DriftEntry {
@@ -116,7 +150,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       supabaseGet<FullReportRow[]>(env, "full_report_snapshots?select=*&order=run_at.desc&limit=1"),
       supabaseGet<CrashCheckRow[]>(
         env,
-        "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_active,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
+        "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
       ),
       supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=run_at,verdict,summary,macro_cross_reference,drift,tickers&order=run_at.desc&limit=1"),
     ]);
@@ -169,6 +203,13 @@ function formatFundName(fundKey: string, label?: string): string {
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function waveLabel(ws: WaveStatus | null | undefined): string {
+  if (!ws) return "—";
+  if (!ws.wave_active || ws.wave_active === "NONE") return "NONE";
+  const reason = ws.wave_active_reason === "SLOW_BEAR" ? " (slow bear)" : "";
+  return `${ws.wave_active}${reason} — ${ws.wave_authorized ? "authorized" : "observed, not authorized"}`;
 }
 
 function statusBadgeClass(status: WatchlistEntry["status"]): string {
@@ -261,11 +302,7 @@ function renderPage(
     ? `<div class="context-strip">
         <div class="stat"><div class="stat-label">Crash Probability</div><div class="stat-value">${crashCheck.crash_probability_pct ?? "—"}%</div><div class="stat-note">Discretionary LLM estimate, not calibrated</div></div>
         <div class="stat"><div class="stat-label">Confirmed RED</div><div class="stat-value">${crashCheck.confirmed_red_count ?? 0} / 6</div></div>
-        <div class="stat"><div class="stat-label">Wave Status</div><div class="stat-value">${escapeHtml(
-          crashCheck.wave_active && crashCheck.wave_active !== "NONE"
-            ? `${crashCheck.wave_active} — ${crashCheck.wave_authorized ? "authorized" : "observed, not authorized"}`
-            : "NONE",
-        )}</div></div>
+        <div class="stat"><div class="stat-label">Wave Status</div><div class="stat-value">${escapeHtml(waveLabel(report.wave_status))}</div></div>
         <div class="stat"><div class="stat-label">Fed Regime</div><div class="stat-value">${escapeHtml(crashCheck.warsh_classification ?? "PENDING")}</div></div>
       </div>`
     : "";
@@ -296,6 +333,50 @@ function renderPage(
     )
     .join("");
 
+  const ws = report.wave_status;
+  const confirmationText = (e: ConfirmationEntry | null | undefined) =>
+    e ? `${e.color}${e.color === "RED" ? (e.confirmed ? " (confirmed)" : ` (pending, ${e.days_confirmed} day)`) : ""}` : "—";
+  const waveSection = ws
+    ? `<section class="card">
+        <p class="eyebrow">Wave Status</p>
+        <ul class="criteria-list">
+          <li><b>Active wave:</b> ${escapeHtml(waveLabel(ws))}</li>
+          <li><b>Stress gate:</b> ${ws.wave_authorized ? "met" : "not met"} (confirmed RED ${crashCheck?.confirmed_red_count ?? "—"} / 6)</li>
+          <li><b>Fast-panic pathway (drawdown + VIX, same day):</b> ${escapeHtml(ws.fast_panic_wave)}</li>
+          <li><b>Slow-bear pathway:</b> Wave 2 ${escapeHtml(confirmationText(ws.slow_bear?.w2))} · Wave 3 ${escapeHtml(confirmationText(ws.slow_bear?.w3))}</li>
+        </ul>
+        <p class="subtitle">Evaluated locally from the private deployment policy, as of the S&amp;P reading on ${escapeHtml(ws.as_of_observation_date ?? "—")}.</p>
+      </section>`
+    : "";
+
+  const personalTriggers = (report.personal_triggers ?? [])
+    .map((t) => `<li><b>${escapeHtml(t.name)}:</b> ${escapeHtml(t.status)} — ${escapeHtml(t.note)}</li>`)
+    .join("");
+  const triggersSection = personalTriggers
+    ? `<section class="card"><p class="eyebrow">Personal Triggers</p><ul class="criteria-list">${personalTriggers}</ul></section>`
+    : "";
+
+  const insiderRows = (report.insider_activity ?? [])
+    .map(
+      (i) => `<tr>
+        <td class="ticker-symbol">${escapeHtml(i.ticker)}</td>
+        <td>${i.cluster_buy_signal ? '<span class="badge good">Cluster buy</span>' : '<span class="muted">—</span>'}</td>
+        <td>${i.distinct_officer_director_buyers_30d}</td>
+        <td>${i.total_sell_count_30d}</td>
+        <td class="muted">${escapeHtml(i.latest_transaction_date ?? "—")}</td>
+      </tr>`,
+    )
+    .join("");
+  const insiderSection = insiderRows
+    ? `<section class="card">
+        <p class="eyebrow">Watchlist Insider Activity (SEC Form 4, last 30 days)</p>
+        <table class="watchlist-table">
+          <thead><tr><th>Ticker</th><th>Signal</th><th>Officer/director buyers</th><th>Sells (count)</th><th>Latest filing</th></tr></thead>
+          <tbody>${insiderRows}</tbody>
+        </table>
+      </section>`
+    : "";
+
   const portfolioContext = report.portfolio_context
     ? `<section class="card"><p class="eyebrow">Personal Portfolio Context</p><p class="narrative">${escapeHtml(report.portfolio_context)}</p></section>`
     : "";
@@ -308,6 +389,8 @@ function renderPage(
   const body = `
     <p class="subtitle">Run at ${escapeHtml(formatRunAt(report.run_at))} · Stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast · <a href="https://market-sentiment-analyzer.pages.dev/">Public dashboard →</a></p>
     ${contextStrip}
+    ${waveSection}
+    ${triggersSection}
     ${diagnosis}
     <section class="card">
       <p class="eyebrow">Watchlist</p>
@@ -316,6 +399,7 @@ function renderPage(
         <tbody>${watchlistRows}</tbody>
       </table>
     </section>
+    ${insiderSection}
     ${portfolioContext}
     ${portfolioReviewSection}
   `;

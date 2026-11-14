@@ -9,9 +9,6 @@ import {
   bandVixRecovery,
   countReds,
   isWaveAuthorized,
-  activeWave,
-  slowBearW2Condition,
-  slowBearW3Condition,
   drawdownPct,
   isRecoveredFromTrough,
   computeConfirmation,
@@ -81,37 +78,6 @@ describe("countReds / isWaveAuthorized", () => {
     expect(isWaveAuthorized(2)).toBe(false);
     expect(isWaveAuthorized(3)).toBe(true);
     expect(isWaveAuthorized(4)).toBe(true);
-  });
-});
-
-describe("activeWave — fast-panic drawdown/VIX gate", () => {
-  it("returns NONE below every wave's drawdown floor", () => {
-    expect(activeWave(15, 50)).toBe("NONE");
-  });
-
-  it("requires both drawdown AND vix to clear a wave's bar", () => {
-    expect(activeWave(16, 28)).toBe("NONE"); // vix not > 28
-    expect(activeWave(16, 28.01)).toBe("WAVE_1");
-    expect(activeWave(24, 35)).toBe("WAVE_1"); // fails WAVE_2's vix bar, still satisfies WAVE_1's lower bar
-    expect(activeWave(24, 35.01)).toBe("WAVE_2");
-    expect(activeWave(35, 45)).toBe("WAVE_2"); // fails WAVE_3's vix bar, still satisfies WAVE_2's lower bar
-    expect(activeWave(35, 45.01)).toBe("WAVE_3");
-  });
-
-  it("checks highest wave first when a deep drawdown satisfies multiple", () => {
-    expect(activeWave(40, 50)).toBe("WAVE_3");
-  });
-});
-
-describe("slow-bear depth pathway", () => {
-  it("requires both depth and a fresh trailing low (<=40 trading days)", () => {
-    expect(slowBearW2Condition(24, 40)).toBe(true);
-    expect(slowBearW2Condition(24, 41)).toBe(false);
-    expect(slowBearW2Condition(23.99, 10)).toBe(false);
-
-    expect(slowBearW3Condition(35, 40)).toBe(true);
-    expect(slowBearW3Condition(35, 41)).toBe(false);
-    expect(slowBearW3Condition(34.99, 10)).toBe(false);
   });
 });
 

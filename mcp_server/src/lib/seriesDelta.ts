@@ -34,9 +34,13 @@ export function subtractDays(dateStr: string, days: number): string {
  * duplicate, since this one already handles the FRED-doesn't-publish-every-
  * calendar-day case correctly.
  */
-export async function getValueOnOrBefore(seriesId: string, onOrBeforeDate: string): Promise<number | null> {
+export async function getValueOnOrBefore(
+  seriesId: string,
+  onOrBeforeDate: string,
+  table: "data_points" | "private_data_points" = "data_points",
+): Promise<number | null> {
   const { data, error } = await supabase
-    .from("data_points")
+    .from(table)
     .select("value")
     .eq("series_id", seriesId)
     .lte("observation_date", onOrBeforeDate)
@@ -67,15 +71,22 @@ const BPS_SERIES = new Set(["BAMLH0A0HYM2", "BAMLC0A0CM"]);
  * windows against a value that's actually already a day or two stale.
  */
 export async function computeSeriesDelta(seriesId: string): Promise<SeriesDeltaResult> {
-  const latest = await getLatestDataPoint(seriesId);
+  // Watchlist-only tickers live in private_data_points (see
+  // getLatestTickerPrice); everything else in the public table.
+  let table: "data_points" | "private_data_points" = "data_points";
+  let latest = await getLatestDataPoint(seriesId);
+  if (!latest) {
+    latest = await getLatestDataPoint(seriesId, "private_data_points");
+    table = "private_data_points";
+  }
   if (!latest) {
     return { series_id: seriesId, latest_value: null, latest_date: null, delta_3d: null, delta_7d: null };
   }
 
   const scale = BPS_SERIES.has(seriesId) ? 100 : 1;
   const [v3, v7] = await Promise.all([
-    getValueOnOrBefore(seriesId, subtractDays(latest.observation_date, 3)),
-    getValueOnOrBefore(seriesId, subtractDays(latest.observation_date, 7)),
+    getValueOnOrBefore(seriesId, subtractDays(latest.observation_date, 3), table),
+    getValueOnOrBefore(seriesId, subtractDays(latest.observation_date, 7), table),
   ]);
 
   const round = (n: number) => Math.round(n * 1000) / 1000;

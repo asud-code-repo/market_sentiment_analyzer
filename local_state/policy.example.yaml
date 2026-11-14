@@ -35,6 +35,27 @@ hard_rules:
 # Staged deployment. Which wave is active is decided by the wave triggers
 # (drawdown / VIX / slow-bear, see crash-check-rules.md "Wave Deployment
 # Thresholds") plus the stress gate in config/monitoring.yaml.
+
+# Optional: words/phrases that must never appear in text written to the
+# PUBLIC crash_checks row (notes, delta_log, trigger notes), e.g. account or
+# product names. Case-insensitive, whole words.
+private_terms: ["watchlist", "Example Plan Name"]
+
+# Wave triggers (ILLUSTRATIVE), evaluated locally by the MCP server against
+# public market inputs. fast_panic: same-day drawdown from the all-time high
+# AND VIX above a level, deepest wave first. slow_bear: drawdown AND a fresh
+# 252-trading-day S&P low within the window, confirmed over
+# config/monitoring.yaml's confirmation_required_days.
+wave_triggers:
+  fast_panic:
+    WAVE_1: { drawdown_pct_gte: 15, vix_gt: 30 }
+    WAVE_2: { drawdown_pct_gte: 25, vix_gt: 35 }
+    WAVE_3: { drawdown_pct_gte: 35, vix_gt: 40 }
+  slow_bear:
+    freshness_window_trading_days: 30
+    WAVE_2: { drawdown_pct_gte: 25 }
+    WAVE_3: { drawdown_pct_gte: 35 }
+
 waves:
   WAVE_1:
     pct_of_dry_powder: 15

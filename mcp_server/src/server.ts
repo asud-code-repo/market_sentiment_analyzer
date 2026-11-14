@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestTickerPrice, currentWaveStatus, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, loadPolicy, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -106,7 +106,7 @@ server.registerTool(
     // Risk Radar retired 2026-11-13 (scores were inconsistent run to run and
     // never gated anything); older rows still hold it, so leave it out here
     // rather than invite the run to keep producing one.
-    const { risk_radar: _radar, risk_radar_anchors: _anchors, conditional_scenarios: _cs, conditional_scoring: _csc, ...latestWithoutRadar } = latest;
+    const { conditional_scenarios: _cs, conditional_scoring: _csc, ...latestWithoutRadar } = latest;
     // E8: read from the last FULL report (prior), not `latest`, which is
     // usually the automated refresh and never carries predictions.
     const openPredictions = prior?.conditional_scenarios ?? [];
@@ -159,6 +159,7 @@ server.registerTool(
       return point ? { series_id: s.series_id, cadence: s.cadence, observation_date: point.observation_date } : null;
     }).filter((s): s is { series_id: string; cadence: "daily" | "monthly"; observation_date: string } => s !== null);
     const conf = latest.confirmation_state ?? {};
+    const wave = await currentWaveStatus();
     const withConfirmation = (key: string, value: unknown, color: string | null) => ({
       value,
       color,
@@ -181,12 +182,11 @@ server.registerTool(
       red_count: latest.red_count,
       confirmed_red_count: latest.confirmed_red_count,
       wave_authorized: latest.wave_authorized,
-      wave_active: latest.wave_active,
-      // FAST_PANIC (drawdown+VIX, the original rule) or SLOW_BEAR (drawdown
-      // depth + a fresh trailing low, added 2026-09-19 for crises where
-      // price damage is severe but volatility never spikes — see
-      // crash-check-rules.md); null when wave_active is NONE.
-      wave_active_reason: latest.wave_active_reason,
+      // Evaluated locally from the policy's wave triggers (never stored on
+      // the public row). FAST_PANIC = same-day drawdown+VIX; SLOW_BEAR =
+      // drawdown + a fresh 252-day low, confirmed; null when NONE.
+      wave_active: wave.wave_active,
+      wave_active_reason: wave.wave_active_reason,
       sp500_level: latest.sp500_level,
       sp500_ath: latest.sp500_ath,
       sp500_ath_date: latest.sp500_ath_date,
@@ -260,9 +260,10 @@ server.registerTool(
       "Returns personal account balances/allocations from the local portfolio file — never read " +
       "from or written to Supabase. The CAD-denominated account's CAD->USD conversion uses a live FRED DEXCAUS rate (public " +
       "macro data, not the resulting personal figure). rate_reset_trigger.status ('fired'/'pending') " +
-      "is a plain date comparison, already evaluated here — use it directly in get_trigger_status/" +
-      "write_snapshot rather than recomputing the date comparison yourself, which has repeatedly " +
-      "produced wrong results in practice. deployment_readiness summarizes whether each " +
+      "is a plain date comparison, already evaluated here — report it verbatim in chat rather than " +
+      "recomputing the date comparison yourself, which has repeatedly produced wrong results in " +
+      "practice. It is personal: never pass it to write_snapshot (write_full_report records it " +
+      "privately on its own). deployment_readiness summarizes whether each " +
       "deployment slot could be bought today and when the instrument review is due — report " +
       "review_status DUE_SOON/OVERDUE and any red_slots in the crash readiness summary.",
   },
@@ -309,7 +310,7 @@ server.registerTool(
   },
   withLogging("get_watchlist_status", async () => {
     const watchlist = readWatchlist();
-    const prices = await Promise.all(watchlist.tickers.map((t) => getLatestDataPoint(t.symbol)));
+    const prices = await Promise.all(watchlist.tickers.map((t) => getLatestTickerPrice(t.symbol)));
     return json({
       updated_at: watchlist.updated_at,
       tickers: computeWatchlistStatus(watchlist.tickers, prices),
@@ -394,7 +395,8 @@ server.registerTool(
       "which is why the public dashboard couldn't show it; omit it entirely on a run with no prior " +
       "full report to diff against. `trigger_status` is automatically deduplicated server-side, " +
       "keeping only the latest entry (by `date`) per canonical trigger type (Fed-event/inflation-" +
-      "print/fiscal-event/earnings-guidance/rate-reset, matched by name prefix) — you don't need to manually " +
+      "print/fiscal-event/earnings-guidance, matched by name prefix; any other trigger, e.g. rate-reset, " +
+      "is personal and is dropped from this public row) — you don't need to manually " +
       "remove superseded entries yourself. When a trigger's target rolls to a new occurrence, " +
       "either replace the old entry in place or simply append a new one; the server keeps whichever " +
       "has the later date. fed-event/inflation-print/fiscal-event entries also get their `status` forced to " +
@@ -1110,8 +1112,9 @@ server.registerTool(
     const registryLoad = loadInstrumentRegistry(today);
     const instrumentRegistry = registryLoad.health;
 
-    const waveActive = latest.wave_active as Wave | "NONE" | null;
-    const waveActiveReason = latest.wave_active_reason;
+    const wave = await currentWaveStatus();
+    const waveActive = wave.wave_active as Wave | "NONE";
+    const waveActiveReason = wave.wave_active_reason;
     if (!waveActive || waveActive === "NONE") {
       return json({
         wave_active: "NONE",
@@ -1375,7 +1378,16 @@ server.registerTool(
     },
   },
   withLogging("write_full_report", async (input) => {
-    const row = await writeFullReport(input);
+    // Insider activity on the watchlist lives only on the private report now
+    // (insider_transactions is no longer anon-readable). Best-effort: a
+    // failure here records null rather than blocking the report.
+    let insiderActivity: unknown = null;
+    try {
+      insiderActivity = await computeInsiderClusterSignals();
+    } catch (err) {
+      console.error("write_full_report: insider activity unavailable:", err);
+    }
+    const row = await writeFullReport(input, insiderActivity);
     return json({ written: row });
   }),
 );

@@ -7,7 +7,7 @@ import { fetchCboe } from "./sources/cboe.js";
 import { fetchCftc } from "./sources/cftc.js";
 import { fetchFinraMargin } from "./sources/finra.js";
 import { fetchPolymarket } from "./sources/polymarket.js";
-import { fetchMassive } from "./sources/massive.js";
+import { fetchMassive, partitionPrivatePoints } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
@@ -128,7 +128,10 @@ async function main() {
   }
 
   if (plausiblePoints.length > 0) {
-    await writeDataPoints(plausiblePoints);
+    // Watchlist tickers go to the service-role-only table (see massive.ts).
+    const { publicPoints, privatePoints } = partitionPrivatePoints(plausiblePoints);
+    await writeDataPoints(publicPoints);
+    await writeDataPoints(privatePoints, "private_data_points");
     console.log(`Wrote ${plausiblePoints.length} data points from: ${successes.map((r) => r.name).join(", ")}`);
   }
 

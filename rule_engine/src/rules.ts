@@ -119,70 +119,11 @@ export function isWaveAuthorized(redCount: number): boolean {
   return redCount >= MONITORING.stress_gate_confirmed_reds;
 }
 
-export type WaveActive = "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";
-
-/**
- * S&P drawdown / VIX wave triggers — separate gate from the RED-count
- * authorization above. Drawdown thresholds are ATH-relative percentages
- * (the low end of each wave's documented drawdown range in crash-check-
- * rules.md "Wave Deployment Thresholds"), not fixed nominal S&P index
- * levels — a fixed level like "S&P <= 6200" decays as the index's nominal
- * level rises over time, while a drawdown percentage stays meaningful
- * regardless of when it's evaluated. VIX thresholds stay absolute since VIX
- * is already a normalized measure, not subject to the same decay. Per the
- * build spec's own non-goal, the rule engine executes these faithfully and
- * never proposes/auto-updates them. Checked highest-wave-first since a deep
- * drawdown satisfies the lower waves' conditions too.
- */
-export function activeWave(drawdownPct: number, vix: number): WaveActive {
-  if (drawdownPct >= 35 && vix > 45) return "WAVE_3";
-  if (drawdownPct >= 24 && vix > 35) return "WAVE_2";
-  if (drawdownPct >= 16 && vix > 28) return "WAVE_1";
-  return "NONE";
-}
-
-// Slow-bear depth pathway (added 2026-09-19) — a second, independent way to
-// reach Wave 2/3 that doesn't require a VIX spike, for crises where price
-// damage is severe but volatility never sustains at panic levels. Backtest
-// against 33 years / 8,467 trading days of real SPY+VIX+FRED history
-// (external Phase 0 Wave Backtest, then a follow-up design/validation pass)
-// found the pathway above alone never confirms Wave 3 for dot-com (VIX only
-// touched 45 for a single day despite a -49.1% drawdown, the single worst
-// in the dataset) and never confirms Wave 2 for 2022 (VIX's peak and the
-// deepest drawdown never coincided in that "grinding," low-volatility bear).
-//
-// The naive fix — depth + persistence, dropping VIX entirely — fails badly:
-// SPY didn't reclaim its Oct-2007 high until 2013, so "still below the
-// all-time high" stayed true for *years* after the GFC actually bottomed
-// and markets calmed down. A depth-only check with no freshness filter
-// fired constantly through the calm 2010-2011 recovery period, which would
-// have broken the fast-panic pathway's own zero-false-alarm record.
-// daysSinceTrailingLow (a fresh ~1-year/252-trading-day S&P low, tracked in
-// classify.ts via seriesDelta.ts's isTrailingLow()) fixes this by requiring
-// the decline to be ACTIVELY FRESH, not merely "still below a stale peak".
-//
-// Validated result at this threshold (40 trading days): 5/5 Wave-3 events
-// across all 33 years land inside dot-com/GFC, zero false positives; 13
-// Wave-2 events, 10 inside the 5 labeled episodes (including 2022) and the
-// remaining 3 are real, separately-identifiable stress episodes (the 2011
-// debt-ceiling crisis/US downgrade, and COVID's own immediate volatile
-// tail one week past its trough) — not genuinely ordinary days, matching
-// the same "near-miss is a real crisis, not a false alarm" standard the
-// original backtest already established for 1998 LTCM/April 2025.
-//
-// Caller confirms the boolean result over 2+ distinct observation dates via
-// computeConfirmation before treating it as active — same as every other
-// confirmed indicator in this system — not evaluated raw/same-day like the
-// pathway above.
-const SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS = 40;
-
-export function slowBearW2Condition(drawdownPct: number, daysSinceTrailingLow: number): boolean {
-  return drawdownPct >= 24 && daysSinceTrailingLow <= SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS;
-}
-
-export function slowBearW3Condition(drawdownPct: number, daysSinceTrailingLow: number): boolean {
-  return drawdownPct >= 35 && daysSinceTrailingLow <= SLOW_BEAR_FRESHNESS_WINDOW_TRADING_DAYS;
-}
+// Wave triggers (which wave, by drawdown/VIX or the slow-bear pathway) are
+// personal policy and are evaluated locally by mcp_server
+// (src/lib/waveEvaluation.ts, thresholds in local_state/policy.yaml). The
+// rule engine publishes only their public market inputs: drawdown, VIX and
+// sp500_days_since_252d_low.
 
 export function drawdownPct(level: number, ath: number): number {
   return ((ath - level) / ath) * 100;

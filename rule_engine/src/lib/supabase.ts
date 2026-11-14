@@ -98,13 +98,8 @@ export interface CrashCheckInsert {
   confirmed_red_count: number;
   confirmation_state: Record<string, ConfirmationEntry>;
   wave_authorized: boolean;
-  wave_active: "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";
-  // Which pathway produced wave_active — FAST_PANIC (drawdown+VIX, the
-  // original rule) or SLOW_BEAR (drawdown depth + a fresh trailing low,
-  // added 2026-09-19 — see rules.ts); null when wave_active is NONE.
-  wave_active_reason: "FAST_PANIC" | "SLOW_BEAR" | null;
   // Trading days since S&P last set a fresh 252-day (~1yr) rolling low —
-  // backs the slow-bear pathway's freshness filter (rules.ts). Carried
+  // public input to mcp_server's local slow-bear wave check. Carried
   // forward day-to-day, not recomputed from full history each run.
   sp500_days_since_252d_low: number;
   warsh_classification: "HAWKISH" | "MODERATE" | "DOVISH" | "PENDING" | null;

@@ -266,10 +266,15 @@ Triggers are expressed as **drawdown from the running all-time high** plus
 a **VIX level**, not as fixed nominal S&P index levels. A fixed level
 decays in meaning as the index rises over time; a drawdown percentage
 stays meaningful whenever it's evaluated. Deeper waves need both a deeper
-drawdown and a higher VIX. The drawdown/VIX check (`activeWave()` in
-`rule_engine/src/rules.ts`) is evaluated same-day, not through the
-2-distinct-date confirmation the 6 core indicators use; the **slow-bear
-pathway** below does use real 2-day confirmation.
+drawdown and a higher VIX. Waves are evaluated locally by the MCP server
+(`mcp_server/src/lib/waveEvaluation.ts`, triggers in `wave_triggers` of
+`local_state/policy.yaml`) from public market inputs the rule engine
+publishes on every row (drawdown, VIX, days since a 252-day S&P low), so
+neither the trigger levels nor the resulting wave are stored on the public
+`crash_checks` table; `write_full_report` records wave status privately.
+The drawdown/VIX check is same-day, not run through the 2-distinct-date
+confirmation the 6 core indicators use; the **slow-bear pathway** below
+does use real 2-day confirmation.
 
 A wave's trigger being met is **not, by itself, authorization to deploy**:
 `get_deployment_plan` also requires `wave_authorized` (the stress gate:
@@ -292,8 +297,7 @@ grinding, low-volatility bear).
 **Condition:** drawdown at or beyond the wave's own drawdown threshold AND
 a fresh ~1-year (252-trading-day) rolling S&P low within a recent window of
 trading days, confirmed across 2+ distinct observation dates (real Signal
-Tiering confirmation, via `confirmation_state.slow_bear_w2` /
-`slow_bear_w3`).
+Tiering confirmation, rebuilt locally by replaying the public row history).
 
 The freshness requirement (not just depth) is load-bearing: SPY didn't
 reclaim its October 2007 high until 2013, so "still below the all-time
@@ -706,7 +710,10 @@ kept in `local_state/personal-rules.md`, served here by `get_rules`.
 Five triggers: Fed-event, inflation-print, fiscal-event (Treasury quarterly
 refunding, added 2026-11-13; see "Fiscal-event trigger" at the end of this
 section), earnings-guidance, and a rate-reset trigger tied to a
-stable-value fund. Trigger definitions
+stable-value fund. Only the four market-event triggers are stored on the
+public `crash_checks` row (an allowlist in `write_snapshot`); the rate-reset
+trigger describes the author's own fund, so `write_full_report` records it
+privately instead (since 2026-11-14). Trigger definitions
 themselves (dates, exact thresholds) belong in the live master-prompt doc /
 a config the user updates.
 

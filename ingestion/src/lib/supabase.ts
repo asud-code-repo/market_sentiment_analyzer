@@ -34,17 +34,20 @@ const UPSERT_CHUNK_SIZE = 500;
  * supabase/migrations/20260708000000_stage1_schema.sql. Safe to call
  * repeatedly with the same observation without duplicating rows.
  */
-export async function writeDataPoints(points: DataPoint[]): Promise<void> {
+export async function writeDataPoints(
+  points: DataPoint[],
+  table: "data_points" | "private_data_points" = "data_points",
+): Promise<void> {
   if (points.length === 0) return;
 
   for (let i = 0; i < points.length; i += UPSERT_CHUNK_SIZE) {
     const chunk = points.slice(i, i + UPSERT_CHUNK_SIZE);
     const { error } = await supabase
-      .from("data_points")
+      .from(table)
       .upsert(chunk, { onConflict: "series_id,observation_date" });
 
     if (error) {
-      throw new Error(`Supabase upsert failed for data_points (rows ${i}-${i + chunk.length}): ${error.message}`);
+      throw new Error(`Supabase upsert failed for ${table} (rows ${i}-${i + chunk.length}): ${error.message}`);
     }
   }
 }

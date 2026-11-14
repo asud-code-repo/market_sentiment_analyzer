@@ -4,6 +4,9 @@ import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./w
 import { attachNextScheduledEvents } from "./economicCalendar.js";
 import { loadMonitoringConfig } from "./monitoring.js";
 import type { OpenPrediction, ScoringEntry } from "./conditionalScenarios.js";
+import { evaluateCurrentWave, type WaveInputRow, type WaveStatus } from "./waveEvaluation.js";
+import { loadPolicy } from "./waveDeployment.js";
+import { findPrivateTerms } from "./privateTerms.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -74,11 +77,10 @@ export interface CrashCheckRow {
   red_count: number;
   confirmed_red_count: number | null;
   confirmation_state: Record<string, ConfirmationEntry> | null;
+  // The stress gate: confirmed RED count >= config/monitoring.yaml's
+  // stress_gate_confirmed_reds. Which WAVE is active is personal policy,
+  // evaluated locally (waveEvaluation.ts) and never stored on this table.
   wave_authorized: boolean;
-  wave_active: string | null;
-  // Which pathway produced wave_active (FAST_PANIC or SLOW_BEAR, added
-  // 2026-09-19 — see rule_engine/src/rules.ts); null when wave_active is NONE.
-  wave_active_reason: string | null;
   crash_type: string | null;
   warsh_classification: string | null;
   warsh_classification_date: string | null;
@@ -106,7 +108,8 @@ export interface CrashCheckRow {
   sp500_trough_date: string | null;
   recovery_confirmed: boolean;
   recovery_confirmed_date: string | null;
-  // Slow-bear wave pathway state (added 2026-09-19) — see rule_engine/src/rules.ts.
+  // Trading days since the S&P set a 252-day low (public market input to
+  // the local slow-bear wave check, waveEvaluation.ts).
   sp500_days_since_252d_low: number | null;
   // Statistical Hazard Model (10% drawdown target, added 2026-08-26) — see
   // reference_docs/rules/crash-check-rules.md. Rule-engine-computed and
@@ -121,11 +124,6 @@ export interface CrashCheckRow {
   // (external review 2026-09-19, F01); both otherwise leave band/raw/
   // calibrated null.
   hazard_10pct_status: string | null;
-  // Risk Radar (2026-09-15 to 2026-11-13) -- retired: discretionary scores
-  // that swung run to run (inflation 38 <-> 68 on the same data) and never
-  // gated anything. Columns kept for history; new rows leave them null.
-  risk_radar: unknown;
-  risk_radar_anchors: unknown;
   created_at: string;
 }
 
@@ -200,9 +198,12 @@ export async function getRecentConditionalScoring(rowLimit = 5): Promise<Scoring
 }
 
 /** Most recent row for a series_id, or null if we've never ingested it. */
-export async function getLatestDataPoint(seriesId: string): Promise<DataPointRow | null> {
+export async function getLatestDataPoint(
+  seriesId: string,
+  table: "data_points" | "private_data_points" = "data_points",
+): Promise<DataPointRow | null> {
   const { data, error } = await supabase
-    .from("data_points")
+    .from(table)
     .select("series_id, observation_date, value")
     .eq("series_id", seriesId)
     .order("observation_date", { ascending: false })
@@ -210,9 +211,48 @@ export async function getLatestDataPoint(seriesId: string): Promise<DataPointRow
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to read latest data_point for ${seriesId}: ${error.message}`);
+    throw new Error(`Failed to read latest ${table} row for ${seriesId}: ${error.message}`);
   }
   return data;
+}
+
+/**
+ * Latest price for a watchlist ticker. Watchlist-only tickers are ingested
+ * into private_data_points (service-role only, so the public anon key can't
+ * list the watchlist); tickers that are also public context series (SPY,
+ * GLD, ...) stay in data_points. Checks private first, then public.
+ */
+export async function getLatestTickerPrice(symbol: string): Promise<DataPointRow | null> {
+  return (await getLatestDataPoint(symbol, "private_data_points")) ?? (await getLatestDataPoint(symbol, "data_points"));
+}
+
+/**
+ * Public wave inputs from the most recent crash_checks rows, oldest first,
+ * for local wave evaluation (waveEvaluation.ts). The S&P observation date
+ * comes from confirmation_state.sp_drawdown, which every row carries
+ * (classify() sets it from the S&P reading; write_snapshot copies it).
+ */
+export async function getWaveInputRows(limit = 400): Promise<WaveInputRow[]> {
+  const { data, error } = await supabase
+    .from("crash_checks")
+    .select("run_at, sp_drawdown_pct, vix_value, sp500_days_since_252d_low, confirmation_state")
+    .order("run_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to read wave inputs from crash_checks: ${error.message}`);
+  return (data ?? [])
+    .map((r) => ({
+      run_at: r.run_at as string,
+      observation_date: ((r.confirmation_state as Record<string, ConfirmationEntry> | null)?.sp_drawdown?.observation_date ?? null) as string | null,
+      drawdown_pct: r.sp_drawdown_pct === null ? null : Number(r.sp_drawdown_pct),
+      vix: r.vix_value === null ? null : Number(r.vix_value),
+      days_since_252d_low: (r.sp500_days_since_252d_low as number | null) ?? null,
+    }))
+    .reverse();
+}
+
+/** Current wave status from public inputs + the local policy's triggers. */
+export async function currentWaveStatus(): Promise<WaveStatus> {
+  return evaluateCurrentWave(await getWaveInputRows(), loadPolicy(), loadMonitoringConfig().confirmation_required_days);
 }
 
 /**
@@ -290,6 +330,19 @@ const CANONICAL_TRIGGER_PREFIXES = [
   "earnings-guidance trigger",
   "rate-reset trigger",
 ];
+
+// Market-wide events: the only trigger types stored on the public
+// crash_checks row. Everything else (the rate-reset trigger, which describes
+// the author's own stable-value fund, and any entry with an unrecognised
+// name) is personal by default and is recorded privately by
+// write_full_report instead. An allowlist, so a new trigger type stays
+// private until it's deliberately added here.
+const PUBLIC_TRIGGER_PREFIXES = CANONICAL_TRIGGER_PREFIXES.filter((p) => p !== "rate-reset trigger");
+
+export function isPublicTrigger(entry: unknown): boolean {
+  const name = (entry as { name?: unknown } | null)?.name;
+  return typeof name === "string" && PUBLIC_TRIGGER_PREFIXES.some((p) => name.toLowerCase().startsWith(p));
+}
 
 /**
  * Keeps only the latest entry (by `date`) per canonical trigger type,
@@ -438,8 +491,27 @@ export async function writeSnapshot(qualitative: {
   // Then attach each fired Fed/CPI entry's next scheduled event from the
   // calendar, so the dashboard can lead with what's coming (2026-11-11).
   const triggerStatus = Array.isArray(triggerStatusRaw)
-    ? attachNextScheduledEvents(pruneStaleTriggerEntries(triggerStatusRaw), today)
-    : triggerStatusRaw;
+    ? attachNextScheduledEvents(pruneStaleTriggerEntries(triggerStatusRaw), today).filter(isPublicTrigger)
+    : [];
+
+  // Second guardrail on everything this row makes public: account and
+  // watchlist details (terms listed privately in policy.yaml) belong in
+  // write_full_report, never on the anon-readable crash_checks row.
+  const publicText = [
+    qualitative.notes,
+    ...(qualitative.delta_log ?? []).map((d) => d.text),
+    JSON.stringify(triggerStatus),
+    JSON.stringify(qualitative.conditional_scenarios ?? []),
+  ].join(" ");
+  const privateHits = findPrivateTerms(publicText, loadPolicy().private_terms);
+  if (privateHits.length > 0) {
+    throw new Error(
+      `Refusing to write: the public crash_checks text (notes, delta_log, trigger notes or conditional scenarios) ` +
+        `mentions private term(s): ${privateHits.join(", ")}. crash_checks is public: keep it to macro/market ` +
+        `narrative. Account, watchlist and holdings details go in write_full_report's portfolio_context. ` +
+        `Rephrase and try again.`,
+    );
+  }
 
   const otherColors = [latest.vix_color, latest.hy_spread_color, latest.sp_drawdown_color, latest.treasury_10y_color, latest.sahm_rule_color];
   const redCount = otherColors.filter((c) => c === "RED").length + (fedPivotColor === "RED" ? 1 : 0);
@@ -489,13 +561,9 @@ export async function writeSnapshot(qualitative: {
     // incorrectly reset every indicator's streak.
     confirmation_state: latest.confirmation_state,
     wave_authorized: waveAuthorized,
-    wave_active: latest.wave_active,
-    // Also rule-engine-owned (slow-bear wave pathway, added 2026-09-19) —
-    // carried forward for the same reason as confirmation_state above:
-    // dropping either here would misrepresent which pathway triggered
-    // wave_active, and reset the next classify() run's freshness-window
-    // tracking to "not at a fresh low" even if it truly was one.
-    wave_active_reason: latest.wave_active_reason,
+    // Rule-engine-owned public input to the local slow-bear wave check,
+    // carried forward like confirmation_state so the next classify() run
+    // continues the count from here.
     sp500_days_since_252d_low: latest.sp500_days_since_252d_low,
     // Also rule-engine-owned (computed once daily by classify.ts's
     // computeDivergences(), not recomputed by Claude) — carried forward like
@@ -575,6 +643,11 @@ export interface FullReportSnapshotRow {
   crash_type_diagnosis: FullReportCrashTypeDiagnosis | null;
   portfolio_context: string | null;
   source_crash_check_id: string | null;
+  // Private-only (2026-11-14): computed by write_full_report itself, never
+  // supplied by the caller and never stored on the public crash_checks row.
+  wave_status: (WaveStatus & { wave_authorized: boolean }) | null;
+  personal_triggers: unknown[] | null;
+  insider_activity: unknown;
   created_at: string;
 }
 
@@ -589,10 +662,13 @@ export interface FullReportSnapshotRow {
  * readable) — belt-and-suspenders, consistent with treating personal dollar
  * figures as never-persist rather than persist-but-restrict.
  */
-export async function writeFullReport(qualitative: {
-  crash_type_diagnosis: FullReportCrashTypeDiagnosis | null | undefined;
-  portfolio_context: string;
-}): Promise<FullReportSnapshotRow> {
+export async function writeFullReport(
+  qualitative: {
+    crash_type_diagnosis: FullReportCrashTypeDiagnosis | null | undefined;
+    portfolio_context: string;
+  },
+  insiderActivity: unknown = null,
+): Promise<FullReportSnapshotRow> {
   const [latest] = await getRecentCrashChecks(1);
   if (!latest) {
     throw new Error("No prior crash_checks row found — the rule engine (Stage 3) must run at least once first.");
@@ -611,16 +687,24 @@ export async function writeFullReport(qualitative: {
   }
 
   const watchlistFile = readWatchlist();
-  const prices = await Promise.all(watchlistFile.tickers.map((t) => getLatestDataPoint(t.symbol)));
+  const prices = await Promise.all(watchlistFile.tickers.map((t) => getLatestTickerPrice(t.symbol)));
   const watchlist = computeWatchlistStatus(watchlistFile.tickers, prices).map(
     ({ max_position_usd: _maxPositionUsd, ...rest }) => rest,
   );
+
+  // Computed here, never supplied by the caller: wave status from the local
+  // policy, and the personal triggers kept off the public crash_checks row.
+  const waveStatus = await currentWaveStatus();
+  const rateReset = computeRateResetTriggerStatus(readPortfolio());
 
   const row = {
     watchlist,
     crash_type_diagnosis: qualitative.crash_type_diagnosis,
     portfolio_context: qualitative.portfolio_context,
     source_crash_check_id: latest.id,
+    wave_status: { ...waveStatus, wave_authorized: latest.wave_authorized },
+    personal_triggers: [{ name: "Rate-reset trigger (stable-value fund)", ...rateReset }],
+    insider_activity: insiderActivity,
   };
 
   const { data, error } = await supabase.from("full_report_snapshots").insert(row).select().single();
@@ -660,7 +744,7 @@ export async function refreshFullReportWatchlist(tickers: WatchlistTicker[]): Pr
   const [latest] = await getRecentFullReportSnapshots(1);
   if (!latest) return;
 
-  const prices = await Promise.all(tickers.map((t) => getLatestDataPoint(t.symbol)));
+  const prices = await Promise.all(tickers.map((t) => getLatestTickerPrice(t.symbol)));
   const watchlist = computeWatchlistStatus(tickers, prices).map(
     ({ max_position_usd: _maxPositionUsd, ...rest }) => rest,
   );

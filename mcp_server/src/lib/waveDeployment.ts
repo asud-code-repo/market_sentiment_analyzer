@@ -41,11 +41,36 @@ const CrashTypeLineSchema = z
   .strict()
   .refine((p) => (p.slot === null) === (p.pct_of_dry_powder === null), "a line needs both a slot and a percentage, or neither (hold line)");
 
+const FastPanicTrigger = z.object({ drawdown_pct_gte: z.number().gt(0).lt(100), vix_gt: z.number().gt(0) }).strict();
+const SlowBearTrigger = z.object({ drawdown_pct_gte: z.number().gt(0).lt(100) }).strict();
+
+const WaveTriggersSchema = z
+  .object({
+    // Same-day: drawdown from the all-time high AND VIX, checked deepest wave first.
+    fast_panic: z.object({ WAVE_1: FastPanicTrigger, WAVE_2: FastPanicTrigger, WAVE_3: FastPanicTrigger }).strict(),
+    // Drawdown AND a fresh 252-trading-day S&P low within the window,
+    // confirmed over config/monitoring.yaml's confirmation_required_days.
+    slow_bear: z
+      .object({ freshness_window_trading_days: z.number().int().min(1), WAVE_2: SlowBearTrigger, WAVE_3: SlowBearTrigger })
+      .strict(),
+  })
+  .strict()
+  .refine(
+    (t) =>
+      t.fast_panic.WAVE_1.drawdown_pct_gte <= t.fast_panic.WAVE_2.drawdown_pct_gte &&
+      t.fast_panic.WAVE_2.drawdown_pct_gte <= t.fast_panic.WAVE_3.drawdown_pct_gte,
+    "fast_panic drawdown thresholds must not decrease from WAVE_1 to WAVE_3",
+  );
+
 const PolicySchema = z
   .object({
     schema_version: z.literal(1),
     // Behavioral guardrails returned with every deployment plan.
     hard_rules: z.array(z.string().min(1)).min(1),
+    // Words/phrases that must never appear in text written to the PUBLIC
+    // crash_checks row (account names, "watchlist", ...). Optional.
+    private_terms: z.array(z.string().min(1)).default([]),
+    wave_triggers: WaveTriggersSchema,
     waves: z.object({ WAVE_1: WaveDefinitionSchema, WAVE_2: WaveDefinitionSchema, WAVE_3: WaveDefinitionSchema }).strict(),
     crash_type_layers: z
       .object({

@@ -911,7 +911,7 @@
   </div>
 
   <footer class="rfooter">
-    <p class="disclaimer"><b>Educational and informational only. Not investment, financial, tax or trading advice.</b> This is a personal project. Signals such as RED/AMBER/GREEN bands, crash probability and "wave authorized" apply the author's own rules to public data; they are not recommendations to buy or sell anything. Data can be delayed, revised or wrong, and nothing here is guaranteed. Do your own research or consult a licensed professional before making financial decisions.</p>
+    <p class="disclaimer"><b>Educational and informational only. Not investment, financial, tax or trading advice.</b> This is a personal project. Signals such as RED/AMBER/GREEN bands, the stress gate and crash probability apply the author's own rules to public data; they are not recommendations to buy or sell anything. Data can be delayed, revised or wrong, and nothing here is guaranteed. Do your own research or consult a licensed professional before making financial decisions.</p>
     <span>Read-only view of macro/market state: a stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast.</span><span>No personal account data; portfolio figures live in the local MCP tools.</span>
     <span>Data: FRED (Federal Reserve Bank of St. Louis; some series © their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara–Iacoviello GPR index, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them.</span>
   </footer>
@@ -3462,9 +3462,9 @@ function renderDivergenceRail(row) {
 function renderStressVerdict(row, priorFullReport) {
   const confirmed = row.confirmed_red_count ?? 0;
   const pending = Math.max(0, (row.red_count ?? 0) - confirmed);
-  const wave = row.wave_active && row.wave_active !== "NONE" ? row.wave_active : null;
-  const waveTxt = !wave ? '<b class="ok">No wave authorized</b>'
-    : row.wave_authorized ? `<b class="bad">${escHtml(wave)} authorized</b>` : `<b class="warn">${escHtml(wave)} observed, not authorized</b>`;
+  // Which wave is active is personal policy (kept on the private Full
+  // Report); this page shows only the public stress gate.
+  const waveTxt = row.wave_authorized ? '<b class="bad">Stress gate met</b>' : '<b class="ok">Stress gate not met</b>';
   const band = row.hazard_10pct_band;
   // Dot: green for Low, amber for Transitioning/High -- never red, so a High band can't be mistaken for a gating RED.
   const hazard = row.hazard_10pct_status === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
@@ -3641,7 +3641,7 @@ function gateChanges(prev, cur) {
   }
   const a = prev.confirmed_red_count ?? 0, b = cur.confirmed_red_count ?? 0;
   if (a !== b) { out.push(`confirmed red ${a} → ${b}`); if (b > a) worse = true; }
-  if (!!prev.wave_authorized !== !!cur.wave_authorized) { out.push(cur.wave_authorized ? "wave authorized" : "wave authorization ended"); if (cur.wave_authorized) worse = true; }
+  if (!!prev.wave_authorized !== !!cur.wave_authorized) { out.push(cur.wave_authorized ? "stress gate met" : "stress gate cleared"); if (cur.wave_authorized) worse = true; }
   return { out, worse };
 }
 
@@ -4548,7 +4548,7 @@ async function main() {
     // 2026-09-19, F12) — the exact bug this same pagination already fixed
     // for data_points history further down.
     ALL_ROWS = await fetchAllFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_active,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,distance_to_red,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status&order=run_at.asc",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,distance_to_red,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status&order=run_at.asc",
     );
 
     if (ALL_ROWS.length === 0) {
@@ -4893,7 +4893,7 @@ async function main() {
 
 
     const dateOf = (r) => new Date(r.run_at).toLocaleDateString();
-    const withMeta = (valueKey) => ALL_ROWS.map((r) => ({ date: dateOf(r), rawDate: r.run_at, value: r[valueKey], waveActive: r.wave_active && r.wave_active !== "NONE" }));
+    const withMeta = (valueKey) => ALL_ROWS.map((r) => ({ date: dateOf(r), rawDate: r.run_at, value: r[valueKey] }));
 
     renderLineChart("chart-crash-probability", { title: "Crash Probability", unit: "%", formatValue: (v) => v, allPoints: withMeta("crash_probability_pct") });
 
@@ -4904,11 +4904,6 @@ async function main() {
     // failure here shouldn't take down the crash-probability chart above,
     // which has no other source and stays on crash_checks.
     try {
-      const waveActiveByDate = {};
-      for (const r of ALL_ROWS) {
-        if (r.wave_active && r.wave_active !== "NONE") waveActiveByDate[r.run_at.slice(0, 10)] = true;
-      }
-
       const fetchSeriesHistory = (seriesId) =>
         fetchAllFromSupabase(`data_points?select=observation_date,value&series_id=eq.${seriesId}&order=observation_date.asc`);
 
@@ -4917,7 +4912,6 @@ async function main() {
           date: new Date(r.observation_date).toLocaleDateString(),
           rawDate: r.observation_date,
           value: transform ? transform(r.value) : r.value,
-          waveActive: !!waveActiveByDate[r.observation_date],
         }));
 
       const [vixHistory, hySpreadHistory, treasuryHistory, sahmHistory, sp500History] = await Promise.all([
@@ -4949,7 +4943,6 @@ async function main() {
           date: new Date(r.observation_date).toLocaleDateString(),
           rawDate: r.observation_date,
           value: Math.round(((runningMax - r.value) / runningMax) * 10000) / 100,
-          waveActive: !!waveActiveByDate[r.observation_date],
         };
       });
       renderLineChart("chart-drawdown", { title: "S&P Drawdown from ATH", unit: "%", formatValue: (v) => v, allPoints: drawdownPoints, bands: { thresholds: [10, 20], domainMax: 25, domainMin: 0 } });

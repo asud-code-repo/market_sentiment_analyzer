@@ -69,8 +69,11 @@ install/build steps.
      `local_state/policy.example.yaml`): wave and crash-type deployment
      percentages, read by `mcp_server/src/lib/waveDeployment.ts` on every
      call. Tests use the example file, never the real one.
-   - Still in code: the wave triggers (drawdown/VIX and slow-bear) in
-     `rule_engine/src/rules.ts`, because classify runs in GitHub Actions.
+   - The wave triggers are in the same local policy (`wave_triggers`) and
+     are evaluated locally by `mcp_server/src/lib/waveEvaluation.ts` from
+     public inputs the rule engine publishes (drawdown, VIX,
+     `sp500_days_since_252d_low`). The rule engine never decides waves and
+     no wave field is stored on the public `crash_checks` table.
 
    The prose rationale stays in `reference_docs/rules/crash-check-rules.md`.
    After any change, run `npm run typecheck` and `npm test` in both
@@ -92,7 +95,10 @@ install/build steps.
    merges in by matching `##`/`###` heading text, so keep those headings
    identical in both files. Code uses generic names (`tactical` account,
    `brokerage_window` route, `watchlist.yaml`); real labels live in the
-   local files.
+   local files. Watchlist ticker prices go to the service-role-only
+   `private_data_points` table, personal triggers and wave status to
+   `full_report_snapshots`; `write_snapshot` rejects public text containing
+   the policy's `private_terms`.
 
 ## Do not
 
