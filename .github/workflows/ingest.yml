@@ -2,7 +2,7 @@ name: Daily ingestion + classification
 
 on:
   schedule:
-    # Always 10am US Eastern, weekdays only — 4 hours of buffer before the
+    # Always 10am US Eastern, Monday-Saturday — 4 hours of buffer before the
     # 2pm scheduled Claude Desktop "run crash check" (see project-instructions.md),
     # comfortably absorbing the cron-delay risk found 2026-07-14 (GitHub's
     # scheduler has been observed running this workflow up to 62 minutes
@@ -19,8 +19,15 @@ on:
     # that window. A reasonable tradeoff vs. exact date-based logic for a
     # job whose correctness never depends on the precise trigger time
     # (it's reading yesterday's close either way, hours before market open).
-    - cron: "0 14 * 3-10 1-5"    # Mar-Oct (EDT, UTC-4) — 14:00 UTC = 10am EDT
-    - cron: "0 15 * 11,12,1,2 1-5" # Nov-Feb (EST, UTC-5) — 15:00 UTC = 10am EST
+    #
+    # Saturday added 2026-11-14: the 10am Friday run can't see Friday's
+    # close (Yahoo stores completed sessions only; FRED lags a day), so
+    # without it a Saturday crash check read Thursday's close. Sunday is
+    # skipped — no Saturday session, it would re-pull Friday. Confirmation
+    # streaks count distinct observation dates, so the extra run can't
+    # double-count; mcp_server/src/lib/freshness.ts expects this run.
+    - cron: "0 14 * 3-10 1-6"    # Mar-Oct (EDT, UTC-4) — 14:00 UTC = 10am EDT
+    - cron: "0 15 * 11,12,1,2 1-6" # Nov-Feb (EST, UTC-5) — 15:00 UTC = 10am EST
   workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab
 
 jobs:

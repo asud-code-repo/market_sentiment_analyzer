@@ -55,3 +55,14 @@ test("a run before that day's ingestion still stops (the 4am case)", () => {
   assert.equal(f.is_fresh, false);
   assert.match(f.note, /may not have run yet today/);
 });
+
+test("Saturday expects Saturday's ingest; Sunday accepts Saturday's", () => {
+  // 2026-11-21 (Sat) 2pm ET: Friday's row still holds Thursday's close, so it is not enough.
+  const sat = at("2026-11-21T19:00:00Z");
+  assert.equal(computeDataFreshness("2026-11-20T15:10:00Z", [daily("VIXCLS", "2026-11-19")], sat).is_fresh, false);
+  assert.equal(computeDataFreshness("2026-11-21T15:10:00Z", [daily("VIXCLS", "2026-11-20")], sat).is_fresh, true);
+  // A FRED series still on Thursday is within the two-business-day allowance.
+  assert.equal(computeDataFreshness("2026-11-21T15:10:00Z", [daily("DGS10", "2026-11-18")], sat).is_fresh, true);
+  // Sunday: no Sunday run, Saturday's row is current.
+  assert.equal(computeDataFreshness("2026-11-21T15:10:00Z", [daily("VIXCLS", "2026-11-20")], at("2026-11-22T19:00:00Z")).is_fresh, true);
+});

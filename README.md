@@ -33,7 +33,7 @@ findings-and-status writeup.
 ```
 FRED / EIA / Massive (market data)
         │
-        ▼  (GitHub Action, 10am ET daily, weekdays)
+        ▼  (GitHub Action, 10am ET daily, Mon-Sat)
 ┌───────────────┐     ┌──────────────────────┐     ┌──────────────┐
 │  ingestion/    │────▶│  Supabase             │◀────│ rule_engine/ │
 │  (plausibility │     │  (data_points,        │     │ (deterministic│
@@ -64,7 +64,7 @@ FRED / EIA / Massive (market data)
 | Layer | What it does | Where |
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` |
-| **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase. The one-time backfill script pulls each FRED series' full available history (since 2026-08-15 — previously a rolling 5yr window), not just enough for the "All" chart toggle | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
+| **Ingestion** | Pulls FRED/EIA/Massive market series daily, with a plausibility guard that quarantines implausible values before they ever reach Supabase. The one-time backfill script pulls each FRED series' full available history (since 2026-08-15 — previously a rolling 5yr window), not just enough for the "All" chart toggle | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET Mon-Sat) |
 | **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (ATH-relative drawdown % triggers, not fixed S&P levels), cross-indicator divergence detection, and fires a push notification on a confirmed-RED threshold crossing — pure functions, no LLM | `rule_engine/` |
 | **MCP server** | Local stdio server exposing 14 tools to Claude Desktop — indicator panel, portfolio drift, watchlist status, deployment plan, historical deltas, a data-freshness check, and 5 persistence tools | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private Portfolio Report page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |

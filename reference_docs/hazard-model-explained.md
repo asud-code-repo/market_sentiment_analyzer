@@ -9,7 +9,7 @@ replacement for it.*
 
 ## TL;DR
 
-Every weekday, one function (`computeHazardProbability` in
+Every Monday-Saturday, one function (`computeHazardProbability` in
 `rule_engine/src/hazardModel.ts`) answers one question: **"if the S&P
 isn't already down 10%+ from its high, what's the chance it gets there in
 the next ~21 trading days?"** It does this by plugging 32 numbers — mostly
@@ -31,14 +31,14 @@ The hazard model is not a standalone service — it's one function call
 inside the bigger daily pipeline that already exists in this repo. As a
 data engineer, think of it as **one more derived column computed during
 the nightly batch job**, except the "batch job" runs on GitHub Actions
-every weekday morning:
+every Monday-Saturday morning:
 
 ```
  FRED (macro/rates/credit)          Massive (market prices)
         |                                   |
         v                                   v
   +--------------------------------------------------+
-  |        ingestion/   (scheduled, weekdays)         |
+  |        ingestion/   (scheduled, Mon-Sat)          |
   |  pulls raw series, writes one row per data point  |
   +--------------------------------------------------+
                         |
@@ -339,7 +339,7 @@ reported as "High — historically ~54%", not "92.7%".
 
 ## Where You'd Actually See This
 
-- **Cadence**: computed once per weekday, as part of the same
+- **Cadence**: computed once per day Monday-Saturday, as part of the same
   `classify.ts` run that produces the 6-indicator panel (triggered by the
   `ingest-then-classify` GitHub Action).
 - **Storage**: `crash_checks.hazard_10pct_raw_pct`,

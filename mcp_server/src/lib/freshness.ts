@@ -25,15 +25,27 @@ function easternDateString(date: Date): string {
 
 /**
  * Given a YYYY-MM-DD calendar date, returns that same date if it's a
- * weekday, or the prior Friday if it's a Saturday/Sunday — matching
- * ingest.yml's Mon-Fri-only cron, so a weekend check correctly expects
- * Friday's data rather than flagging a nonexistent weekend run as missing.
+ * weekday, or the prior Friday if it's a Saturday/Sunday. Used for
+ * observation-date (business-day) staleness, not for when ingestion ran.
  */
 function mostRecentWeekday(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const dayOfWeek = d.getUTCDay(); // 0 = Sunday, 6 = Saturday
   const daysBack = dayOfWeek === 0 ? 2 : dayOfWeek === 6 ? 1 : 0;
   d.setUTCDate(d.getUTCDate() - daysBack);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The date the latest scheduled ingest should have run: that same date
+ * Monday-Saturday, or the prior Saturday on a Sunday — matching ingest.yml's
+ * Mon-Sat cron (Saturday added 2026-11-14 so a Saturday crash check sees
+ * Friday's completed close). A Saturday check therefore requires Saturday's
+ * run, not Friday's, which would still be holding Thursday's close.
+ */
+function mostRecentIngestDay(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
 
@@ -113,7 +125,7 @@ export function computeDataFreshness(
   now: Date = new Date(),
 ): DataFreshness {
   const latestRunDate = easternDateString(new Date(latestRunAt));
-  const expectedDate = mostRecentWeekday(easternDateString(now));
+  const expectedDate = mostRecentIngestDay(easternDateString(now));
   const reportIsFresh = latestRunDate >= expectedDate;
 
   const seriesFreshness: SeriesFreshness[] = coreSeries.map((s) => ({

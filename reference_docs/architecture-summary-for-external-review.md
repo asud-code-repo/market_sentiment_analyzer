@@ -54,7 +54,7 @@ flowchart TB
   end
 
   subgraph Automation[Scheduled automation]
-    GHA[GitHub Actions: weekday ingest then classify]
+    GHA[GitHub Actions: Mon-Sat ingest then classify]
     ING[ingestion]
     RULES[rule_engine]
   end
@@ -106,7 +106,7 @@ flowchart TB
 | Layer | What it does | Where |
 |---|---|---|
 | **Rules** | Static thresholds, bands, wave-deployment percentages, crash-type diagnosis criteria | `reference_docs/rules/crash-check-rules.md` (full text reproduced below) |
-| **Ingestion** | Pulls FRED/EIA macro series (full available history since 2026-08-15, not a rolling 5yr window) + Massive.com watchlist ticker prices daily | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET weekdays) |
+| **Ingestion** | Pulls FRED/EIA macro series (full available history since 2026-08-15, not a rolling 5yr window) + Massive.com watchlist ticker prices daily | `ingestion/` (GitHub Action, `.github/workflows/ingest.yml`, 10am ET Mon-Sat) |
 | **Rule engine** | Computes the 6-indicator RED/AMBER/GREEN panel, confirmation windows, wave authorization (relative-drawdown triggers since 2026-08-15), cross-indicator divergence detection, threshold-crossing push notifications — pure functions, no LLM | `rule_engine/` |
 | **MCP server** | Local stdio server exposing tools to Claude Desktop (indicator panel, portfolio drift, watchlist status, deployment plan, 5 write/persistence tools, data-freshness check) | `mcp_server/` |
 | **Reporting** | Chat-rendered HTML reports (2 templates), a public historical dashboard, and a private "Private Portfolio Report" page merging crash-check + portfolio-review content | `reference_docs/rules/*.html`, `dashboard_site/`, `full_report_site/` |
@@ -329,7 +329,7 @@ finding in the rules doc below.
 
 Before trusting the indicator panel as "today's data," the system compares the
 latest `crash_checks` row's date (in America/New_York) against the expected
-ingestion date (accounting for weekends — ingestion is weekdays only), and stops
+ingestion date (ingestion runs Monday-Saturday, so a Sunday check expects Saturday's run), and stops
 with an explicit warning rather than silently analyzing stale data if ingestion
 hasn't run yet. This exists because GitHub Actions' cron scheduler has been
 observed firing up to ~60 minutes late in this project's real run history, so naive
