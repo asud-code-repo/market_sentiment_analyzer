@@ -17,7 +17,7 @@ import {
   type RestrictionStatus,
 } from "./tradeRestrictions.js";
 
-export type Route = "in_plan" | "brokeragelink" | "none";
+export type Route = "in_plan" | "brokerage_window" | "none";
 export type RouteStatus = "ok" | "pending" | "blocked";
 // Fund-level availability to new money. "limited" = soft-closed / unclear
 // whether the plan can still add; "closed" = can't buy at all.
@@ -84,6 +84,9 @@ export interface RouteDef {
   description?: string;
   status: RouteStatus;
   constraint?: string;
+  // The fund name the plan shows when exchanging into this route (for a
+  // brokerage window, its sweep/core position); used to count exchange days.
+  plan_name?: string;
   open_questions?: string[];
   notes?: string[];
 }
@@ -133,7 +136,7 @@ export interface InstrumentResolution {
 }
 
 const DAY_MS = 86_400_000;
-const KNOWN_ROUTES: Route[] = ["in_plan", "brokeragelink", "none"];
+const KNOWN_ROUTES: Route[] = ["in_plan", "brokerage_window", "none"];
 
 function isoDate(v: string | Date | null | undefined): string | null {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);

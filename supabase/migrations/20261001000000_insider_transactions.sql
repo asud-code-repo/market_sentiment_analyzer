@@ -1,7 +1,7 @@
 -- Insider Form 4 cluster-buy signal (backlog: 13F/insider positioning
 -- discussion). Stores individual open-market insider transactions (SEC Form
 -- 4, transaction codes P/S only -- filtered at ingest in
--- ingestion/src/sources/secForm4.ts) for the BrokerageLink watchlist
+-- ingestion/src/sources/secForm4.ts) for the watchlist
 -- tickers. This is public SEC filing data about public companies, not
 -- personal data -- safe to grant anon SELECT by the same reasoning as
 -- crash_checks/data_points (see 20260709000400's "never extend this

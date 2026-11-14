@@ -128,7 +128,7 @@ export async function writeInsiderTransactions(rows: InsiderTransaction[]): Prom
 }
 
 /**
- * The BrokerageLink watchlist ticker *list* (symbols only) lives in Supabase
+ * The watchlist ticker *list* (symbols only) lives in Supabase
  * so CI can read it without access to the gitignored local watchlist file —
  * see supabase/migrations/20260711000000_watchlist_tickers.sql. Returns []
  * (not an error) if the table is empty, so this source degrades to a no-op

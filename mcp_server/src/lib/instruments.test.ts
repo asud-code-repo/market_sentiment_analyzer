@@ -20,7 +20,7 @@ function fixture(): Registry {
     verification_max_age_days: 90,
     routes: {
       in_plan: { status: "ok" },
-      brokeragelink: { status: "blocked", constraint: "Example rule: 90-day wait in a non-competing fund" },
+      brokerage_window: { status: "blocked", constraint: "Example rule: 90-day wait in a non-competing fund" },
     },
     slots: {
       sector_fund: {
@@ -32,13 +32,13 @@ function fixture(): Registry {
       sector_etf: {
         used_by: ["wave_2"],
         role: "Example sector ETF",
-        primary: { name: "Example Sector ETF", ticker: "XMPL", route: "brokeragelink", verified_on: "2026-06-01" },
-        backup: { name: "Example Alt ETF", ticker: "XALT", route: "brokeragelink", verified_on: "2026-06-01" },
+        primary: { name: "Example Sector ETF", ticker: "XMPL", route: "brokerage_window", verified_on: "2026-06-01" },
+        backup: { name: "Example Alt ETF", ticker: "XALT", route: "brokerage_window", verified_on: "2026-06-01" },
       },
       single_name: {
         used_by: ["type_a"],
         role: "Example single name",
-        primary: { name: "Example Corp", ticker: "EXCO", route: "brokeragelink", verified_on: "2026-01-02" },
+        primary: { name: "Example Corp", ticker: "EXCO", route: "brokerage_window", verified_on: "2026-01-02" },
         backup: { ref: "sector_etf.primary" },
       },
     },
@@ -53,7 +53,7 @@ test("missing required slot, bad ref, undefined route and blocked-without-constr
   const reg = fixture();
   reg.slots.single_name.backup = { ref: "nope.primary" };
   reg.slots.sector_fund.primary = { name: "X", route: "in_plan", verified_on: "June" };
-  reg.routes.brokeragelink = { status: "blocked" };
+  reg.routes.brokerage_window = { status: "blocked" };
   delete (reg.routes as Record<string, unknown>).in_plan;
   const errors = validateRegistry(reg, ["sector_fund", "missing_slot"]);
   assert.ok(errors.some((e) => e.includes("missing_slot")));
@@ -146,7 +146,7 @@ test("policy: validation rejects bad splits, half-filled hold lines and unknown 
 test("readiness: GREEN when primary executable + verified, AMBER via backup, RED when both blocked", () => {
   const reg = fixture();
   assert.equal(resolveSlot("sector_fund", reg, TODAY).readiness?.grade, "GREEN");
-  // primary blocked (brokeragelink), backup is a blocked ref too -> RED
+  // primary blocked (brokerage_window), backup is a blocked ref too -> RED
   const red = resolveSlot("sector_etf", reg, TODAY).readiness!;
   assert.equal(red.grade, "RED");
   assert.equal(red.executable_via, null);

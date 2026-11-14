@@ -18,10 +18,19 @@
 #     (a hold/remainder line with a note)
 #
 # Percentages are of "dry powder": the cash reserve in the tactical account
-# (accounts.tactical_401k.dry_powder_usd in portfolio.yaml). The MCP server
+# (accounts.tactical.dry_powder_usd in portfolio.yaml). The MCP server
 # turns them into dollars at read time; dollars are never stored.
 
 schema_version: 1
+
+# Behavioral guardrails, returned with every get_deployment_plan result.
+# Add account-specific rules of your own.
+hard_rules:
+  - "Never sell existing equity positions on the way down"
+  - "Never deploy all 3 waves in the same week"
+  - "Never fire a wave off an unconfirmed threshold breach (confirmed on fewer than 2 distinct ingestion dates)"
+  - "Never go 100% stable-value mid-crash"
+  - "Never apply wave deployment logic to accounts with no deployment mechanism — monitor only"
 
 # Staged deployment. Which wave is active is decided by the wave triggers
 # (drawdown / VIX / slow-bear, see crash-check-rules.md "Wave Deployment

@@ -2,7 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import { readWatchlistTickers, writeInsiderTransactions, type InsiderTransaction } from "../lib/supabase.js";
 
 // Insider Form 4 cluster-buy signal (backlog: 13F/insider positioning
-// discussion). Near-real-time per-ticker signal for the BrokerageLink
+// discussion). Near-real-time per-ticker signal for the
 // watchlist -- Form 4 is filed within 2 business days of the actual trade
 // (confirmed: SEC's Section 16 rule), unlike 13F's 45+-day lag, so this is
 // the "forward view" half of that discussion; sec13f.ts (quarterly batch,

@@ -1,6 +1,6 @@
--- Track C: the BrokerageLink watchlist ticker *list* (symbols only — no
+-- Track C: the watchlist ticker *list* (symbols only — no
 -- price targets, thesis notes, or position sizing, all of which stay in the
--- gitignored local_state/brokeragelink_watchlist.yaml) needs to be readable
+-- gitignored local_state/watchlist.yaml) needs to be readable
 -- by the ingestion Action running in CI, which has no access to that local
 -- file. Previously this was a manually-maintained WATCHLIST_TICKERS repo
 -- variable; storing it here instead lets write_watchlist (mcp_server) keep

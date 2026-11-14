@@ -1,5 +1,5 @@
-# Template for local_state/brokeragelink_watchlist.yaml — copy this file,
-# rename to brokeragelink_watchlist.yaml (already gitignored), and fill in
+# Template for local_state/watchlist.yaml — copy this file,
+# rename to watchlist.yaml (already gitignored), and fill in
 # real values there. Read only by the locally-running MCP server (stdio);
 # max_position_usd figures are personal (tied to your actual dry powder),
 # so this stays local-only like portfolio.yaml — never sent to Supabase.

@@ -29,7 +29,7 @@ export interface DrillLine {
 export interface DrillTransaction {
   source: Wave | CrashType;
   simulated_exchange_day: string;
-  uses_exchange_day: boolean; // false if nothing in it is bought in-plan or via BrokerageLink
+  uses_exchange_day: boolean; // false if nothing in it is bought in-plan or via the brokerage window
   restricted_instruments_bought: string[];
 }
 
@@ -94,7 +94,7 @@ export function runFireDrill(
       const inst = rd.executable_via === "primary" ? res.primary : rd.executable_via === "backup" ? res.backup : null;
       if (rd.executable_via === "backup" && res.primary?.restriction?.exhausted) rerouted.add(`${g.source}:${l.slot}`);
       if (inst) {
-        bought.push(inst.route === "brokeragelink" ? "BROKERAGELINK" : idOf(inst));
+        bought.push(inst.route === "brokerage_window" ? (reg.routes.brokerage_window?.plan_name ?? "BROKERAGE_WINDOW") : idOf(inst));
         if (inst.restriction?.in_force) restrictedBought.push(idOf(inst));
       }
       lines.push({

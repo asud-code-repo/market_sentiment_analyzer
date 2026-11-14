@@ -1,7 +1,11 @@
 // Run: npm test (node's built-in test runner via tsx -- no test framework dependency).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSections, findSection, tableOfContents, readRulesDoc } from "./rulesDoc.js";
+import { parseSections, findSection, tableOfContents, readRulesDoc, mergePersonalRules } from "./rulesDoc.js";
+
+// The "real rules doc" test below must exercise the public doc alone.
+delete process.env.PERSONAL_RULES_PATH;
+delete process.env.PORTFOLIO_PATH;
 
 const DOC = `# Title
 
@@ -74,4 +78,50 @@ test("the real rules doc: sections the workflows name are all reachable", () => 
   const toc = tableOfContents(s);
   assert.ok(toc.length >= 15);
   assert.ok(toc.every((t) => t.approx_tokens > 0));
+});
+
+const PUBLIC = [
+  "# Rules",
+  "",
+  "## Waves",
+  "",
+  "Public stub: values are private.",
+  "",
+  "### Slow path",
+  "",
+  "Public slow stub.",
+  "",
+  "## Panel",
+  "",
+  "Panel text.",
+  "",
+  "```",
+  "## Waves",
+  "```",
+].join("\n");
+
+test("mergePersonalRules: a personal ## replaces only its own text, a ### only its subsection", () => {
+  const personal = ["Comment before the first heading is ignored.", "", "## Waves", "", "Real wave splits.", ""].join("\n");
+  const m = mergePersonalRules(PUBLIC, personal);
+  assert.deepEqual(m.replaced, ["Waves"]);
+  assert.ok(m.markdown.includes("Real wave splits."));
+  assert.ok(!m.markdown.includes("Public stub"));
+  assert.ok(m.markdown.includes("Public slow stub."), "the ### child is untouched");
+  assert.ok(!m.markdown.includes("Comment before"));
+  assert.ok(m.markdown.includes("```\n## Waves\n```"), "fenced headings are not sections");
+
+  const sub = mergePersonalRules(PUBLIC, ["### Slow path", "", "Real slow-bear numbers."].join("\n"));
+  const s = parseSections(sub.markdown);
+  const waves = findSection(s, "Waves");
+  assert.ok("found" in waves && waves.found.content.includes("Public stub") && waves.found.content.includes("Real slow-bear numbers."));
+});
+
+test("mergePersonalRules: unmatched sections are appended, case and punctuation are ignored", () => {
+  const m = mergePersonalRules(PUBLIC, ["## PANEL", "", "Private panel note.", "", "## Account glossary", "", "Tactical = the plan account."].join("\n"));
+  assert.deepEqual(m.replaced, ["PANEL"]);
+  assert.deepEqual(m.appended, ["Account glossary"]);
+  const s = parseSections(m.markdown);
+  const g = findSection(s, "Account glossary");
+  assert.ok("found" in g && g.found.content.includes("Tactical = the plan account."));
+  assert.equal(m.warnings.length, 0);
 });

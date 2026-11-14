@@ -250,93 +250,73 @@ Additional bond-market bands (Tier 1, elevated priority, informational):
 
 ## Wave Deployment Thresholds (tactical account only)
 
-Deploy in 3 waves only — **never all at once, never two waves in the same
-week.** Amounts are % of the account's dry-powder pool (see
-`local_state/portfolio.yaml` for the live dollar figure). Note: the
-drawdown/VIX conditions below (`activeWave()` in `rules.ts`) are evaluated
-same-day, not run through the Signal Tiering 2-distinct-date mechanism the
-6 core indicators use — a documentation/code discrepancy noted 2026-09-19,
-left as-is since fixing it wasn't in scope of the slow-bear pathway work
-below and changing it would affect the fast-panic pathway's already-
-validated lead times. The **slow-bear pathway** added below *does* use
-real 2-day confirmation.
+> **Personal policy.** The trigger levels and each wave's split are the
+> author's own and live in local, gitignored files: the full text in
+> `local_state/personal-rules.md` (served in place of this section by the
+> `get_rules` tool) and the percentages in `local_state/policy.yaml` (read
+> by `get_deployment_plan`). `local_state/policy.example.yaml` shows the
+> shape with illustrative numbers.
 
-Triggers are expressed as **drawdown from the running all-time-high**, not
-fixed nominal S&P index levels — a fixed level like "S&P ≤ 6,200" decays as
-the index's nominal level rises over time (what was a ~16% drawdown when
-that number was chosen becomes a smaller, less meaningful move once the ATH
-has risen further), while a drawdown percentage stays meaningful regardless
-of when it's evaluated.
+Deploy the tactical account's cash reserve ("dry powder") in 3 waves only:
+**never all at once, never two waves in the same week.** Each wave moves a
+fixed percentage of dry powder, split across fund categories (for example
+defensive equity, international equity, real assets, TIPS, gold).
 
-A wave's drawdown/VIX condition being met is **not, by itself, authorization
-to deploy** — `get_deployment_plan` also requires `wave_authorized` (3 or
-more of the 6 indicators confirmed RED, per the wave-deployment-authorization
-rule above). A wave whose drawdown/VIX threshold has fired but where
+Triggers are expressed as **drawdown from the running all-time high** plus
+a **VIX level**, not as fixed nominal S&P index levels. A fixed level
+decays in meaning as the index rises over time; a drawdown percentage
+stays meaningful whenever it's evaluated. Deeper waves need both a deeper
+drawdown and a higher VIX. The drawdown/VIX check (`activeWave()` in
+`rule_engine/src/rules.ts`) is evaluated same-day, not through the
+2-distinct-date confirmation the 6 core indicators use; the **slow-bear
+pathway** below does use real 2-day confirmation.
+
+A wave's trigger being met is **not, by itself, authorization to deploy**:
+`get_deployment_plan` also requires `wave_authorized` (the stress gate:
+`stress_gate_confirmed_reds` of the 6 indicators confirmed RED, set in
+`config/monitoring.yaml`). A wave whose trigger has fired while
 `wave_authorized` is still false is shown as observed-but-not-yet-authorized,
 not as a deployable plan.
-
-**WAVE 1 fires when:** S&P drawdown from ATH ≥ 16% AND VIX > 28, both confirmed
-→ Move **~17.4% of dry powder**, split:
-- 50% → Healthcare-sector defensive equity fund
-- 25% → Real-estate/real-asset fund
-- 25% → International equity (add to existing position)
-
-**WAVE 2 fires when:** S&P drawdown from ATH ≥ 24% AND VIX > 35, both confirmed
-→ Move **~21.7% of dry powder**, split:
-- 40% → Target-date/glide-path fund (add)
-- 32% → International equity (add again)
-- 16% → Energy sector ETF (via brokerage window)
-- 12% → Inflation-protected securities (TIPS, via brokerage window)
-
-**WAVE 3 fires when:** S&P drawdown from ATH ≥ 35% AND VIX > 45, both confirmed
-→ Move **~17.4% of dry powder**, split:
-- 40% → US large-cap value/income fund (restore to prior weight)
-- 35% → Target-date/glide-path fund (final add)
-- 25% → Gold ETF (via brokerage window)
 
 ### Slow-bear pathway (Wave 2/3 only, added 2026-09-19)
 
 A second, independent way to reach Wave 2/3, alongside the drawdown+VIX
-pathway above — never a replacement for it. Fixes a gap an external
-backtest found: replaying the original pathway against all 5 real
-≥20%-drawdown S&P episodes since 1993 (dot-com, GFC, Dec 2018, COVID, 2022)
-showed Wave 3 never confirmed for dot-com (the single worst crash in the
-dataset, -49.1%, because VIX only touched 45 for one day) and Wave 2 never
-confirmed for 2022 (because VIX's peak and the deepest drawdown never
-coincided in that grinding, low-volatility bear).
+pathway above, never a replacement for it. It fixes a gap an external
+backtest found: replayed against all 5 real ≥20%-drawdown S&P episodes
+since 1993 (dot-com, GFC, Dec 2018, COVID, 2022), the drawdown+VIX pathway
+never confirmed Wave 3 for dot-com (the worst crash in the dataset, -49.1%,
+because VIX only touched panic levels for a day) and never confirmed Wave 2
+for 2022 (VIX's peak and the deepest drawdown never coincided in that
+grinding, low-volatility bear).
 
-**Condition:** `drawdown ≥ wave's threshold (24% for Wave 2, 35% for Wave 3)
-AND the S&P has set a fresh ~1-year (252-trading-day) rolling low within
-the last 40 trading days`, confirmed across 2+ distinct observation dates
-(real Signal Tiering confirmation, via `confirmation_state.slow_bear_w2` /
-`slow_bear_w3`) — unlike the pathway above, this one is genuinely
-confirmation-gated, not same-day.
+**Condition:** drawdown at or beyond the wave's own drawdown threshold AND
+a fresh ~1-year (252-trading-day) rolling S&P low within a recent window of
+trading days, confirmed across 2+ distinct observation dates (real Signal
+Tiering confirmation, via `confirmation_state.slow_bear_w2` /
+`slow_bear_w3`).
 
-The freshness requirement (not just depth alone) is load-bearing: SPY
-didn't reclaim its October 2007 high until 2013, so "still below the
-all-time high" stayed true for *years* after the GFC actually bottomed and
-markets calmed down. A depth-only check with no freshness filter fired
-constantly through the calm 2010-2011 recovery period in backtesting —
-this distinguishes an actively deteriorating market from one merely still
-below a stale multi-year-old peak.
+The freshness requirement (not just depth) is load-bearing: SPY didn't
+reclaim its October 2007 high until 2013, so "still below the all-time
+high" stayed true for *years* after the GFC bottomed and markets calmed
+down. A depth-only check fired constantly through the calm 2010-2011
+recovery in backtesting; requiring a fresh low distinguishes an actively
+deteriorating market from one merely below a stale multi-year-old peak.
 
 Backtest result (33 years / 8,467 trading days of real SPY+VIX+FRED
-history): the slow-bear Wave 3 pathway produces 5 events, all 5 inside
-dot-com/GFC, zero false positives. The slow-bear Wave 2 pathway produces
-13 events — 10 inside the 5 labeled episodes (including 2022) and 3 that
-are real, separately-identifiable stress episodes (the Aug-Oct 2011
-debt-ceiling crisis/US credit downgrade, and COVID's own volatile tail one
-week past its trough), not genuinely ordinary days — the same "a near-miss
-is a real crisis, not a false alarm" standard the original backtest already
-established for 1998 LTCM/April 2025.
+history, at the author's thresholds): the slow-bear Wave 3 pathway
+produces 5 events, all inside dot-com/GFC, zero false positives. The
+slow-bear Wave 2 pathway produces 13 events: 10 inside the 5 labeled
+episodes (including 2022) and 3 in real, separately identifiable stress
+episodes (the Aug-Oct 2011 debt-ceiling crisis/US credit downgrade, and
+COVID's volatile tail one week past its trough), not ordinary days.
 
 `wave_active_reason` (`FAST_PANIC` or `SLOW_BEAR`, null when no wave is
 active) records which pathway actually produced a given day's `wave_active`
 value. Whichever pathway reaches the higher wave wins; on a tie, the
 fast-panic pathway's reason is reported.
 
-Total across all 3 waves: ~56.5% of dry powder. Remainder stays in stable value —
-deployment is intentionally partial, not full liquidation of the reserve.
+Deployment is intentionally partial: the 3 waves together move only part
+of the reserve, and the remainder stays in stable value.
 
 Deployment is **cumulative**: if a deep, fast drawdown reaches Wave 3's
 threshold without Wave 1/2 ever separately confirming first, `get_deployment_plan`
@@ -347,27 +327,15 @@ actually been executed is tracked in `local_state/wave_deployment_state.yaml`,
 set only via the `record_wave_deployment` tool after trades are actually
 placed — never inferred or set automatically.
 
-**Hard rules — never violate under any circumstances:**
+**Hard rules — never violate under any circumstances** (the full list,
+including account-specific rules, is `hard_rules` in
+`local_state/policy.yaml`, returned by `get_deployment_plan`):
 - Never sell existing equity positions on the way down
 - Never deploy all 3 waves in the same week
 - Never fire a wave off an unconfirmed threshold breach (confirmed on fewer
   than 2 distinct ingestion dates)
 - Never go 100% stable-value mid-crash (market timing requires being right twice)
-- Never stop 401k paycheck contributions during a crash
-- Never touch the passive long-duration account (RRSP-equivalent) during a crash
-- Never apply wave deployment logic to accounts with no deployment mechanism (e.g. spouse 401k) — monitor only
-
-> **2026-08-15 review note:** an external quant review flagged "never sell on
-> the way down" as a blanket behavioral guardrail that should arguably be
-> conditioned on liquidity, concentration, valuation, or tax status rather
-> than applied uniformly. Checked against the actual account structure
-> (`local_state/portfolio.yaml`): the two accounts that concern would most
-> plausibly apply to — the passive long-duration account (RRSP-equivalent)
-> and the monitored spouse 401k — are already permanently excluded from wave
-> deployment by their own account-level flags (`crash_protocol: none`,
-> `deployment_mechanism: none`), independent of this rule. No carve-out
-> identified for the tactical 401k itself as of this review; rule stands
-> as-is.
+- Never apply wave deployment logic to accounts with no deployment mechanism — monitor only
 
 ## Post-Crash Allocation Protocol
 
@@ -461,59 +429,20 @@ diagnose Type D or change any allocation.
 
 ### Stage 2 — Universal Core (always first, regardless of crash type)
 
-~30.4% of dry powder, already embedded in the Wave 1–3 structure above:
-- Healthcare defensive equity — 8.7% (from Wave 1)
-- International equity add — 8.7% (from Wave 1+2)
-- Target-date/glide-path add — 13.0% (from Wave 2+3)
+A share of dry powder that is already embedded in the Wave 1–3 splits
+above: the positions every crash type needs regardless of diagnosis. The
+breakdown is personal policy (see `local_state/personal-rules.md`, served
+here by `get_rules`).
 
 ### Stage 3 — Crash-Type Specific Layer (% of dry powder)
 
-**TYPE A — STAGFLATION:**
-| Position | % of dry powder |
-|---|---|
-| TIPS (brokerage window) | 4.35% |
-| Energy sector ETF (brokerage window) | 4.35% |
-| Energy single-name #1 (brokerage window) | 2.61% |
-| LNG single-name (brokerage window) | 2.61% |
-| Real-estate/real-asset fund | 4.35% |
-| Remainder | Hold — stagflation crashes have multiple legs, don't rush |
-
-**TYPE B — RECESSION:**
-| Position | % of dry powder |
-|---|---|
-| Target-date/glide-path (additional) | 8.7% |
-| AI/tech single-name (brokerage window, Wave 3 tranche only) | 2.61% |
-| Infrastructure single-name (brokerage window) | 2.61% |
-| US large-cap value/income (restore) | 6.96% |
-| Stable value | Reduce to ~10% — recession crashes resolve faster, deploy aggressively |
-
-**TYPE C — CREDIT / LIQUIDITY:**
-| Position | % of dry powder |
-|---|---|
-| Gold ETF (brokerage window) | 6.96% |
-| TIPS (brokerage window) | 2.61% |
-| Healthcare (additional) | 4.35% |
-| Stable value | Hold large portion — credit crashes are long, deploy slowly over 6–12 months |
-
-**TYPE D — AI / TECH BUBBLE:**
-| Position | % of dry powder |
-|---|---|
-| AI/tech single-name (brokerage window) | 4.35% |
-| Energy single-name (brokerage window) | 2.61% |
-| US large-cap value/income (restore) | 6.96% |
-| Infrastructure single-name (brokerage window) | 2.61% |
-| International equity (additional) | 4.35% |
-
-**TYPE E — HYBRID (current base case as of doc date):**
-| Priority | Position | % of dry powder |
-|---|---|---|
-| 1st | TIPS (brokerage window) | 4.35% |
-| 2nd | Gold ETF (brokerage window) | 4.35% |
-| 3rd | Healthcare (additional) | 4.35% |
-| 4th | Real-estate/real-asset fund | 2.61% |
-| 5th | Wait for confirmed Fed pivot, then rotate into glide-path + AI/tech growth | — |
-
-Hybrid crashes last longer — stretch wave deployment over 6–9 months.
+Once a crash type is diagnosed (Stage 1), a layer of positions specific to
+that type is added, each a fixed percentage of dry powder, plus hold or
+remainder guidance for that type. The percentages are personal policy:
+`crash_type_layers` in `local_state/policy.yaml`, computed into dollars by
+`get_deployment_plan` (shape in `local_state/policy.example.yaml`); the
+author's rationale is in `local_state/personal-rules.md`, served here by
+`get_rules`.
 
 ### Stage 4 — Recovery Signal and 6-Month Transition
 
@@ -564,8 +493,8 @@ actually on.
 ## Deployment Instrument Selection
 
 *Added 2026-11-04 (phase 1). Implemented in `mcp_server/src/lib/instruments.ts`;
-each wave split and Stage 3 line carries a `slot` id in
-`mcp_server/src/lib/waveDeployment.ts`.*
+each wave split and Stage 3 line carries a `slot` id in the deployment
+policy (`local_state/policy.yaml`).*
 
 The waves and the crash-type layers decide **how much** goes where, by
 category. This section decides **which instrument** fills each category,
@@ -581,17 +510,16 @@ policy it must follow.
 2. **The registry fixes the instrument, not the outcome.** A named fund in
    a tidy table is not a forecast. It records a considered choice so that
    nothing has to be decided under stress.
-3. **One source of truth per fact.** Percentages stay in this document and
-   `waveDeployment.ts`. The registry maps slots to instruments and stores nothing
-   about amounts.
-4. **Prefer breadth when a slot only needs beta.** At −16 / −24 / −35%
+3. **One source of truth per fact.** Percentages stay in the deployment
+   policy (`local_state/policy.yaml`). The registry maps slots to instruments
+   and stores nothing about amounts.
+4. **Prefer breadth when a slot only needs beta.** At wave-level
    market drawdowns most of the payoff comes from owning the exposure
    cheaply. A single name must be a clearly better expression of the
    slot's role than its ETF to keep its place.
 5. **Prefer in-plan routes.** An in-plan exchange settles fastest and
-   carries no transfer restrictions. A BrokerageLink route is used only
-   where the menu has no equivalent (currently TIPS, gold, energy, and
-   single names).
+   carries no transfer restrictions. A brokerage-window route is used only
+   where the plan menu has no equivalent.
 
 ### Selection criteria
 
@@ -606,9 +534,9 @@ when it fails one of these criteria, never because of recent returns.
    2020 and 2022, where history exists.
 4. *Fund risks* — persistent outflows, closure to new money, manager or
    strategy change, mergers.
-5. *Overlap* — duplication with current holdings, the SIP, or other slots.
+5. *Overlap* — duplication with current holdings, other accounts, or other slots.
 
-**BrokerageLink ETFs**:
+**Brokerage-window ETFs**:
 1. *Role fit*, including duration for bond ETFs.
 2. *Expense ratio.*
 3. *Liquidity* — assets and typical bid-ask spread.
@@ -747,29 +675,9 @@ change. The review also lists any watchlist ticker without a slot
 
 ### Known gaps (2026-11-04)
 
-- The BrokerageLink route is `blocked` (confirmed 2026-11-05): the stable-value
-  fund's equity-wash rule bars direct exchange into competing funds,
-  including the brokerage window, until money has sat 90 days in a
-  non-competing fund. Every BrokerageLink line (TIPS, gold, energy, single
-  names) therefore can't be executed at wave time as things stand. Which
-  plan funds count as competing, and whether to pre-stage a brokerage cash
-  sleeve, are open decisions.
-- BrokerageLink's own restrictions (max % of balance, minimums, settlement)
-  are still unconfirmed.
-- Expense ratios for several plan funds (the collective trusts and two
-  share classes) still need the plan's fee disclosure.
-- Single-name entries carry the watchlist's last update (2026-07-16) and
-  will show as UNVERIFIED until re-underwritten.
-- Open decision: one TIPS slot (short duration) or separate short and
-  broad TIPS slots by crash type.
-- Open decision: whether single names stay in the waves at all (phase 2).
-- A plan excessive-trading limit (one exchange day per quarter) applies to
-  at least the target-date fund (seen 2026-11-05). Its start and end dates
-  and the funds it covers are TBC, so the counting rules above are
-  assumptions. The same exchange preview showed no competing-fund warning,
-  which is weak evidence only, since the check may run at submit.
-- Role-fit bands are not set (report-only until 2027-02-02). Breakeven
-  sensitivity is the TIPS slot's role-fit measure.
+Plan-specific open items (route restrictions, unconfirmed plan rules, fee
+disclosures and open decisions) describe the author's own plan, so they're
+kept in `local_state/personal-rules.md`, served here by `get_rules`.
 
 ## Warsh Fed Classification — HAWKISH / MODERATE / DOVISH
 
@@ -812,7 +720,7 @@ first three genuinely need qualitative judgment (was the Fed's tone
 hawkish/dovish, did earnings guidance beat/miss) and stay LLM-judged for
 that reason. The **rate-reset trigger is the one exception**: it's a plain
 date comparison against locally-recorded portfolio data
-(`nyl_anchor_rate_through`), not a judgment call — after prose instructions
+(`stable_value_rate_through`), not a judgment call — after prose instructions
 asking the LLM to do that comparison itself repeatedly produced wrong
 results in practice (confirmed live, multiple reports in a row), it was
 made deterministic (`mcp_server/src/lib/portfolio.ts`'s
@@ -969,11 +877,11 @@ confidence qualifier per Signal Tiering.
 | 10yr TIPS real yield | FRED `DFII10` | Rising real yields pressure equity valuations independent of nominal-rate moves | Covers only the real-yield leg of "equity valuation" — no free earnings-yield/CAPE series exists on FRED; do not treat this as a full valuation read |
 | Recession probability (smoothed) | FRED `RECPROUSM156N` | Chauvet & Piger's published dynamic-factor Markov-switching model, hosted on FRED by the St. Louis Fed (not built by them — correct attribution matters) | External cross-check against this system's own crash-probability estimate — never validation of it. Agreeing or disagreeing with it doesn't make the estimate more or less correct |
 | Recession probability (NY Fed, 12mo) | Computed from FRED `DGS10`/`DGS3MO` | The NY Fed's own published Estrella-Mishkin (1998) yield-curve probit formula, `Φ(-0.5333 - 0.6330 × (DGS10-DGS3MO))`, evaluated here rather than scraped — the NY Fed does not publish this as its own FRED series (verified before adding it). Coefficient corrected 2026-09-15 (was `-0.6629`, stale since first built — an external review live-fetched the NY Fed's current PDF and confirmed `-0.6330`; the NY Fed periodically re-estimates its own published model, same staleness class as the FOMC calendar dates). Also uses spot `DGS10`/`DGS3MO`, not the NY Fed's own monthly-average convention — a known, flagged approximation, not fixed | Same external-cross-check caveat as above. The model is deliberately simple by its own authors' design — adding more variables tends to overfit out-of-sample, worth remembering before adding a 3rd/4th competing probability model here |
-| Small-cap breadth (IWM vs. SPY) | Derived: Massive IWM/SPY 7-day return spread | Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return — the closest free proxy for market breadth (no raw advance/decline or %-above-200dma series exists for free). Small-caps are more exposed to domestic credit conditions and floating-rate debt, so persistent underperformance can be an early stress signal before it shows up in large-cap earnings | First cut, not backtested — persistently negative for 2+ weeks is worth a second look, not a calibrated threshold. Tracked independently of the BrokerageLink watchlist (`ingestion/src/sources/massive.ts`'s `BREADTH_TICKERS`) so a Portfolio Opportunity Review's full-replacement watchlist sync can never delete it |
-| Gold price (`gold_price`) | Massive `GLD` (SPDR Gold Shares) 7-day % change | Directional context for gold's *existing* real allocation in the Type C (6.96%) and Type E (4.35%) crash-type sleeves (see Stage 3 below) — not a new signal. Not a universal hedge: sold off alongside equities during 2008's acute margin-call/liquidity-panic phase before rallying later once the monetary response kicked in | Read directionally alongside the sleeve rationale, not as a hard flag — a decline here doesn't automatically contradict the crash thesis |
+| Small-cap breadth (IWM vs. SPY) | Derived: Massive IWM/SPY 7-day return spread | Russell 2000 (IWM) vs S&P 500 (SPY) relative 7-day return — the closest free proxy for market breadth (no raw advance/decline or %-above-200dma series exists for free). Small-caps are more exposed to domestic credit conditions and floating-rate debt, so persistent underperformance can be an early stress signal before it shows up in large-cap earnings | First cut, not backtested — persistently negative for 2+ weeks is worth a second look, not a calibrated threshold. Tracked independently of the watchlist (`ingestion/src/sources/massive.ts`'s `BREADTH_TICKERS`) so a Portfolio Opportunity Review's full-replacement watchlist sync can never delete it |
+| Gold price (`gold_price`) | Massive `GLD` (SPDR Gold Shares) 7-day % change | Directional context for gold's *existing* real allocation in the Type C and Type E crash-type sleeves (see Stage 3 below) — not a new signal. Not a universal hedge: sold off alongside equities during 2008's acute margin-call/liquidity-panic phase before rallying later once the monetary response kicked in | Read directionally alongside the sleeve rationale, not as a hard flag — a decline here doesn't automatically contradict the crash thesis |
 | Bitcoin price (`bitcoin_price`) | Massive `X:BTCUSD` (crypto locale) 7-day % change | Added 2026-09-14, tracked for awareness only — explicitly **not** a defensive/hedge asset. Verified against actual crash-period data before adding: BTC fell 40-58% in the March 2020 COVID crash (S&P fell 30-35%) and 77% in the 2022 bear market (S&P -25%/Nasdaq -33%) — higher-beta than equities in both of this system's real crash episodes | Never treat a BTC decline as confirming, or a BTC rally as contradicting, the crash thesis. This is tracking only — it does not add BTC to any crash-sleeve allocation, and does not resolve the still-open "gold sleeve-weight assumptions" question below |
 | Sector capital rotation (`sector_rotation`) | State Street's own free NAV-history files (`ingestion/src/sources/ssga.ts`), 11 Select Sector SPDRs + SPY + GLD — NAV price return, an estimated creation/redemption flow (share-count change × NAV), and a `rotation_read` classification at 30/90/180/365 days. The dashboard additionally shows a 5-trading-day NAV return and return-vs-SPY (no flow, no `rotation_read`, not in the MCP tool) | Added 2026-09-15 after a long search for a *real* flow signal (not a price proxy) for sector-level capital rotation. Every commercial fund-flow source checked (ICI, ETF.com, EPFR/Lipper/BofA, a third-party ETF.com scraper) was either paid or bot-blocked; the issuer's own regulatory-disclosure NAV-history file turned out to be free, unauthenticated, and genuinely dynamic day-to-day (share-count changes only reflect real creation/redemption, unlike AUM or price). NAV history is **not split-adjusted** — a real 2:1 XLK split on 2025-12-05 initially corrupted every return/flow calculation spanning that date (365d showed a fake -32% instead of the true +36%) until `adjustForSplits()` was added to detect and retroactively correct for it | `flow_estimate_usd` is ETF-**vehicle**-level, not a complete picture of money entering/leaving the underlying sector — investors can get the same exposure through other ETFs (e.g. QQQ/VGT/SMH instead of XLK). `nav_return_pct` is price-only, not total return (dividends excluded — a fast-follow, not v1; Massive's `/stocks/v1/dividends` endpoint was separately verified working). `rotation_read` (`confirmed_in`/`confirmed_out`/`accumulation_divergence`/`distribution_divergence`) exists because return alone can't distinguish genuine rotation from price noise — report it explicitly rather than just the raw return. CFTC COT and Fed Z.1 (also investigated) measure positioning and macro-level transactions respectively, not sector-level flow — kept as separate, deferred items, not folded into this one. Added 2026-09-15 (external review): `nav_return_vs_spy_pct` (return relative to the market — a positive absolute return can still be substantial underperformance, e.g. +2.9% over 180d while SPY did +15%) and `flow_pct_of_assets` (flow as % of assets at the window's start, so a $1B flow into a $10B sector doesn't read as equally significant as one into a $1T sector). **Added 2026-10-01, reworked 2026-11-12**: `institutional_net_buying_pct_qoq`/`institutional_net_buying_vs_sector_avg_pts`/`institutional_13f_read`/`institutional_13f_as_of`, from SEC 13F bulk filings (`ingestion/src/sources/sec13f.ts`) aggregated across the FULL universe of 13F filers (deliberately not a curated "top investors" list) and mapped to sector via CUSIPs found in SSGA's own per-fund holdings files (`ingestion/src/sources/sec13fSectorMap.ts`) — this is a genuinely different signal from the flow fields above, not a duplicate: it isolates institutional-ONLY positioning, where `flow_estimate_usd` mixes retail + institutional money at the ETF-vehicle level. The tradeoff is staleness — 13F is quarterly and 45+ days lagged (refreshed only ~4x/year, manually via `.github/workflows/sec13f.yml`, not on a cron, since SEC's own publish schedule and URL structure are confirmed irregular) — so this answers "did institutions back this sector last quarter," never "is a move happening now." It measures holdings of the sector's underlying STOCKS (not the SPDR fund): `institutional_net_buying_pct_qoq` is the change in shares held vs the prior quarter valued at the prior quarter's prices (price moves can't drive it), over institutions that filed in both quarters (a change in who files can't either), with option rows, rows whose $/share is far off that stock's quarter-end price (filer data-entry errors), and stocks with a corporate action that quarter (split-adjusted share change beyond ±50%) excluded. Because most sectors move together in a given quarter, the lead read is `institutional_net_buying_vs_sector_avg_pts` / `institutional_13f_read` (`tilting_toward` / `tilting_away` / `in_line`, ±1pt band, uncalibrated). The earlier version (2026-10-01 to 2026-11-12) used the QoQ change in total dollar value, which was mostly the quarter's price move, counted options as holdings, and compared the 13F quarter against a 90d ETF-flow window that didn't overlap it. Coverage is bounded to stocks currently held by one of the 11 tracked sector SPDRs (a large/mid-cap universe) — all fields are null for SPY/GLD. See `insider_activity` below for the companion near-real-time, per-ticker "forward view" (SEC Form 4 insider cluster-buy) from the same discussion |
-| Insider activity (`insider_activity`) | SEC Form 4 filings (EDGAR full-text search + per-filing XML), per BrokerageLink watchlist ticker — `cluster_buy_signal`, `distinct_officer_director_buyers_30d`, `total_buy_usd_30d`, `total_sell_count_30d` | Added 2026-10-01, the "forward view" half of a 13F/insider-positioning discussion (`sector_rotation`'s `institutional_net_buying_*` fields above are the "confirm the past" half). Form 4 is filed within 2 business days of the actual trade — far fresher than 13F's 45+-day lag. Filtered hard at ingest to carry real signal: only open-market transaction codes P/S are stored (grants, option exercises, gifts, tax-withholding excluded), and `aff10b5One` (pre-scheduled 10b5-1 trades) is excluded from the cluster count — ingestion/src/sources/secForm4.ts | `cluster_buy_signal` requires 2+ **distinct** officers/directors buying in the open market within 30 days — never a single buy, never a raw transaction count (one insider buying repeatedly isn't the same signal as several independent insiders buying). 10%-owner-only purchases are stored but excluded from the cluster count (a passive holder crossing 10% is a different signal than operating insiders buying). `total_sell_count_30d` is deliberately a count only, with no dollar figure and no bearish framing — insider selling is dominated by diversification/tax timing and carries far weaker signal than insider buying. Tier 2, informational only — never part of the 3-of-6 wave-authorization gate |
+| Insider activity (`insider_activity`) | SEC Form 4 filings (EDGAR full-text search + per-filing XML), per watchlist ticker — `cluster_buy_signal`, `distinct_officer_director_buyers_30d`, `total_buy_usd_30d`, `total_sell_count_30d` | Added 2026-10-01, the "forward view" half of a 13F/insider-positioning discussion (`sector_rotation`'s `institutional_net_buying_*` fields above are the "confirm the past" half). Form 4 is filed within 2 business days of the actual trade — far fresher than 13F's 45+-day lag. Filtered hard at ingest to carry real signal: only open-market transaction codes P/S are stored (grants, option exercises, gifts, tax-withholding excluded), and `aff10b5One` (pre-scheduled 10b5-1 trades) is excluded from the cluster count — ingestion/src/sources/secForm4.ts | `cluster_buy_signal` requires 2+ **distinct** officers/directors buying in the open market within 30 days — never a single buy, never a raw transaction count (one insider buying repeatedly isn't the same signal as several independent insiders buying). 10%-owner-only purchases are stored but excluded from the cluster count (a passive holder crossing 10% is a different signal than operating insiders buying). `total_sell_count_30d` is deliberately a count only, with no dollar figure and no bearish framing — insider selling is dominated by diversification/tax timing and carries far weaker signal than insider buying. Tier 2, informational only — never part of the 3-of-6 wave-authorization gate |
 | Market positioning (`market_positioning`) | Six measures, each as a percentile of its own history: CFTC Traders in Financial Futures net position as % of open interest — S&P 500 e-mini asset managers and leveraged funds, VIX futures leveraged funds, 10y Treasury leveraged funds (`ingestion/src/sources/cftc.ts`, weekly, 2006–present); CBOE equity put/call ratio as a 10-trading-day average (`cboe.ts`, daily, 2019-10-07–present); FINRA margin debt as year-over-year growth (`finra.ts`, monthly, 1997–present). Computed in `mcp_server/src/lib/positioning.ts`, mirrored in `dashboard_site/index.html` | Added 2026-10-29 to answer "are big players betting for or against the market" — the remaining positioning gap after 13F (institutional, long-only, quarterly) and Form 4 (insiders, watchlist only). All three sources verified free and live with no API key. CBOE replaced the old frozen 2019 `totalpc.csv` archive with CBOE's own per-day JSON file, which starts the trading day after that archive ends | Percentile window is trailing 5y for COT and put/call, full history (since 1998) for margin-debt YoY (only 12 points/yr). **Extremes (≥90th / ≤10th) are a first cut, not backtested** — and positioning extremes read **contrarian**, not directional (a crowded long is fragility, not confirmation). Leveraged-fund shorts are often hedges or basis/arbitrage legs (especially 10y Treasury, mostly the cash-futures basis trade), so read the change and the extreme, not the sign. CFTC is Tuesday positions published Friday; FINRA lags ~3–4 weeks. Checked as of end-2021 (just before the 2022 bear market): no measure was extreme, so these are context, not timing signals. Never netted into one score. The dashboard additionally labels each measure in five bands (extreme ≤10th, low 11–25th, typical, high 75–89th, extreme ≥90th) with a plain-language read and a rule-built "Today" summary (10y Treasury excluded as mostly basis trade); the 25/75 inner cutoffs are display-only and not in the MCP tool, which still reports only the ≥90/≤10 extremes. Tier 2, informational only — never part of the 3-of-6 wave-authorization gate |
 | Effective Fed Funds Rate (`effective_fed_funds_rate_pct`) | FRED `DFF`, daily | Added 2026-09-22 (prompted by a discussion of the "fiscal dominance" thesis). The Fed's own overnight rate — distinct from every yield series above (`DGS2`/`DGS10`/`DGS30`/`DGS3MO`), which are market-priced Treasury yields, not the Fed's target/effective rate. Chosen over the monthly `FEDFUNDS` series to match this file's existing daily-series cadence | No single-direction band — read alongside the yield curve and `broad_dollar_index`, not as a standalone gate |
 | Federal Debt as % of GDP (`federal_debt_pct_gdp`) | FRED `GFDEGDQ188S`, quarterly | Added 2026-09-22, same prompt as above. The structural debt-load series the "fiscal dominance" thesis centers on — the claim that continued deficit spending/borrowing is now the dominant force on markets, capable of keeping equities resilient even through rising yields (overriding the usual yield-vs-equity relationship this system's own `treasury_10y`/`thirty_year_treasury_pct` bands assume). No free FRED series updates faster than quarterly for this | Watch the trend/rate of change, not a single level — this system does not (yet) have a calibrated threshold for what debt/GDP level itself should change the crash read. Read alongside `gold_price`, which the same thesis treats as the primary debasement/reserve-revaluation hedge |
@@ -1766,7 +1674,7 @@ directly, using CSS that had sat unused since before this field existed.
 chat text (unlike the crash check, which ends in a text summary since 2026-11-13). Reuse its component classes (`.cc-verdict-headline`,
 `.cc-alloc-row`/`.cc-alloc-target`, `.cc-flag-card`, `.cc-ticker-card`/`.cc-prox-track`,
 `.cc-source-card`, etc.); replace the example content with this run's live values.
-The tactical 401k's allocation bars are informational context (it's wave-gated, not
+The tactical account's allocation bars are informational context (it's wave-gated, not
 drift-scored) — never color them as a drift alarm. The ticker proximity meter's
 BUY/WATCH/WAIT zone widths and marker position should reflect each ticker's actual
 price relative to its Wave 1/2/3 targets, not be evenly spaced by default.

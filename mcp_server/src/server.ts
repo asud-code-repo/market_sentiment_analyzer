@@ -26,7 +26,7 @@ import { computeMarketPositioning } from "./lib/positioning.js";
 import { computeFundingPressureFlag } from "./lib/repoStress.js";
 import { resolveConditional, dueEvents } from "./lib/conditionalScenarios.js";
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
-import { readRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
+import { loadRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
@@ -64,10 +64,18 @@ server.registerTool(
     inputSchema: { section: z.string().optional() },
   },
   withLogging("get_rules", async ({ section }) => {
-    const sections = parseSections(readRulesDoc());
-    if (!section) return json({ sections: tableOfContents(sections) });
+    const doc = loadRulesDoc();
+    const sections = parseSections(doc.markdown);
+    const warnings = doc.personal.warnings.length ? { personal_rules_warnings: doc.personal.warnings } : {};
+    if (!section) {
+      return json({
+        sections: tableOfContents(sections),
+        personal_rules: { loaded: doc.personal.loaded, sections_replaced: doc.personal.replaced.length, sections_added: doc.personal.appended },
+        ...warnings,
+      });
+    }
     const r = findSection(sections, section);
-    if ("found" in r) return json({ title: r.found.title, ...(r.found.parent ? { within: r.found.parent } : {}), content: r.found.content });
+    if ("found" in r) return json({ title: r.found.title, ...(r.found.parent ? { within: r.found.parent } : {}), content: r.found.content, ...warnings });
     const candidates = "ambiguous" in r ? r.ambiguous.map((x) => x.title) : tableOfContents(sections).map((t) => t.title);
     return json({ error: "ambiguous" in r ? `"${section}" matches several sections; ask for one.` : `No section matches "${section}".`, candidates });
   }),
@@ -250,7 +258,7 @@ server.registerTool(
   {
     description:
       "Returns personal account balances/allocations from the local portfolio file — never read " +
-      "from or written to Supabase. RRSP CAD->USD conversion uses a live FRED DEXCAUS rate (public " +
+      "from or written to Supabase. The CAD-denominated account's CAD->USD conversion uses a live FRED DEXCAUS rate (public " +
       "macro data, not the resulting personal figure). rate_reset_trigger.status ('fired'/'pending') " +
       "is a plain date comparison, already evaluated here — use it directly in get_trigger_status/" +
       "write_snapshot rather than recomputing the date comparison yourself, which has repeatedly " +
@@ -283,9 +291,9 @@ server.registerTool(
       "fund's own threshold_pts (5/25 rule: whichever is smaller of 5pts absolute or 25% of that " +
       "fund's target, floored at 2pts — self-scaling, since a 5pt drift matters far more on a 5% " +
       "target than a 30% one). Purely mechanical; the threshold is computed here, not to be " +
-      "recomputed. The tactical 401k's dry-powder fund appears with a standing_flag explaining its " +
+      "recomputed. The tactical account's dry-powder fund appears with a standing_flag explaining its " +
       "deliberate deviation (wave-gated, not neglect); accounts with a known structural_issue but no " +
-      "formal target (e.g. spouse 401k) get a standing flag too.",
+      "formal target (e.g. a monitor-only secondary account) get a standing flag too.",
   },
   withLogging("get_portfolio_drift", async () => json(computePortfolioDrift(readPortfolio()))),
 );
@@ -294,7 +302,7 @@ server.registerTool(
   "get_watchlist_status",
   {
     description:
-      "Returns the BrokerageLink stock watchlist with live price vs. Wave 1/2/3 targets and a " +
+      "Returns the stock watchlist with live price vs. Wave 1/2/3 targets and a " +
       "deterministic BUY_ZONE/WATCH/WAIT status per ticker. Prices come from Supabase (ingested " +
       "daily via Alpha Vantage); targets/thesis/sizing come from the local watchlist file. Purely " +
       "mechanical — use this instead of estimating prices via web search.",
@@ -339,7 +347,7 @@ server.registerTool(
   "write_watchlist",
   {
     description:
-      "Persists an updated BrokerageLink watchlist — full replacement of the ticker list, not a " +
+      "Persists an updated watchlist — full replacement of the ticker list, not a " +
       "merge. Writes targets/thesis/position sizing to the local file, and syncs just the ticker " +
       "symbols to Supabase's watchlist_tickers table (public data, no dollar figures) so ingestion " +
       "picks up new/removed tickers automatically on the next run — no separate manual step. Use " +
@@ -550,7 +558,7 @@ server.registerTool(
       "pair means) — report as-is, never re-judge from the raw numbers. recent_grad_unemployment_" +
       "rate_pct likely reflects both structural (AI/remote-work displacement) and cyclical factors -- " +
       "this measurement alone can't separate the two; not treated as a crash-timing signal either " +
-      "way — see project-instructions.md's NVDA thesis step for how to use it. hires_rate_pct " +
+      "way — see the portfolio review's thesis re-underwrite step for how to use it. hires_rate_pct " +
       "(JTSHIR) pairs with initial/continuing jobless claims -- claims measure layoffs, hires rate " +
       "measures whether people are finding new jobs, together a fuller labor-market read than " +
       "claims alone. The two recession-probability " +
@@ -833,7 +841,7 @@ server.registerTool(
       },
       recent_grad_unemployment_rate_pct: recentGradUnemployment && {
         ...recentGradUnemployment,
-        signal: "likely reflects both structural factors (AI + remote-work displacement of entry-level hiring) and cyclical labor-market softness -- this measurement alone can't separate the two. Not treated as a crash-timing signal either way, but ambiguous evidence for the NVDA 'AI recovery trough bet' thesis during a Portfolio Opportunity Review",
+        signal: "likely reflects both structural factors (AI + remote-work displacement of entry-level hiring) and cyclical labor-market softness -- this measurement alone can't separate the two. Not treated as a crash-timing signal either way, but relevant context for AI-exposed watchlist theses during a Portfolio Opportunity Review",
       },
       thirty_year_treasury_pct: dgs30 && {
         ...dgs30,
@@ -1042,7 +1050,7 @@ server.registerTool(
       insider_activity: {
         tickers: insiderActivity,
         signal:
-          "Per-ticker SEC Form 4 insider activity for the BrokerageLink watchlist, filed within 2 " +
+          "Per-ticker SEC Form 4 insider activity for the watchlist, filed within 2 " +
           "business days of the actual trade (unlike 13F's 45+-day lag). Filtered hard for signal: " +
           "only open-market transaction codes P/S are stored (grants, option exercises, gifts, tax-" +
           "withholding excluded), and rows flagged aff10b5One (pre-scheduled 10b5-1 trades) are " +
@@ -1073,21 +1081,12 @@ server.registerTool(
 
 const WAVE_ORDER: Wave[] = ["WAVE_1", "WAVE_2", "WAVE_3"];
 
-const HARD_RULES = [
-  "Never sell existing equity positions on the way down",
-  "Never deploy all 3 waves in the same week",
-  "Never fire a wave off an unconfirmed threshold breach (confirmed on fewer than 2 distinct ingestion dates)",
-  "Never go 100% stable-value mid-crash",
-  "Never stop 401k paycheck contributions during a crash",
-  "Never touch the passive long-duration account (RRSP-equivalent) during a crash",
-  "Never apply wave deployment logic to accounts with no deployment mechanism (e.g. spouse 401k) — monitor only",
-];
 
 server.registerTool(
   "get_deployment_plan",
   {
     description:
-      "Computes the exact dry-powder deployment breakdown for the tactical 401k, given the current " +
+      "Computes the exact dry-powder deployment breakdown for the tactical account, given the current " +
       "wave/authorization status, diagnosed crash type, and which waves are already executed (local " +
       "wave_deployment_state, set only via record_wave_deployment). Deployment is cumulative across " +
       "not-yet-executed waves (see crash-check-rules.md's Wave Deployment section) — read this " +
@@ -1181,7 +1180,7 @@ server.registerTool(
       crash_type: crashType,
       crash_type_layer: crashTypeLayer,
       instrument_registry: instrumentRegistry,
-      hard_rules: HARD_RULES,
+      hard_rules: policy.hard_rules,
     });
   }),
 );
@@ -1331,7 +1330,7 @@ server.registerTool(
   "record_exchange",
   {
     description:
-      "Logs a non-wave 401k exchange (rebalance, fund swap, etc.) to the local exchange log so plan " +
+      "Logs a non-wave plan exchange (rebalance, fund swap, etc.) to the local exchange log so plan " +
       "trading limits (e.g. 1 exchange day per quarter) are counted. One multi-fund transaction = one " +
       "entry. Fund names as shown on the plan website. Only after the user confirms it was submitted. Wave " +
       "exchanges go through record_wave_deployment instead.",

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { load, dump } from "js-yaml";
 import type { DataPointRow } from "./supabase.js";
 
@@ -21,15 +22,16 @@ export interface WatchlistFile {
 }
 
 function watchlistPath(): string {
-  const path = process.env.WATCHLIST_PATH;
-  if (!path) {
-    throw new Error("WATCHLIST_PATH is not set — see mcp_server/.env.example");
-  }
-  return path;
+  // WATCHLIST_PATH if set, otherwise watchlist.yaml next to PORTFOLIO_PATH.
+  const explicit = process.env.WATCHLIST_PATH;
+  if (explicit) return explicit;
+  const portfolio = process.env.PORTFOLIO_PATH;
+  if (!portfolio) throw new Error("Neither WATCHLIST_PATH nor PORTFOLIO_PATH is set — see mcp_server/.env.example");
+  return join(dirname(portfolio), "watchlist.yaml");
 }
 
 /**
- * Reads local_state/brokeragelink_watchlist.yaml (or wherever WATCHLIST_PATH
+ * Reads local_state/watchlist.yaml (or wherever WATCHLIST_PATH
  * points). Same trust boundary as portfolio.ts's readPortfolio() — never
  * touches the network, personal position sizing never leaves this machine.
  */
@@ -40,7 +42,7 @@ export function readWatchlist(): WatchlistFile {
   } catch (err) {
     throw new Error(
       `Could not read watchlist file at ${watchlistPath()}. Copy ` +
-        `local_state/brokeragelink_watchlist.example.yaml to local_state/brokeragelink_watchlist.yaml ` +
+        `local_state/watchlist.example.yaml to local_state/watchlist.yaml ` +
         `and fill in real values, or fix WATCHLIST_PATH. (${err})`,
     );
   }

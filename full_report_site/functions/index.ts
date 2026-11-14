@@ -58,6 +58,7 @@ interface FullReportRow {
 
 interface DriftEntry {
   fund: string;
+  label?: string;
   actual_pct: number;
   target_pct: number;
   drift_pts: number;
@@ -159,19 +160,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// portfolio.yaml's fund keys are raw snake_case (e.g. "nyl_anchor",
-// "jpm_equity_income") — readable as data, not as a page label. Splits on
-// "_" and title-cases each word, except a small set of known finance
-// acronyms that stay fully uppercase (plain title-case would otherwise
-// produce "Nyl"/"Vg"/"Jpm").
-const FUND_NAME_ACRONYMS = new Set(["nyl", "vg", "jpm", "tdam", "jh"]);
-
-function formatFundName(fundKey: string): string {
+// Drift entries carry a display `label` from portfolio.yaml's local
+// fund_labels map (added by mcp_server before writing). Older snapshots
+// without one fall back to title-casing the raw snake_case key.
+function formatFundName(fundKey: string, label?: string): string {
+  if (label) return label;
   return fundKey
     .split("_")
-    .map((word) =>
-      FUND_NAME_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1),
-    )
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
@@ -190,7 +186,7 @@ function renderPortfolioReviewSection(
       const rows = acct.entries
         .map(
           (e) => `<div class="drift-row">
-          <div class="drift-name">${escapeHtml(formatFundName(e.fund))}</div>
+          <div class="drift-name">${escapeHtml(formatFundName(e.fund, e.label))}</div>
           <div class="drift-track"><div class="drift-fill" style="width:${Math.min(100, Math.max(0, e.actual_pct))}%;"></div><div class="drift-target" style="left:${Math.min(100, Math.max(0, e.target_pct))}%;"></div></div>
           <div class="drift-val">${e.actual_pct}% <span class="muted">(target ${e.target_pct}%)</span></div>
         </div>`,
@@ -314,7 +310,7 @@ function renderPage(
     ${contextStrip}
     ${diagnosis}
     <section class="card">
-      <p class="eyebrow">BrokerageLink Watchlist</p>
+      <p class="eyebrow">Watchlist</p>
       <table class="watchlist-table">
         <thead><tr><th>Ticker</th><th>Name</th><th>Theme</th><th>Price</th><th>Wave Targets</th><th>vs W1</th><th>Status</th></tr></thead>
         <tbody>${watchlistRows}</tbody>

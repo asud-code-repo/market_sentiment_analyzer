@@ -4,7 +4,7 @@ import { load, dump } from "js-yaml";
 import { isoDay, UNKNOWN_FUND, type ExchangeEntry } from "./tradeRestrictions.js";
 
 /**
- * local_state/exchange_log.yaml — every 401k exchange actually submitted
+ * local_state/exchange_log.yaml — every plan exchange actually submitted
  * (wave or not), so plan excessive-trading limits ("1 exchange day per
  * quarter") can be counted. Same trust boundary as portfolio.ts:
  * local-only, gitignored. Path is EXCHANGE_LOG_PATH if set, otherwise
@@ -54,7 +54,7 @@ export function appendExchange(entry: ExchangeEntry): ExchangeEntry[] {
   log.push(entry);
   log.sort((a, b) => a.date.localeCompare(b.date));
   const header =
-    "# Local-only, gitignored. Every 401k exchange actually submitted (wave or not),\n" +
+    "# Local-only, gitignored. Every plan exchange actually submitted (wave or not),\n" +
     "# used to count plan excessive-trading exchange days. Edit by hand or via the\n" +
     "# record_exchange / record_wave_deployment tools. One multi-fund transaction = one entry.\n";
   writeFileSync(exchangeLogPath(), header + dump({ exchanges: log }, { noRefs: true, lineWidth: 120 }), "utf-8");

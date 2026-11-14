@@ -18,8 +18,9 @@ routes:
   in_plan:
     description: "Exchange between plan funds"
     status: ok                    # ok | pending | blocked
-  brokeragelink:
+  brokerage_window:
     description: "Transfer into the brokerage window, then trade"
+    plan_name: "EXAMPLE BROKERAGE WINDOW"   # name the plan shows for exchanges into the window
     status: pending
     # constraint: "..."           # required when status is blocked
     open_questions:
@@ -54,14 +55,14 @@ slots:
     backup:
       name: "Example Health Care ETF"
       ticker: XHLT
-      route: brokeragelink
+      route: brokerage_window
       vehicle: etf
       verified_on: null
 
   lng_single:
     used_by: [type_a]
     role: "Example single-name slot"
-    primary: {name: "Example Corp", ticker: EXCO, route: brokeragelink, vehicle: stock, verified_on: null}
+    primary: {name: "Example Corp", ticker: EXCO, route: brokerage_window, vehicle: stock, verified_on: null}
     backup: {ref: energy_etf.primary}   # reuse another slot's instrument
 
   # ...one entry per remaining slot listed above.

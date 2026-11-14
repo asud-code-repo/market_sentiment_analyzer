@@ -1,6 +1,6 @@
--- One-time seed matching local_state/brokeragelink_watchlist.yaml's current
--- 7 tickers (seeded from master-prompt-original.md's original table). Future
--- additions/removals go through write_watchlist, not a migration.
-insert into watchlist_tickers (symbol) values
-  ('EOG'), ('LNG'), ('CCJ'), ('LLY'), ('NTR'), ('BIP'), ('NVDA')
-on conflict (symbol) do nothing;
+-- Originally a one-time seed of the author's personal watchlist tickers.
+-- The values were removed from this file on 2026-11-14 because the
+-- watchlist is personal; the table is populated by mcp_server's
+-- write_watchlist tool from local_state/watchlist.yaml, never by a
+-- migration. Kept as a no-op so migration history stays in order.
+select 1;

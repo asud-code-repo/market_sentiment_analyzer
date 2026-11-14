@@ -1,6 +1,6 @@
 # Full Report site
 
-Private companion to the public `dashboard_site` — shows the BrokerageLink
+Private companion to the public `dashboard_site` — shows the stock
 watchlist, crash-type diagnosis, and qualitative-only personal portfolio
 context. Served by a Cloudflare Pages Function (`functions/index.ts`) that
 queries Supabase server-side with the `service_role` key, so there is no

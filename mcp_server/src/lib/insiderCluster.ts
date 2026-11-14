@@ -34,7 +34,7 @@ function subtractDays(dateStr: string, days: number): string {
 }
 
 /**
- * Reads insider_transactions for the current BrokerageLink watchlist over
+ * Reads insider_transactions for the current watchlist over
  * the trailing 30 days and computes a per-ticker cluster-buy flag --
  * cluster = 2+ DISTINCT officers/directors buying in the open market
  * (transaction_code='P'), not any single buy and not a raw count of

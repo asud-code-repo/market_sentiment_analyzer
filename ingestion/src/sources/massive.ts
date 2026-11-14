@@ -16,7 +16,7 @@ const REQUEST_SPACING_MS = 13000;
 const BACKFILL_YEARS = 2; // matches Massive's advertised free-tier historical depth
 
 // Tracked for the small-cap/large-cap breadth signal (get_context_indicators),
-// independent of the BrokerageLink watchlist -- never touched by
+// independent of the watchlist -- never touched by
 // write_watchlist's full-replacement sync (syncWatchlistTickers deletes any
 // symbol not in its caller-supplied list every Portfolio Opportunity Review),
 // so these can't be silently wiped out by that path.

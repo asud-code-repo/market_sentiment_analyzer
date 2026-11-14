@@ -1,5 +1,5 @@
 -- Full Report page (backlog_unify_crash_check_dashboard_site): a new,
--- separate Cloudflare Pages project shows the BrokerageLink watchlist
+-- separate Cloudflare Pages project shows the watchlist
 -- (tickers + wave targets), the crash-type diagnosis narrative, and the
 -- qualitative-only parts of the personal portfolio snapshot — content
 -- that's too specific to be on the existing public dashboard_site, but
@@ -22,7 +22,7 @@ create table full_report_snapshots (
 
   -- Watchlist status at time of writing — one row per ticker. Deliberately
   -- excludes max_position_usd (personal position sizing), which stays
-  -- local-only in local_state/brokeragelink_watchlist.yaml, same as today.
+  -- local-only in local_state/watchlist.yaml, same as today.
   -- Shape: [{ symbol, name, theme, wave1_target, wave2_target, wave3_target,
   --   wave3_only, thesis_note, current_price, price_as_of, pct_above_wave1,
   --   status }, ...]
@@ -32,9 +32,8 @@ create table full_report_snapshots (
   -- Shape: { type, criteria: [{ name, status, detail }] }
   crash_type_diagnosis    jsonb,
 
-  -- Qualitative-only portfolio context (dry-powder status, NYL Anchor real
-  -- yield read, SIP thesis check, RRSP/spouse-401k status, crash readiness
-  -- narrative). Must NOT contain personal dollar amounts — the
+  -- Qualitative-only portfolio context (dry-powder status, account-specific
+  -- checks, crash readiness narrative). Must NOT contain personal dollar amounts — the
   -- opportunity-cost gap line stays chat-only, permanently, never written
   -- here. Enforced by write_full_report's guardrail check, not just this
   -- comment.

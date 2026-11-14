@@ -15,7 +15,7 @@ full history of what was built and how lives in project memory, not here.
 ## Data & infrastructure
 
 - **Wave 2/3 threshold calibration — still genuinely open.** Wave triggers
-  are ATH-relative drawdown % (16/24/35, paired with VIX 28/35/45) rather
+  are ATH-relative drawdown % (paired with VIX levels) rather
   than fixed nominal S&P levels, which fixed a *decay* problem (a fixed
   level like "S&P ≤ 6,200" quietly means less over time as the index
   itself rises) but not whether those specific bars are the *right* ones.
@@ -38,7 +38,7 @@ full history of what was built and how lives in project memory, not here.
   builds slowly. In a fast crash (Feb 2020) the user would only learn a
   wave trigger fired on next opening the dashboard or running a Claude
   check. Proposal: add transition-only pushes when the S&P crosses a wave
-  drawdown threshold (16/24/35% off ATH) and when VIX crosses 35, and add
+  drawdown threshold (personal policy) and when VIX crosses 35, and add
   a post-close run to `ingest.yml` (currently 10am ET only) so the alert
   lands the same day. Uses data already ingested, no new sources. Confirm
   exact thresholds with the user before wiring; informational alert only,
@@ -123,7 +123,7 @@ full history of what was built and how lives in project memory, not here.
   `WTREGEN` FRED series. New tickers/series need `npm run backfill` before the
   cards populate. Original note follows. Small-cap vs. large-cap (Russell 2000 via IWM vs. S&P 500 via SPY)
   shipped 2026-08-27 as a `get_context_indicators`/dashboard contextual
-  reading, tracked independently of the BrokerageLink watchlist so a
+  reading, tracked independently of the watchlist so a
   Portfolio Opportunity Review's full-replacement sync can't delete it. Two
   more pairs from the same original idea remain unbuilt: equal-weight vs.
   cap-weight S&P (RSP vs. SPY, breadth without small-cap-specific framing)
@@ -366,7 +366,7 @@ existing wave logic has strong precision even where its timing is weak.
     calendar, whether one multi-fund transaction = one exchange day. All
     are modeled as stated assumptions until confirmed.
   - **Route decisions** (project chat): which plan funds count as
-    "competing" under the stable-value fund's equity-wash rule; whether to
+    "competing" under the plan's transfer rules; whether to
     pre-stage a brokerage cash sleeve. Until then every brokerage-window
     slot grades RED.
   - **Slot decisions** (project chat): one TIPS slot vs. short/broad by
@@ -411,8 +411,8 @@ existing wave logic has strong precision even where its timing is weak.
   stretch of daily runs behind it — this is exactly the kind of thing that
   only shows up in production data, not a build-time check.
 
-- **BrokerageLink watchlist ticker selection has no documented rationale.**
-  The 7 tickers each have a one-line theme tag but no written reasoning for
+- **Watchlist ticker selection has no documented rationale.**
+  The tickers each have a one-line theme tag but no written reasoning for
   why that specific name over an alternative in the same theme. The
   Portfolio Opportunity Review process is the mechanism to close this gap
   — so far it's only re-examined price targets, not the underlying ticker

@@ -44,6 +44,8 @@ const CrashTypeLineSchema = z
 const PolicySchema = z
   .object({
     schema_version: z.literal(1),
+    // Behavioral guardrails returned with every deployment plan.
+    hard_rules: z.array(z.string().min(1)).min(1),
     waves: z.object({ WAVE_1: WaveDefinitionSchema, WAVE_2: WaveDefinitionSchema, WAVE_3: WaveDefinitionSchema }).strict(),
     crash_type_layers: z
       .object({

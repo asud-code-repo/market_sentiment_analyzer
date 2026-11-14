@@ -85,6 +85,14 @@ install/build steps.
    read the config at render time.
 4. Never write real portfolio/dollar data outside `local_state/*.yaml`
    (gitignored) — only the `*.example.yaml` templates are tracked.
+5. Personal policy stays out of tracked files: wave splits, crash-type
+   allocations, plan-specific rules, account names and watchlist tickers.
+   The public rules doc keeps a generic stub under each personal heading;
+   the real text lives in `local_state/personal-rules.md`, which `get_rules`
+   merges in by matching `##`/`###` heading text, so keep those headings
+   identical in both files. Code uses generic names (`tactical` account,
+   `brokerage_window` route, `watchlist.yaml`); real labels live in the
+   local files.
 
 ## Do not
 

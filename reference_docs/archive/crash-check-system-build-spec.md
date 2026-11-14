@@ -73,7 +73,7 @@ Simple read-only dashboard visualizing `crash_checks` history — indicator pane
 - **Do not automate the rules layer.** Wave thresholds, crash-type criteria, and allocation targets are set by me and reviewed manually when they change. The rule engine executes the current rules faithfully; it does not propose or auto-update them.
 - **Do not let the LLM do numeric classification at run time.** RED/AMBER/GREEN, RED counts, and Warsh gate status must come from the deterministic rule engine's output, not be re-derived by Claude reasoning over raw numbers in chat.
 - Keep the ingestion layer's data sources to free/public APIs only (no paid data feeds) — the master prompt doc lists the specific free sources already identified.
-- Personal account data (401k/RRSP balances, allocations) stays out of any automated pipeline — that's manually updated context, not something to scrape from custodian sites.
+- Personal account data (retirement-account balances, allocations) stays out of any automated pipeline — that's manually updated context, not something to scrape from custodian sites.
 
 ---
 

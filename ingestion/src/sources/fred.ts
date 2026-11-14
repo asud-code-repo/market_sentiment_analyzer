@@ -68,7 +68,7 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // watchlist thesis re-underwrite for AI-trough-bet tickers,
                                           // not the crash panel (external review 2026-08-01).
 
-  // CAD/USD FX rate for the RRSP's local_state/portfolio.yaml conversion —
+  // CAD/USD FX rate for the CAD-denominated account's local_state/portfolio.yaml conversion —
   // was a hand-updated snapshot before this; see get_portfolio_snapshot in
   // mcp_server, which reads this series live instead of trusting the
   // hardcoded value. Units: Canadian dollars per 1 US dollar (e.g. 1.42) —

@@ -239,6 +239,5 @@ Revised 2026-11-13 with the decisions from the first review pass (marked **Decis
 
 These are handled in chat, not code:
 
-- Run "401k analysis" to stress-test the dry-powder level against a slow-rotation / financial-repression path.
-- Next "run portfolio review": international underweight vs target, VRT's AI-capex exposure, whether a commodities/gold slot belongs in the deployment registry, DBA vs its 2014 high for NTR.
-- Treat NVDA's Nov 17 results as the first post-midterm test in the earnings-guidance trigger note.
+- Run the allocation analysis to stress-test the dry-powder level against a slow-rotation / financial-repression path.
+- Account- and ticker-specific follow-ups for the next portfolio review are kept in the local personal rules ("Personal workflow notes").

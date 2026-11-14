@@ -8,11 +8,15 @@
 updated_at: "2026-01-01"
 
 accounts:
-  tactical_401k:
+  tactical:
     custodian: "Example Custodian"
     value_usd: 0
     equity_sleeve_usd: 0
     dry_powder_usd: 0
+    # Stable-value declared rate, for the rate-reset trigger (optional).
+    stable_value_rate: 0            # e.g. 0.04 = 4%
+    stable_value_rate_through: "YYYY-MM-DD"
+    stable_value_reset_date: "YYYY-MM-DD"
     holdings_pct:
       stable_value: 0
       international_equity: 0
@@ -39,7 +43,7 @@ accounts:
       emerging_markets: 0
     crash_protocol: none  # permanent — never apply wave deployment here
 
-  monitored_secondary_401k:
+  monitored_secondary:
     custodian: "Example Custodian"
     value_usd: 0
     equity_sleeve_usd: 0
@@ -57,5 +61,5 @@ accounts:
       EXAMPLE_TICKER_2: { monthly_usd: 0, pct: 0 }
 
 combined:
-  actionable_equity_at_risk_usd: 0   # tactical + monitored 401k equity sleeves only
+  actionable_equity_at_risk_usd: 0   # tactical + monitored secondary equity sleeves only
   total_equity_at_risk_incl_passive_usd: 0

@@ -638,7 +638,7 @@ export async function writeFullReport(qualitative: {
  * during a separate, later Portfolio Review would otherwise sit stale on
  * the Full Report page until the next crash check, silently contradicting
  * the Portfolio Review section's own narrative about the very same change
- * (observed live 2026-07-16: CCJ's updated $70 target wasn't reflected in
+ * (observed live 2026-07-16: a ticker's updated target wasn't reflected in
  * the watchlist table for two days). No-ops if no full_report_snapshots
  * row exists yet — nothing to patch, and write_full_report will create the
  * first one whenever the next crash check runs.
