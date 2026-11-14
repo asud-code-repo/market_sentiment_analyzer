@@ -1,0 +1,83 @@
+# Template for local_state/policy.yaml: copy this file, rename it to
+# policy.yaml (already gitignored), and replace the numbers with your own.
+# The numbers below are ILLUSTRATIVE ONLY, not a recommendation and not the
+# author's real policy.
+#
+# Read by the local MCP server (get_deployment_plan, run_deployment_fire_drill,
+# the instrument registry check) on every call; nothing here is sent to
+# Supabase or GitHub Actions. Path: POLICY_PATH if set, otherwise
+# policy.yaml next to PORTFOLIO_PATH.
+#
+# Validated on load: a missing or malformed file is an error, never a silent
+# fallback to these example values.
+#   - every wave's splits must sum to 100 (pct_of_wave)
+#   - slot ids map to the deployment-instrument registry
+#     (local_state/deployment_instruments.yaml); every slot used here must
+#     exist there
+#   - a crash-type line has either a slot AND a percentage, or neither
+#     (a hold/remainder line with a note)
+#
+# Percentages are of "dry powder": the cash reserve in the tactical account
+# (accounts.tactical_401k.dry_powder_usd in portfolio.yaml). The MCP server
+# turns them into dollars at read time; dollars are never stored.
+
+schema_version: 1
+
+# Staged deployment. Which wave is active is decided by the wave triggers
+# (drawdown / VIX / slow-bear, see crash-check-rules.md "Wave Deployment
+# Thresholds") plus the stress gate in config/monitoring.yaml.
+waves:
+  WAVE_1:
+    pct_of_dry_powder: 15
+    splits:
+      - { fund: "Healthcare-sector defensive equity fund", pct_of_wave: 40, slot: healthcare_equity }
+      - { fund: "Real-estate/real-asset fund", pct_of_wave: 30, slot: real_asset_fund }
+      - { fund: "International equity", pct_of_wave: 30, slot: intl_equity }
+  WAVE_2:
+    pct_of_dry_powder: 20
+    splits:
+      - { fund: "Target-date/glide-path fund", pct_of_wave: 40, slot: target_date }
+      - { fund: "International equity", pct_of_wave: 30, slot: intl_equity }
+      - { fund: "Energy sector ETF (brokerage window)", pct_of_wave: 15, slot: energy_etf }
+      - { fund: "Inflation-protected securities / TIPS (brokerage window)", pct_of_wave: 15, slot: tips }
+  WAVE_3:
+    pct_of_dry_powder: 20
+    splits:
+      - { fund: "US large-cap value/income fund", pct_of_wave: 40, slot: us_large_cap_value }
+      - { fund: "Target-date/glide-path fund", pct_of_wave: 30, slot: target_date }
+      - { fund: "Gold ETF (brokerage window)", pct_of_wave: 30, slot: gold_etf }
+
+# Extra layer once a crash type is diagnosed (see crash-check-rules.md
+# "Post-Crash Allocation Protocol"). pct_of_dry_powder: null + slot: null
+# marks a hold/remainder line that buys nothing.
+crash_type_layers:
+  A_STAGFLATION:
+    - { fund: "TIPS (brokerage window)", slot: tips, pct_of_dry_powder: 5 }
+    - { fund: "Energy sector ETF (brokerage window)", slot: energy_etf, pct_of_dry_powder: 5 }
+    - { fund: "Energy single-name (brokerage window)", slot: energy_single_1, pct_of_dry_powder: 2 }
+    - { fund: "LNG single-name (brokerage window)", slot: lng_single, pct_of_dry_powder: 2 }
+    - { fund: "Real-estate/real-asset fund", slot: real_asset_fund, pct_of_dry_powder: 4 }
+    - { fund: "Remainder", slot: null, pct_of_dry_powder: null, note: "Hold" }
+  B_RECESSION:
+    - { fund: "Target-date/glide-path (additional)", slot: target_date, pct_of_dry_powder: 8 }
+    - { fund: "AI/tech single-name (brokerage window)", slot: ai_tech_single, pct_of_dry_powder: 2 }
+    - { fund: "Infrastructure single-name (brokerage window)", slot: infra_single, pct_of_dry_powder: 2 }
+    - { fund: "US large-cap value/income", slot: us_large_cap_value, pct_of_dry_powder: 6 }
+    - { fund: "Stable value", slot: null, pct_of_dry_powder: null, note: "Reduce gradually" }
+  C_CREDIT:
+    - { fund: "Gold ETF (brokerage window)", slot: gold_etf, pct_of_dry_powder: 6 }
+    - { fund: "TIPS (brokerage window)", slot: tips, pct_of_dry_powder: 3 }
+    - { fund: "Healthcare (additional)", slot: healthcare_equity, pct_of_dry_powder: 4 }
+    - { fund: "Stable value", slot: null, pct_of_dry_powder: null, note: "Hold a large portion" }
+  D_AI_BUBBLE:
+    - { fund: "AI/tech single-name (brokerage window)", slot: ai_tech_single, pct_of_dry_powder: 4 }
+    - { fund: "Energy single-name (brokerage window)", slot: energy_single_1, pct_of_dry_powder: 2 }
+    - { fund: "US large-cap value/income", slot: us_large_cap_value, pct_of_dry_powder: 6 }
+    - { fund: "Infrastructure single-name (brokerage window)", slot: infra_single, pct_of_dry_powder: 2 }
+    - { fund: "International equity (additional)", slot: intl_equity, pct_of_dry_powder: 4 }
+  E_HYBRID:
+    - { fund: "TIPS (brokerage window)", slot: tips, pct_of_dry_powder: 4, note: "1st priority" }
+    - { fund: "Gold ETF (brokerage window)", slot: gold_etf, pct_of_dry_powder: 4, note: "2nd priority" }
+    - { fund: "Healthcare (additional)", slot: healthcare_equity, pct_of_dry_powder: 4, note: "3rd priority" }
+    - { fund: "Real-estate/real-asset fund", slot: real_asset_fund, pct_of_dry_powder: 2, note: "4th priority" }
+    - { fund: "Wait for a confirmed Fed pivot, then rotate", slot: null, pct_of_dry_powder: null, note: "5th priority" }

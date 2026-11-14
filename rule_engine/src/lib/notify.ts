@@ -1,4 +1,7 @@
-const RED_COUNT_NOTIFY_THRESHOLD = 2;
+import { MONITORING } from "../rules.js";
+
+// From config/monitoring.yaml (push_alert_confirmed_reds).
+const RED_COUNT_NOTIFY_THRESHOLD = MONITORING.push_alert_confirmed_reds;
 
 /**
  * Fires a push notification (via ntfy.sh) only on the transition INTO
@@ -31,7 +34,7 @@ export async function notifyIfRedCountCrossedThreshold(
         Priority: "high",
         Tags: "rotating_light",
       },
-      body: `${newConfirmedRedCount} of 6 indicators are now confirmed RED — early stress alert (below the 3-RED wave-authorization threshold). Run a crash check for details.`,
+      body: `${newConfirmedRedCount} of 6 indicators are now confirmed RED — early stress alert (below the ${MONITORING.stress_gate_confirmed_reds}-RED wave-authorization threshold). Run a crash check for details.`,
     });
     if (!res.ok) {
       console.warn(`ntfy notification failed (${res.status}): ${await res.text()}`);

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readPortfolio, findLeakedDollarFigures, computePortfolioDrift, computeRateResetTriggerStatus } from "./portfolio.js";
 import { readWatchlist, computeWatchlistStatus, type WatchlistTicker } from "./watchlist.js";
 import { attachNextScheduledEvents } from "./economicCalendar.js";
+import { loadMonitoringConfig } from "./monitoring.js";
 import type { OpenPrediction, ScoringEntry } from "./conditionalScenarios.js";
 
 function requireEnv(name: string): string {
@@ -457,7 +458,8 @@ export async function writeSnapshot(qualitative: {
     (key) => confirmationState[key]?.color === "RED" && confirmationState[key]?.confirmed,
   ).length;
   const confirmedRedCount = confirmedFromNumeric + (fedPivotColor === "RED" ? 1 : 0);
-  const waveAuthorized = confirmedRedCount >= 3;
+  // Gate size comes from config/monitoring.yaml, the same file classify.ts reads.
+  const waveAuthorized = confirmedRedCount >= loadMonitoringConfig().stress_gate_confirmed_reds;
 
   const row = {
     // Mechanical fields carried forward from the latest rule-engine row —

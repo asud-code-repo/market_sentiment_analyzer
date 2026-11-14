@@ -17,6 +17,8 @@ import {
   computeConfirmation,
   computeDistanceToRed,
   PANEL_BANDS,
+  MONITORING,
+  parseMonitoringConfig,
   type ConfirmationEntry,
   type DistanceInput,
 } from "./rules.js";
@@ -251,5 +253,32 @@ describe("computeDistanceToRed — distance-to-RED view (E7)", () => {
     expect(d.indicators.sahm_rule.pct_move_to_red).toBeNull();
     expect(d.indicators.sahm_rule.distance_to_red).toBe(0.5);
     expect(d.fed_pivot_signal).toEqual({ state: "PAUSE", color: "AMBER", amber_state: "PAUSE", red_state: "CUT" });
+  });
+});
+
+describe("monitoring config (config/monitoring.yaml)", () => {
+  const valid = () => ({
+    schema_version: 1,
+    panel_bands: structuredClone(MONITORING.panel_bands),
+    confirmation_required_days: 2,
+    stress_gate_confirmed_reds: 3,
+    push_alert_confirmed_reds: 2,
+  });
+
+  it("the committed file loads and the gate matches the documented 3-of-6", () => {
+    expect(MONITORING.stress_gate_confirmed_reds).toBe(3);
+    expect(MONITORING.push_alert_confirmed_reds).toBe(2);
+    expect(parseMonitoringConfig(valid())).toEqual(MONITORING);
+  });
+
+  it("rejects inverted bands, unknown indicators, bad counts and a missing file shape", () => {
+    const inverted = valid();
+    inverted.panel_bands.vix = { amber_from: 40, red_above: 35 };
+    expect(() => parseMonitoringConfig(inverted)).toThrow(/amber_from must be below red_above/);
+    const unknown = valid() as Record<string, any>;
+    unknown.panel_bands.move = { amber_from: 1, red_above: 2 };
+    expect(() => parseMonitoringConfig(unknown)).toThrow(/not a known indicator/);
+    expect(() => parseMonitoringConfig({ ...valid(), stress_gate_confirmed_reds: 7 })).toThrow(/stress_gate_confirmed_reds/);
+    expect(() => parseMonitoringConfig(null)).toThrow(/schema_version/);
   });
 });

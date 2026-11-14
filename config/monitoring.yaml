@@ -1,0 +1,31 @@
+# Monitoring thresholds: public, not personal. Read by rule_engine (in
+# GitHub Actions, from the repo checkout) and by the local MCP server.
+# Edit here to retune the system; nothing else should hardcode these.
+# The prose rationale for each value lives in
+# reference_docs/rules/crash-check-rules.md ("6-Indicator Panel",
+# "Signal Tiering & Confirmation Windows").
+#
+# Not yet read from here: dashboard_site's chart bands (still hardcoded in
+# index.html; see AGENTS.md "Making a rule change safely").
+
+schema_version: 1
+
+# RED/AMBER/GREEN bands for the five numeric panel indicators.
+# GREEN below amber_from; AMBER from amber_from up to AND INCLUDING
+# red_above; RED only when strictly above red_above.
+panel_bands:
+  vix: { amber_from: 20, red_above: 35 }
+  hy_spread: { amber_from: 350, red_above: 500 }     # basis points
+  sp_drawdown: { amber_from: 10, red_above: 20 }     # % below all-time high
+  treasury_10y: { amber_from: 4.3, red_above: 5.0 }  # percent
+  sahm_rule: { amber_from: 0.3, red_above: 0.5 }
+
+# Distinct observation dates a colour must hold before it counts.
+confirmation_required_days: 2
+
+# Stress gate: this many of the 6 indicators confirmed RED at once
+# authorizes deployment (stored as crash_checks.wave_authorized).
+stress_gate_confirmed_reds: 3
+
+# Early-warning push (ntfy.sh) when the confirmed RED count rises to this.
+push_alert_confirmed_reds: 2

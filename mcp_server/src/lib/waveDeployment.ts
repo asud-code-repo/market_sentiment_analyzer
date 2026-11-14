@@ -1,118 +1,106 @@
-// Mirrors reference_docs/rules/crash-check-rules.md — "Wave Deployment
-// Thresholds" and "Post-Crash Allocation Protocol / Stage 3". If you edit
-// the percentages in that doc, mirror the change here. This is the
-// deterministic half of fund-movement math — the tactical-account dollar
-// amounts get computed here, not improvised by an LLM reading the doc and
-// doing arithmetic in its head.
+// The deterministic half of fund-movement math: wave and crash-type
+// dollar amounts are computed here, never improvised by an LLM reading the
+// rules doc and doing arithmetic in its head.
 //
-// Fund descriptions are deliberately generic (matching the sanitized rules
-// doc), not your actual fund names — those live in local_state/portfolio.yaml.
-// Claude bridges the two at chat-time only; this file stays safe to commit.
+// The percentages are personal policy, so they are NOT in this file: they
+// load from local_state/policy.yaml (gitignored, local-only) on every call.
+// local_state/policy.example.yaml documents the shape with illustrative
+// numbers. A missing or malformed policy is an error, never a silent
+// fallback to example values.
 //
-// Each line also carries a `slot` id — the key into the deployment-instrument
-// registry (local_state/deployment_instruments.yaml, see instruments.ts and
-// crash-check-rules.md "Deployment Instrument Selection"). slot: null marks a
-// hold/remainder line with nothing to buy.
+// Fund descriptions are generic categories, not your actual fund names
+// (those live in local_state/deployment_instruments.yaml, keyed by `slot`).
+// slot: null marks a hold/remainder line with nothing to buy.
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { load } from "js-yaml";
+import { z } from "zod";
 
 export type Wave = "WAVE_1" | "WAVE_2" | "WAVE_3";
 export type CrashType = "A_STAGFLATION" | "B_RECESSION" | "C_CREDIT" | "D_AI_BUBBLE" | "E_HYBRID";
 
-interface WaveSplit {
-  fund: string;
-  pct_of_wave: number;
-  slot: string;
+const SLOT_ID = z.string().regex(/^[a-z0-9_]+$/, "slot ids are lower_snake_case");
+const PCT = z.number().gt(0).lte(100);
+
+const WaveDefinitionSchema = z.object({
+  pct_of_dry_powder: PCT,
+  splits: z
+    .array(z.object({ fund: z.string().min(1), pct_of_wave: PCT, slot: SLOT_ID }).strict())
+    .min(1)
+    .refine((s) => Math.abs(s.reduce((a, x) => a + x.pct_of_wave, 0) - 100) < 0.01, "splits must sum to 100 (pct_of_wave)"),
+}).strict();
+
+const CrashTypeLineSchema = z
+  .object({
+    fund: z.string().min(1),
+    slot: SLOT_ID.nullable(),
+    pct_of_dry_powder: PCT.nullable(),
+    note: z.string().optional(),
+  })
+  .strict()
+  .refine((p) => (p.slot === null) === (p.pct_of_dry_powder === null), "a line needs both a slot and a percentage, or neither (hold line)");
+
+const PolicySchema = z
+  .object({
+    schema_version: z.literal(1),
+    waves: z.object({ WAVE_1: WaveDefinitionSchema, WAVE_2: WaveDefinitionSchema, WAVE_3: WaveDefinitionSchema }).strict(),
+    crash_type_layers: z
+      .object({
+        A_STAGFLATION: z.array(CrashTypeLineSchema).min(1),
+        B_RECESSION: z.array(CrashTypeLineSchema).min(1),
+        C_CREDIT: z.array(CrashTypeLineSchema).min(1),
+        D_AI_BUBBLE: z.array(CrashTypeLineSchema).min(1),
+        E_HYBRID: z.array(CrashTypeLineSchema).min(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type Policy = z.infer<typeof PolicySchema>;
+
+/** POLICY_PATH if set, otherwise policy.yaml next to PORTFOLIO_PATH (same convention as the other local_state files). */
+export function policyPath(): string {
+  const explicit = process.env.POLICY_PATH;
+  if (explicit) return explicit;
+  const portfolio = process.env.PORTFOLIO_PATH;
+  if (!portfolio) throw new Error("Neither POLICY_PATH nor PORTFOLIO_PATH is set — see mcp_server/.env.example");
+  return join(dirname(portfolio), "policy.yaml");
 }
 
-interface WaveDefinition {
-  pct_of_dry_powder: number;
-  splits: WaveSplit[];
+/** Parses + validates a policy document. Throws with every problem listed. */
+export function parsePolicy(raw: unknown, source = "policy"): Policy {
+  const result = PolicySchema.safeParse(raw);
+  if (!result.success) {
+    const problems = result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+    throw new Error(`${source} is invalid — ${problems.join("; ")}`);
+  }
+  return result.data;
 }
 
-export const WAVE_DEPLOYMENT: Record<Wave, WaveDefinition> = {
-  WAVE_1: {
-    pct_of_dry_powder: 17.4,
-    splits: [
-      { fund: "Healthcare-sector defensive equity fund", pct_of_wave: 50, slot: "healthcare_equity" },
-      { fund: "Real-estate/real-asset fund", pct_of_wave: 25, slot: "real_asset_fund" },
-      { fund: "International equity (add to existing position)", pct_of_wave: 25, slot: "intl_equity" },
-    ],
-  },
-  WAVE_2: {
-    pct_of_dry_powder: 21.7,
-    splits: [
-      { fund: "Target-date/glide-path fund (add)", pct_of_wave: 40, slot: "target_date" },
-      { fund: "International equity (add again)", pct_of_wave: 32, slot: "intl_equity" },
-      { fund: "Energy sector ETF (brokerage window)", pct_of_wave: 16, slot: "energy_etf" },
-      { fund: "Inflation-protected securities / TIPS (brokerage window)", pct_of_wave: 12, slot: "tips" },
-    ],
-  },
-  WAVE_3: {
-    pct_of_dry_powder: 17.4,
-    splits: [
-      { fund: "US large-cap value/income fund (restore to prior weight)", pct_of_wave: 40, slot: "us_large_cap_value" },
-      { fund: "Target-date/glide-path fund (final add)", pct_of_wave: 35, slot: "target_date" },
-      { fund: "Gold ETF (brokerage window)", pct_of_wave: 25, slot: "gold_etf" },
-    ],
-  },
-};
-
-interface CrashTypeLayerPosition {
-  fund: string;
-  slot: string | null; // null only for hold/remainder lines
-  pct_of_dry_powder: number | null; // null = "hold"/"remainder" — not a fixed deployable %
-  note?: string;
+/** Reads the policy fresh on every call, so edits apply without restarting the MCP server. */
+export function loadPolicy(path = policyPath()): Policy {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf-8");
+  } catch (err) {
+    throw new Error(
+      `Could not read the deployment policy at ${path} (${(err as Error).message}). ` +
+        "Copy local_state/policy.example.yaml to policy.yaml and fill in your own values.",
+    );
+  }
+  return parsePolicy(load(text), path);
 }
-
-export const CRASH_TYPE_LAYERS: Record<CrashType, CrashTypeLayerPosition[]> = {
-  A_STAGFLATION: [
-    { fund: "TIPS (brokerage window)", slot: "tips", pct_of_dry_powder: 4.35 },
-    { fund: "Energy sector ETF (brokerage window)", slot: "energy_etf", pct_of_dry_powder: 4.35 },
-    { fund: "Energy single-name #1 (brokerage window)", slot: "energy_single_1", pct_of_dry_powder: 2.61 },
-    { fund: "LNG single-name (brokerage window)", slot: "lng_single", pct_of_dry_powder: 2.61 },
-    { fund: "Real-estate/real-asset fund", slot: "real_asset_fund", pct_of_dry_powder: 4.35 },
-    { fund: "Remainder", slot: null, pct_of_dry_powder: null, note: "Hold — stagflation crashes have multiple legs, don't rush" },
-  ],
-  B_RECESSION: [
-    { fund: "Target-date/glide-path (additional)", slot: "target_date", pct_of_dry_powder: 8.7 },
-    { fund: "AI/tech single-name (brokerage window, Wave 3 tranche only)", slot: "ai_tech_single", pct_of_dry_powder: 2.61 },
-    { fund: "Infrastructure single-name (brokerage window)", slot: "infra_single", pct_of_dry_powder: 2.61 },
-    { fund: "US large-cap value/income (restore)", slot: "us_large_cap_value", pct_of_dry_powder: 6.96 },
-    { fund: "Stable value", slot: null, pct_of_dry_powder: null, note: "Reduce to ~10% — recession crashes resolve faster, deploy aggressively" },
-  ],
-  C_CREDIT: [
-    { fund: "Gold ETF (brokerage window)", slot: "gold_etf", pct_of_dry_powder: 6.96 },
-    { fund: "TIPS (brokerage window)", slot: "tips", pct_of_dry_powder: 2.61 },
-    { fund: "Healthcare (additional)", slot: "healthcare_equity", pct_of_dry_powder: 4.35 },
-    { fund: "Stable value", slot: null, pct_of_dry_powder: null, note: "Hold large portion — credit crashes are long, deploy slowly over 6–12 months" },
-  ],
-  D_AI_BUBBLE: [
-    { fund: "AI/tech single-name (brokerage window)", slot: "ai_tech_single", pct_of_dry_powder: 4.35 },
-    { fund: "Energy single-name (brokerage window)", slot: "energy_single_1", pct_of_dry_powder: 2.61 },
-    { fund: "US large-cap value/income (restore)", slot: "us_large_cap_value", pct_of_dry_powder: 6.96 },
-    { fund: "Infrastructure single-name (brokerage window)", slot: "infra_single", pct_of_dry_powder: 2.61 },
-    { fund: "International equity (additional)", slot: "intl_equity", pct_of_dry_powder: 4.35 },
-  ],
-  E_HYBRID: [
-    { fund: "TIPS (brokerage window)", slot: "tips", pct_of_dry_powder: 4.35, note: "1st priority" },
-    { fund: "Gold ETF (brokerage window)", slot: "gold_etf", pct_of_dry_powder: 4.35, note: "2nd priority" },
-    { fund: "Healthcare (additional)", slot: "healthcare_equity", pct_of_dry_powder: 4.35, note: "3rd priority" },
-    { fund: "Real-estate/real-asset fund", slot: "real_asset_fund", pct_of_dry_powder: 2.61, note: "4th priority" },
-    {
-      fund: "Wait for confirmed Fed pivot, then rotate into glide-path + AI/tech growth",
-      slot: null,
-      pct_of_dry_powder: null,
-      note: "5th priority",
-    },
-  ],
-};
 
 /** Every registry slot the waves and crash-type layers deploy into. */
-export const RULE_SLOTS: readonly string[] = [
-  ...new Set([
-    ...Object.values(WAVE_DEPLOYMENT).flatMap((w) => w.splits.map((s) => s.slot)),
-    ...Object.values(CRASH_TYPE_LAYERS).flatMap((l) => l.flatMap((p) => (p.slot ? [p.slot] : []))),
-  ]),
-];
+export function ruleSlots(policy: Policy = loadPolicy()): string[] {
+  return [
+    ...new Set([
+      ...Object.values(policy.waves).flatMap((w) => w.splits.map((s) => s.slot)),
+      ...Object.values(policy.crash_type_layers).flatMap((l) => l.flatMap((p) => (p.slot ? [p.slot] : []))),
+    ]),
+  ];
+}
 
 export interface DollarSplit {
   fund: string;
@@ -128,8 +116,9 @@ function round2(n: number): number {
 export function computeWaveDeployment(
   wave: Wave,
   dryPowderUsd: number,
+  policy: Policy = loadPolicy(),
 ): { pct_of_dry_powder: number; total_usd: number; splits: DollarSplit[] } {
-  const def = WAVE_DEPLOYMENT[wave];
+  const def = policy.waves[wave];
   const waveUsd = (def.pct_of_dry_powder / 100) * dryPowderUsd;
   return {
     pct_of_dry_powder: def.pct_of_dry_powder,
@@ -142,8 +131,12 @@ export function computeWaveDeployment(
   };
 }
 
-export function computeCrashTypeLayer(crashType: CrashType, dryPowderUsd: number): DollarSplit[] {
-  return CRASH_TYPE_LAYERS[crashType].map((p) => ({
+export function computeCrashTypeLayer(
+  crashType: CrashType,
+  dryPowderUsd: number,
+  policy: Policy = loadPolicy(),
+): DollarSplit[] {
+  return policy.crash_type_layers[crashType].map((p) => ({
     fund: p.fund,
     slot: p.slot,
     usd: p.pct_of_dry_powder === null ? null : round2((p.pct_of_dry_powder / 100) * dryPowderUsd),

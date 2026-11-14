@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
-import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./lib/waveDeployment.js";
+import { computeWaveDeployment, computeCrashTypeLayer, loadPolicy, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWaveDeploymentState, recordWaveDeployment } from "./lib/waveDeploymentState.js";
 import { loadInstrumentRegistry, compactReadiness } from "./lib/deploymentInstruments.js";
 import { runFireDrill } from "./lib/fireDrill.js";
@@ -767,7 +767,7 @@ server.registerTool(
             as_of: goldDelta.latest_date,
             signal:
               "GLD (SPDR Gold Shares) as a gold-price proxy. Gold already has a real allocation in " +
-              "the Type C (6.96%) and Type E (4.35%) crash-type sleeves (crash-check-rules.md Stage 3) " +
+              "the Type C and Type E crash-type sleeves (deployment policy, crash-check-rules.md Stage 3) " +
               "— tracked here as live directional context for that existing allocation, not a new " +
               "signal. Historically NOT a universal hedge: sold off alongside equities during the " +
               "acute margin-call/liquidity-panic phase of 2008 before rallying later once the " +
@@ -1155,13 +1155,14 @@ server.registerTool(
     const withInstruments = <L extends { slot: string | null }>(lines: L[]) =>
       registryLoad.ok ? resolveInstruments(lines, registryLoad.registry, today, registryLoad.exchangeCtx) : lines;
 
+    const policy = loadPolicy();
     const wavePlans = pendingWaves.map((w) => {
-      const plan = computeWaveDeployment(w, dryPowderUsd);
+      const plan = computeWaveDeployment(w, dryPowderUsd, policy);
       return { wave: w, ...plan, splits: withInstruments(plan.splits) };
     });
 
     const crashType = latest.crash_type as CrashType | null;
-    const crashTypeLayer = crashType ? withInstruments(computeCrashTypeLayer(crashType, dryPowderUsd)) : null;
+    const crashTypeLayer = crashType ? withInstruments(computeCrashTypeLayer(crashType, dryPowderUsd, policy)) : null;
 
     return json({
       wave_active: waveActive,

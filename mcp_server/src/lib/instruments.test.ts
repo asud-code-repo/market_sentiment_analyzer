@@ -4,7 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateRegistry, resolveInstruments, resolveSlot, reviewStatus, slotReadiness, type Registry } from "./instruments.js";
 import { runFireDrill } from "./fireDrill.js";
-import { RULE_SLOTS, computeWaveDeployment } from "./waveDeployment.js";
+import { fileURLToPath } from "node:url";
+import { ruleSlots, computeWaveDeployment, computeCrashTypeLayer, loadPolicy, parsePolicy } from "./waveDeployment.js";
+
+// Tests run against the public example policy, never the real local one.
+const EXAMPLE_POLICY = fileURLToPath(new URL("../../../local_state/policy.example.yaml", import.meta.url));
+process.env.POLICY_PATH = EXAMPLE_POLICY;
+const RULE_SLOTS = ruleSlots();
 
 const TODAY = new Date("2026-06-15T12:00:00Z");
 
@@ -114,6 +120,29 @@ test("every wave split carries a slot listed in RULE_SLOTS", () => {
   assert.equal(new Set(RULE_SLOTS).size, 12);
 });
 
+test("policy: the example file is valid and wave dollars follow its percentages", () => {
+  const p = loadPolicy(EXAMPLE_POLICY);
+  const plan = computeWaveDeployment("WAVE_2", 100_000, p);
+  assert.equal(plan.total_usd, p.waves.WAVE_2.pct_of_dry_powder * 1000);
+  assert.equal(Math.round(plan.splits.reduce((a, s) => a + (s.usd ?? 0), 0)), plan.total_usd);
+  const hold = computeCrashTypeLayer("A_STAGFLATION", 100_000, p).find((l) => l.slot === null);
+  assert.equal(hold?.usd, null);
+});
+
+test("policy: validation rejects bad splits, half-filled hold lines and unknown keys", () => {
+  const good = () => structuredClone(loadPolicy(EXAMPLE_POLICY)) as Record<string, any>;
+  const sums = good();
+  sums.waves.WAVE_1.splits[0].pct_of_wave = 10;
+  assert.throws(() => parsePolicy(sums), /sum to 100/);
+  const half = good();
+  half.crash_type_layers.C_CREDIT[0].slot = null;
+  assert.throws(() => parsePolicy(half), /both a slot and a percentage/);
+  const extra = good();
+  extra.waves.WAVE_4 = extra.waves.WAVE_3;
+  assert.throws(() => parsePolicy(extra), /invalid/);
+  assert.throws(() => loadPolicy("does/not/exist.yaml"), /Could not read the deployment policy/);
+});
+
 test("readiness: GREEN when primary executable + verified, AMBER via backup, RED when both blocked", () => {
   const reg = fixture();
   assert.equal(resolveSlot("sector_fund", reg, TODAY).readiness?.grade, "GREEN");
@@ -167,9 +196,14 @@ test("fire drill: blocked lines counted, shares sum to 100, hold lines skipped",
   const s = d.summary;
   assert.ok(Math.abs(s.pct_executable_via_primary + s.pct_executable_via_backup_only + s.pct_blocked - 100) < 0.2);
   assert.deepEqual(s.blocked_slots.sort(), ["gold_etf", "tips"]);
-  // Wave 2 TIPS (12% of 21.7%) + Wave 3 gold (25% of 17.4%) + Type A TIPS 4.35%
+  // Wave 2 TIPS + Wave 3 gold + Type A TIPS, from the example policy's own percentages.
+  const p = loadPolicy(EXAMPLE_POLICY);
+  const pctOf = (w: "WAVE_2" | "WAVE_3", slot: string) =>
+    (p.waves[w].pct_of_dry_powder * p.waves[w].splits.find((s) => s.slot === slot)!.pct_of_wave) / 100;
+  const typeATips = p.crash_type_layers.A_STAGFLATION.find((l) => l.slot === "tips")!.pct_of_dry_powder!;
+  const expected = (pctOf("WAVE_2", "tips") + pctOf("WAVE_3", "gold_etf") + typeATips) * 1000;
   const blockedUsd = d.lines.filter((l) => l.would_buy === null).reduce((a, l) => a + l.usd, 0);
-  assert.ok(Math.abs(blockedUsd - (2604 + 4350 + 4350)) < 1);
+  assert.ok(Math.abs(blockedUsd - expected) < 1);
 });
 
 // --- Trading restrictions + exchange days -----------------------------------

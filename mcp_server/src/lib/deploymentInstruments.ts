@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { load } from "js-yaml";
 import { validateRegistry, unverifiedPrimaries, reviewStatus, slotReadiness, type Registry, type ReviewStatus, type ReadinessGrade } from "./instruments.js";
-import { RULE_SLOTS } from "./waveDeployment.js";
+import { ruleSlots } from "./waveDeployment.js";
 import { readExchangeLog } from "./exchangeLog.js";
 import { exchangeContext, type ExchangeEntry } from "./tradeRestrictions.js";
 import { readFilingCache, unreviewed } from "./fundFilings.js";
@@ -74,7 +74,22 @@ export function loadInstrumentRegistry(today: Date): RegistryLoad {
       },
     };
   }
-  const errors = validateRegistry(raw, RULE_SLOTS);
+  let slots: string[];
+  try {
+    slots = ruleSlots();
+  } catch (err) {
+    return {
+      ok: false,
+      health: {
+        valid: false,
+        errors: [(err as Error).message],
+        review: UNKNOWN_REVIEW,
+        unverified_primaries: [],
+        readiness: null,
+      },
+    };
+  }
+  const errors = validateRegistry(raw, slots);
   const reg = raw as Registry;
   const lastReview = (raw as { last_full_review?: unknown } | null)?.last_full_review;
   const valid = errors.length === 0;

@@ -1,7 +1,12 @@
-// Mirrors reference_docs/rules/crash-check-rules.md — the 6-indicator bands
-// and wave-authorization thresholds. If you edit the rules doc, mirror the
-// change here. This file intentionally contains no LLM/qualitative logic:
-// every function here is a pure, deterministic mapping from numbers to bands.
+// The 6-indicator bands and the stress gate. Threshold VALUES load from
+// config/monitoring.yaml (shared with mcp_server; rationale in
+// reference_docs/rules/crash-check-rules.md). This file intentionally
+// contains no LLM/qualitative logic: every function here is a pure,
+// deterministic mapping from numbers to bands.
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { load } from "js-yaml";
 
 export type Color = "GREEN" | "AMBER" | "RED";
 
@@ -19,16 +24,54 @@ export interface BandThresholds {
 
 export type NumericIndicator = "vix" | "hy_spread" | "sp_drawdown" | "treasury_10y" | "sahm_rule";
 
-export const PANEL_BANDS: Record<NumericIndicator, BandThresholds> = {
-  vix: { amber_from: 20, red_above: 35 },
-  hy_spread: { amber_from: 350, red_above: 500 }, // bps
-  sp_drawdown: { amber_from: 10, red_above: 20 }, // % below ATH
-  treasury_10y: { amber_from: 4.3, red_above: 5.0 }, // %
-  sahm_rule: { amber_from: 0.3, red_above: 0.5 },
-};
+export interface MonitoringConfig {
+  panel_bands: Record<NumericIndicator, BandThresholds>;
+  confirmation_required_days: number;
+  stress_gate_confirmed_reds: number;
+  push_alert_confirmed_reds: number;
+}
+
+export const MONITORING_CONFIG_PATH = fileURLToPath(new URL("../../config/monitoring.yaml", import.meta.url));
+
+const NUMERIC_INDICATORS: readonly NumericIndicator[] = ["vix", "hy_spread", "sp_drawdown", "treasury_10y", "sahm_rule"];
+
+/** Validates a parsed monitoring config; throws listing every problem (fail loud, never default). */
+export function parseMonitoringConfig(raw: unknown, source = "monitoring config"): MonitoringConfig {
+  const problems: string[] = [];
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const isInt = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
+  if (r.schema_version !== 1) problems.push("schema_version must be 1");
+  const bands = (r.panel_bands ?? {}) as Record<string, { amber_from?: unknown; red_above?: unknown }>;
+  for (const k of NUMERIC_INDICATORS) {
+    const b = bands[k];
+    if (!b || typeof b.amber_from !== "number" || typeof b.red_above !== "number") problems.push(`panel_bands.${k} needs numeric amber_from and red_above`);
+    else if (b.amber_from >= b.red_above) problems.push(`panel_bands.${k}: amber_from must be below red_above`);
+  }
+  for (const k of Object.keys(bands)) if (!NUMERIC_INDICATORS.includes(k as NumericIndicator)) problems.push(`panel_bands.${k} is not a known indicator`);
+  if (!isInt(r.confirmation_required_days, 1, 30)) problems.push("confirmation_required_days must be an integer from 1 to 30");
+  if (!isInt(r.stress_gate_confirmed_reds, 1, 6)) problems.push("stress_gate_confirmed_reds must be an integer from 1 to 6");
+  if (!isInt(r.push_alert_confirmed_reds, 1, 6)) problems.push("push_alert_confirmed_reds must be an integer from 1 to 6");
+  if (problems.length) throw new Error(`${source} is invalid — ${problems.join("; ")}`);
+  return {
+    panel_bands: Object.fromEntries(
+      NUMERIC_INDICATORS.map((k) => [k, { amber_from: bands[k].amber_from as number, red_above: bands[k].red_above as number }]),
+    ) as Record<NumericIndicator, BandThresholds>,
+    confirmation_required_days: r.confirmation_required_days as number,
+    stress_gate_confirmed_reds: r.stress_gate_confirmed_reds as number,
+    push_alert_confirmed_reds: r.push_alert_confirmed_reds as number,
+  };
+}
+
+/** Loaded once at import: a classify run must use one consistent set of thresholds. */
+export const MONITORING: MonitoringConfig = parseMonitoringConfig(
+  load(readFileSync(MONITORING_CONFIG_PATH, "utf-8")),
+  MONITORING_CONFIG_PATH,
+);
+
+export const PANEL_BANDS: Record<NumericIndicator, BandThresholds> = MONITORING.panel_bands;
 
 /** Distinct observation dates a color must hold before it counts (Signal Tiering). */
-export const CONFIRMATION_REQUIRED_DAYS = 2;
+export const CONFIRMATION_REQUIRED_DAYS = MONITORING.confirmation_required_days;
 
 function bandByThresholds(value: number, t: BandThresholds): Color {
   if (value < t.amber_from) return "GREEN";
@@ -68,13 +111,12 @@ export function countReds(colors: Color[]): number {
 }
 
 /**
- * Wave deployment is authorized when 3+ of the 6 indicators are RED.
- * Mirrored in mcp_server/src/lib/supabase.ts's `waveAuthorized` calc
- * (duplicated rather than shared, per this codebase's convention) — if you
- * change this threshold, update that copy too.
+ * Wave deployment is authorized when at least `stress_gate_confirmed_reds`
+ * (config/monitoring.yaml) of the 6 indicators are confirmed RED.
+ * mcp_server/src/lib/supabase.ts reads the same config value.
  */
 export function isWaveAuthorized(redCount: number): boolean {
-  return redCount >= 3;
+  return redCount >= MONITORING.stress_gate_confirmed_reds;
 }
 
 export type WaveActive = "NONE" | "WAVE_1" | "WAVE_2" | "WAVE_3";

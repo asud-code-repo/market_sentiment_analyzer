@@ -60,21 +60,29 @@ install/build steps.
 
 ## Making a rule change safely
 
-1. The authoritative thresholds/bands/wave-trigger logic live in
-   `reference_docs/rules/crash-check-rules.md` (prose spec) and are
-   implemented independently in `rule_engine/src/classify.ts` and
-   `mcp_server/src/lib/supabase.ts` — **the wave-authorization gating
-   formula is duplicated between these two files with no shared
-   package enforcing agreement.** If you change the gate, update both
-   and re-run `npm run typecheck` in both packages.
+1. Threshold **values** live in config files, not code:
+   - `config/monitoring.yaml` (public): panel bands, confirmation days,
+     the stress gate (3 of 6) and the push-alert count. Read by both
+     `rule_engine/src/rules.ts` and `mcp_server/src/lib/monitoring.ts`,
+     each with its own validating loader; the file is the single source.
+   - `local_state/policy.yaml` (gitignored, local-only; shape in
+     `local_state/policy.example.yaml`): wave and crash-type deployment
+     percentages, read by `mcp_server/src/lib/waveDeployment.ts` on every
+     call. Tests use the example file, never the real one.
+   - Still in code: the wave triggers (drawdown/VIX and slow-bear) in
+     `rule_engine/src/rules.ts`, because classify runs in GitHub Actions.
+
+   The prose rationale stays in `reference_docs/rules/crash-check-rules.md`.
+   After any change, run `npm run typecheck` and `npm test` in both
+   packages.
 2. `rule_engine/src/lib/seriesDelta.ts` and
    `mcp_server/src/lib/seriesDelta.ts` are separate copies that have
    already diverged — read both before changing either; don't assume
    they're identical.
-3. Never edit `reference_docs/rules/crash-check-rules.md`'s thresholds
-   without also checking `dashboard_site/` for hardcoded chart bands
-   (VIX 20/35, HY spread 350/500bp, 10yr yield 4.3/5.0, Sahm 0.3/0.5) —
-   these are not read from the rules doc at render time.
+3. Never edit the bands in `config/monitoring.yaml` without also checking
+   `dashboard_site/` for hardcoded chart bands (VIX 20/35, HY spread
+   350/500bp, 10yr yield 4.3/5.0, Sahm 0.3/0.5). The dashboard doesn't
+   read the config at render time.
 4. Never write real portfolio/dollar data outside `local_state/*.yaml`
    (gitignored) — only the `*.example.yaml` templates are tracked.
 

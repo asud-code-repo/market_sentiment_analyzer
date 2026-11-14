@@ -10,7 +10,7 @@
 // both buy the target-date fund). Real exchanges already logged this quarter
 // count too. One multi-fund transaction = one exchange day (TBC).
 
-import { computeWaveDeployment, computeCrashTypeLayer, type Wave, type CrashType } from "./waveDeployment.js";
+import { computeWaveDeployment, computeCrashTypeLayer, loadPolicy, type Wave, type CrashType } from "./waveDeployment.js";
 import { resolveSlot, type Registry, type ReadinessGrade, type ResolvedInstrument, type FilingEventRef } from "./instruments.js";
 import { exchangeContext, type ExchangeEntry } from "./tradeRestrictions.js";
 
@@ -69,11 +69,12 @@ export function runFireDrill(
   allPlanExchangesCount = false,
   filingEvents: FilingEventRef[] = [],
 ): FireDrill {
+  const policy = loadPolicy();
   const groups: { source: Wave | CrashType; lines: { fund: string; slot: string | null; usd: number | null }[] }[] = [];
   for (const w of WAVES.slice(0, WAVES.indexOf(throughWave) + 1)) {
-    groups.push({ source: w, lines: computeWaveDeployment(w, dryPowderUsd).splits });
+    groups.push({ source: w, lines: computeWaveDeployment(w, dryPowderUsd, policy).splits });
   }
-  if (crashType) groups.push({ source: crashType, lines: computeCrashTypeLayer(crashType, dryPowderUsd) });
+  if (crashType) groups.push({ source: crashType, lines: computeCrashTypeLayer(crashType, dryPowderUsd, policy) });
 
   const base = { ...exchangeContext(realLog, today, allPlanExchangesCount), filingEvents };
   const simulated: ExchangeEntry[] = [];
