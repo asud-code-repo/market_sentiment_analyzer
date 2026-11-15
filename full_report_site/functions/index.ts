@@ -190,6 +190,32 @@ function formatRunAt(isoString: string): string {
   }).format(new Date(isoString)) + " ET";
 }
 
+// Free-text narratives (notes, portfolio context, summaries) are often
+// written as one long run of sentences. Show them as short paragraphs:
+// keep the author's own line breaks when there are any, otherwise group
+// sentences into paragraphs of roughly 300 characters. Display-only; the
+// stored text is never changed. Duplicated in dashboard_site (no shared
+// code between the two static sites, same as every other helper).
+const PARA_ABBR = /(?:\b(?:U\.S|U\.K|e\.g|i\.e|vs|approx|est|Inc|Corp|Co|Ltd|St|Mr|Ms|Dr|No|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)|\b[A-Z])\.$/;
+function toParagraphs(text: string | null | undefined): string[] {
+  const t = String(text ?? "").trim();
+  if (!t) return [];
+  if (t.includes("\n")) return t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const sentences: string[] = [];
+  for (const part of t.split(/(?<=[.!?])\s+(?=[A-Z0-9("'\u201c])/)) {
+    if (sentences.length && PARA_ABBR.test(sentences[sentences.length - 1])) sentences[sentences.length - 1] += " " + part;
+    else sentences.push(part);
+  }
+  const out: string[] = [];
+  let cur = "";
+  for (const s of sentences) {
+    cur = cur ? cur + " " + s : s;
+    if (cur.length >= 280) { out.push(cur); cur = ""; }
+  }
+  if (cur) { if (out.length && cur.length < 120) out[out.length - 1] += " " + cur; else out.push(cur); }
+  return out;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -389,7 +415,7 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
         <ul class="crit">${trig.map((t) => `<li><b>${escapeHtml(t.name)}</b>${pill(titleCase(t.status), toneForText(t.status))}<span class="d">${escapeHtml(t.note)}</span></li>`).join("")}</ul></section>`
     : "";
   const context = report.portfolio_context
-    ? `<section class="rsec"><div class="sh"><span class="lbl">Portfolio context</span><span class="note">Qualitative only</span></div><p class="nar">${escapeHtml(report.portfolio_context)}</p></section>`
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Portfolio context</span><span class="note">Qualitative only</span></div><div class="nars">${toParagraphs(report.portfolio_context).map((para) => `<p class="nar">${escapeHtml(para)}</p>`).join("")}</div></section>`
     : "";
 
   return `${verdict}
@@ -420,7 +446,7 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
   </div>`;
 
   const summary = review.summary
-    ? `<div class="sh"><span class="lbl">Summary</span></div><p class="nar">${escapeHtml(review.summary)}</p>`
+    ? `<div class="sh"><span class="lbl">Summary</span></div><div class="nars">${toParagraphs(review.summary).map((para) => `<p class="nar">${escapeHtml(para)}</p>`).join("")}</div>`
     : "";
 
   // ---- drift ----
@@ -463,10 +489,7 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
         <div class="ledger th"><div class="row hdr"><span>Ticker</span><span>Verdict and reasoning</span><span class="r">Proposed</span></div>${thRows}</div></section>`
     : "";
 
-  const crossRef = (review.macro_cross_reference ?? "")
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean)
+  const crossRef = toParagraphs(review.macro_cross_reference)
     .map((p) => `<p class="nar">${escapeHtml(p)}</p>`)
     .join("");
 
@@ -614,7 +637,7 @@ const PAGE_CSS = `
   .sh .note { font:var(--t3); color:var(--text-muted); }
   .nar { margin:0; font:var(--t3); font-size:12px; line-height:1.55; color:var(--text-secondary); white-space:pre-wrap; }
   .nar.auto { color:var(--text-muted); white-space:normal; }
-  .nars .nar + .nar { margin-top:8px; }
+  .nars .nar + .nar { margin-top:9px; }
   .narrow-only { display:none; }
   .foot { font:var(--t3); color:var(--text-muted); margin:28px 0 0; padding-top:12px; border-top:1px solid var(--hair); }
 

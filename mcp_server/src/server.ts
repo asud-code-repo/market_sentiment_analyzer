@@ -28,6 +28,11 @@ import { resolveConditional, dueEvents } from "./lib/conditionalScenarios.js";
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { loadRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 
+// Shown to the model on every long free-text field the report pages render.
+// The pages also split unbroken text into paragraphs, but author breaks read better.
+const PARAGRAPHS = "Plain text in short paragraphs of 2-4 sentences, separated by a blank line.";
+const NOTES_TEXT = `${PARAGRAPHS} Open with the substance, not a run label like "Full Report (scheduled run, ...)"; the page already shows the date.`;
+
 const server = new McpServer({ name: "crash-check", version: "1.0.0" });
 
 function json(data: unknown) {
@@ -421,7 +426,7 @@ server.registerTool(
       scenario_base_pct: z.number().min(0).max(100),
       scenario_bear_pct: z.number().min(0).max(100),
       scenario_crash_pct: z.number().min(0).max(100),
-      notes: z.string(),
+      notes: z.string().describe(NOTES_TEXT),
       delta_log: z
         .array(
           z.object({
@@ -1374,7 +1379,7 @@ server.registerTool(
           ),
         })
         .optional(),
-      portfolio_context: z.string(),
+      portfolio_context: z.string().describe(PARAGRAPHS),
     },
   },
   withLogging("write_full_report", async (input) => {
@@ -1405,8 +1410,8 @@ server.registerTool(
       "(that's the separate write_watchlist gate).",
     inputSchema: {
       verdict: z.string(),
-      summary: z.string(),
-      macro_cross_reference: z.string(),
+      summary: z.string().describe(PARAGRAPHS),
+      macro_cross_reference: z.string().describe(PARAGRAPHS),
       tickers: z.array(
         z.object({
           symbol: z.string(),

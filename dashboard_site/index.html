@@ -565,6 +565,7 @@
   .clean li .info { margin-left:2px; }
   .nar { font:var(--t3); font-size:12px; line-height:1.55; color:var(--text-secondary); white-space:pre-wrap; }
   .nar.auto { color:var(--text-muted); white-space:normal; }
+  .nar p { margin:0; } .nar p + p { margin-top:9px; }
   .nar.long:not(.open) { max-height:260px; overflow:hidden; -webkit-mask-image:linear-gradient(#000 70%, transparent); mask-image:linear-gradient(#000 70%, transparent); }
   .nar-more { all:unset; cursor:pointer; font:var(--t3); color:var(--accent); margin-top:6px; }
 
@@ -3411,6 +3412,37 @@ function parseTrigger(t) {
   return { t, v, type, eventName, note, next };
 }
 
+
+// Free-text narratives (notes, portfolio context, summaries) are often
+// written as one long run of sentences. Show them as short paragraphs:
+// keep the author's own line breaks when there are any, otherwise group
+// sentences into paragraphs of roughly 300 characters. Display-only; the
+// stored text is never changed. Duplicated in full_report_site (no shared
+// code between the two static sites, same as every other helper).
+const PARA_ABBR = /(?:\b(?:U\.S|U\.K|e\.g|i\.e|vs|approx|est|Inc|Corp|Co|Ltd|St|Mr|Ms|Dr|No|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)|\b[A-Z])\.$/;
+// Older narratives open with a run label ("Full Report (scheduled run,
+// Nov 14 PM)." / "Full report, Nov 13 (Nov 12 data).") that repeats the
+// date picker. Hide it on display; the stored text is unchanged.
+const RUN_LABEL = /^\s*Full report(?:\s*\([^)]*\)|,[^.]*)\.\s+/i;
+const stripRunLabel = (t) => { const r = String(t ?? "").replace(RUN_LABEL, ""); return r.trim() ? r : String(t ?? ""); };
+function toParagraphs(text) {
+  const t = String(text ?? "").trim();
+  if (!t) return [];
+  if (t.includes("\n")) return t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const sentences = [];
+  for (const part of t.split(/(?<=[.!?])\s+(?=[A-Z0-9("'\u201c])/)) {
+    if (sentences.length && PARA_ABBR.test(sentences[sentences.length - 1])) sentences[sentences.length - 1] += " " + part;
+    else sentences.push(part);
+  }
+  const out = [];
+  let cur = "";
+  for (const s of sentences) {
+    cur = cur ? cur + " " + s : s;
+    if (cur.length >= 280) { out.push(cur); cur = ""; }
+  }
+  if (cur) { if (out.length && cur.length < 120) out[out.length - 1] += " " + cur; else out.push(cur); }
+  return out;
+}
 function renderRail(row) {
   let triggers = [];
   try { triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]"); } catch (e) { triggers = []; }
@@ -3428,7 +3460,7 @@ function renderRail(row) {
        ${fired.length ? `<section class="rsec"${upcoming.length ? "" : ' id="section-triggers"'}><div class="sh"><span class="lbl">Recently fired</span></div><ul class="tl">${fired.slice(0, 6).map((p) => item(p, false)).join("")}</ul></section>` : ""}`
     : "";
   const notes = row.notes
-    ? `<div class="nar${row.notes.length > 700 ? " long" : ""}" id="nar-text">${escHtml(row.notes)}</div>${row.notes.length > 700 ? '<button class="nar-more" type="button" id="nar-more">Read the full narrative</button>' : ""}`
+    ? `<div class="nar${row.notes.length > 700 ? " long" : ""}" id="nar-text">${toParagraphs(stripRunLabel(row.notes)).map((para) => `<p>${escHtml(para)}</p>`).join("")}</div>${row.notes.length > 700 ? '<button class="nar-more" type="button" id="nar-more">Read the full narrative</button>' : ""}`
     : '<p class="nar auto">None for this entry: an automated indicator refresh, not a chat-triggered report.</p>';
   return `${triggerHtml}${renderDivergenceRail(row)}
     <section class="rsec" id="section-notes"><div class="sh"><span class="lbl">Narrative</span></div>${notes}</section>`;
