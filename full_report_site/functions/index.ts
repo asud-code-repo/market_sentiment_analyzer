@@ -213,7 +213,7 @@ function formatFundName(fundKey: string, label?: string): string {
 // Portfolio (drift, thesis re-underwrite, summary, macro cross-reference).
 // ---------------------------------------------------------------------------
 
-const PUBLIC_DASHBOARD_URL = "https://market-sentiment.abhaysudhakaran.com/";
+const PUBLIC_DASHBOARD_URL = "https://marketstress.org/";
 
 type Tone = "good" | "warning" | "critical" | "muted";
 

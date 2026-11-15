@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b><a href="https://market-sentiment.abhaysudhakaran.com/">Live dashboard →</a></b> · free, no sign-up, updated daily
+  <b><a href="https://marketstress.org/">Live dashboard →</a></b> · free, no sign-up, updated daily
 </p>
 
 > **Not investment advice.** This is a personal, educational project. The
@@ -237,7 +237,7 @@ local_state/          *.example.yaml templates; real files are gitignored
 not a packaged product. You'll need your own Supabase project, Cloudflare
 Pages, GitHub Actions, several free API keys and Claude Desktop. If you only
 want the signals, use the
-[live dashboard](https://market-sentiment.abhaysudhakaran.com/).
+[live dashboard](https://marketstress.org/).
 
 Requires Node 22+. Each of `ingestion/`, `rule_engine/` and `mcp_server/` is
 an independent package (`npm ci` inside each; no root workspace) with a
