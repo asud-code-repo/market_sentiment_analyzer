@@ -157,7 +157,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   } catch (err) {
     return new Response(renderShell("Private Portfolio Report unavailable", `<p>${escapeHtml(String(err))}</p>`), {
       status: 502,
-      headers: { "content-type": "text/html; charset=utf-8" },
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
   }
 
@@ -167,14 +167,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
         "No Private Portfolio Report snapshot yet",
         "<p>write_full_report hasn't been called yet — run a crash check in Claude first.</p>",
       ),
-      { headers: { "content-type": "text/html; charset=utf-8" } },
+      { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
     );
   }
 
   const [latestReview] = portfolioReviews;
 
   return new Response(renderPage(fullReport, crashCheck, latestReview), {
-    headers: { "content-type": "text/html; charset=utf-8" },
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 };
 
@@ -505,9 +505,9 @@ function renderShell(title: string, body: string, full = false): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Macro Market Stress Monitor — ${escapeHtml(title)}</title>
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="manifest" href="/manifest.json?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=2">
 <meta name="theme-color" content="#0d0d0d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
