@@ -197,15 +197,19 @@ function formatRunAt(isoString: string): string {
 // stored text is never changed. Duplicated in dashboard_site (no shared
 // code between the two static sites, same as every other helper).
 const PARA_ABBR = /(?:\b(?:U\.S|U\.K|e\.g|i\.e|vs|approx|est|Inc|Corp|Co|Ltd|St|Mr|Ms|Dr|No|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)|\b[A-Z])\.$/;
-function toParagraphs(text: string | null | undefined): string[] {
-  const t = String(text ?? "").trim();
-  if (!t) return [];
-  if (t.includes("\n")) return t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+function splitSentences(t: string): string[] {
   const sentences: string[] = [];
   for (const part of t.split(/(?<=[.!?])\s+(?=[A-Z0-9("'\u201c])/)) {
     if (sentences.length && PARA_ABBR.test(sentences[sentences.length - 1])) sentences[sentences.length - 1] += " " + part;
     else sentences.push(part);
   }
+  return sentences;
+}
+function toParagraphs(text: string | null | undefined): string[] {
+  const t = String(text ?? "").trim();
+  if (!t) return [];
+  if (t.includes("\n")) return t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const sentences = splitSentences(t);
   const out: string[] = [];
   let cur = "";
   for (const s of sentences) {
@@ -433,9 +437,13 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
   const funds = accounts.reduce((n, a) => n + a.entries.length, 0);
   const drifted = accounts.reduce((n, a) => n + a.entries.filter((e) => e.status === "DRIFTED").length, 0);
   const proposed = review.tickers.filter((t) => t.proposed_change).length;
-  const verdictText = review.verdict ?? "Review";
+  // The verdict is often several sentences. Lead with the first one as the
+  // headline and show the rest as a smaller line underneath.
+  const [headline, ...rest] = splitSentences((review.verdict ?? "").trim() || "Review");
+  const lede = rest.join(" ");
   const verdict = `<div class="verdict">
-    <div class="headline"><span class="big${verdictText.length > 18 ? " long" : ""}">${escapeHtml(verdictText)}</span>
+    <div class="headline stack"><span class="big${headline.length > 18 ? " long" : ""}">${escapeHtml(headline)}</span>
+      ${lede ? `<span class="lede">${escapeHtml(lede)}</span>` : ""}
       <span class="sub">${drifted ? `<b class="warn">${drifted} fund${drifted === 1 ? "" : "s"} drifted</b>` : `<b class="ok">On target</b>`} · ${proposed} proposed change${proposed === 1 ? "" : "s"}</span></div>
     <div class="facts">
       <div class="fact"><span class="lbl">Accounts</span><span class="v">${accounts.length} <small>${funds} funds</small></span></div>
@@ -617,6 +625,9 @@ const PAGE_CSS = `
   .headline .big { font:var(--t1); white-space:nowrap; }
   .headline .big.long { font-size:21px; white-space:normal; max-width:520px; }
   .headline .sub { font:500 13px/1.3 var(--font-ui); color:var(--text-secondary); }
+  .headline.stack { flex-direction:column; align-items:flex-start; gap:6px; }
+  .headline .lede { font:400 14px/1.5 var(--font-ui); color:var(--text-secondary); max-width:600px; }
+  .headline.stack .sub { margin-top:4px; }
   .headline .sub b { font-weight:600; color:var(--text-primary); }
   .headline .sub b.ok { color:var(--good); } .headline .sub b.warn { color:var(--warning); } .headline .sub b.bad { color:var(--critical); }
   .facts { display:flex; gap:28px; flex-wrap:wrap; }

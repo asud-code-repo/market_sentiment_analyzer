@@ -1409,7 +1409,7 @@ server.registerTool(
       "anyway. Call at the end of every review run, whether or not the user approved ticker changes " +
       "(that's the separate write_watchlist gate).",
     inputSchema: {
-      verdict: z.string(),
+      verdict: z.string().describe("One short headline sentence (under ~10 words). Put the reasoning in summary."),
       summary: z.string().describe(PARAGRAPHS),
       macro_cross_reference: z.string().describe(PARAGRAPHS),
       tickers: z.array(
