@@ -62,7 +62,7 @@ State Street · Caldara-Iacoviello GPR · Polymarket · Massive
           ▼                        ▼                          ▼
 ┌──────────────────┐   ┌──────────────────────┐   ┌──────────────────────┐
 │ mcp_server/       │   │ dashboard_site/       │   │ full_report_site/     │
-│ local stdio, 20   │   │ public, static,       │   │ private, Cloudflare   │
+│ local stdio, 21   │   │ public, static,       │   │ private, Cloudflare   │
 │ tools. Reads      │   │ public market data    │   │ Access, server-side   │
 │ local_state/ and  │   │ only                  │   │ Pages Function        │
 │ evaluates waves   │   │                       │   │                       │
@@ -76,7 +76,7 @@ State Street · Caldara-Iacoviello GPR · Polymarket · Massive
 |---|---|
 | [`ingestion/`](ingestion/) | Pulls each source into Supabase. A plausibility guard quarantines implausible values before they're written. A backfill script loads each series' full history. No LLM and no classification logic. |
 | [`rule_engine/`](rule_engine/) | Pure functions: the 6-indicator panel, confirmation windows, the stress gate, cross-indicator divergence flags and the hazard model. Writes `crash_checks`, and sends an ntfy.sh push when the confirmed-RED count rises to 2 or more. Vitest suite. |
-| [`mcp_server/`](mcp_server/) | Local stdio MCP server for Claude Desktop. 20 tools: market state, context indicators, rules lookup, portfolio drift, watchlist, wave evaluation, deployment planning and fire drill, fund-filing watch, and write/persist tools. Runs locally because it's the only component that reads personal data. `node:test` suite. |
+| [`mcp_server/`](mcp_server/) | Local stdio MCP server for Claude Desktop. 21 tools: workflow instructions, market state, context indicators, rules lookup, portfolio drift, watchlist, wave evaluation, deployment planning and fire drill, fund-filing watch, and write/persist tools. Runs locally because it's the only component that reads personal data. `node:test` suite. |
 | [`dashboard_site/`](dashboard_site/) | Public static site (Cloudflare Pages, no build step). Reads only public market data with the anon key. |
 | [`full_report_site/`](full_report_site/) | Private page behind Cloudflare Access: wave status, personal triggers, the watchlist with insider activity, crash-type diagnosis and the portfolio review. Rendered server-side, so no credential reaches the browser. |
 | [`config/`](config/) | `monitoring.yaml`: the public panel bands, confirmation days, stress gate and push-alert count, read by both `rule_engine` and `mcp_server`. |
@@ -220,7 +220,7 @@ never reaches the public repo or the public tables.
 ```
 ingestion/            data sources → Supabase, plausibility-guarded
 rule_engine/          deterministic panel, stress gate, hazard model, push alert
-mcp_server/           local MCP tools for Claude Desktop (20 tools), wave evaluation
+mcp_server/           local MCP tools for Claude Desktop (21 tools), wave evaluation
 dashboard_site/       public dashboard (static)
 full_report_site/     private Full Report page (Cloudflare Pages Function)
 config/               public monitoring thresholds
@@ -269,9 +269,12 @@ Then:
    [`mcp_server/claude_desktop_config.example.json`](mcp_server/claude_desktop_config.example.json)
    into your config (the MCP server needs `PORTFOLIO_PATH` and
    `WAVE_DEPLOYMENT_STATE_PATH`; the other local files default to sitting
-   next to `PORTFOLIO_PATH`), and attach `project-instructions.md` and
-   `portfolio-review-template.html` as project knowledge. Don't attach the
-   rules doc: runs read it section by section through the `get_rules` tool.
+   next to `PORTFOLIO_PATH`). Create a Claude Desktop project and set its
+   instructions to one line: *"Before anything else, call the crash-check
+   `get_instructions` tool and follow what it returns."* Attach nothing as
+   project knowledge: the MCP server serves the workflow instructions and
+   review template (`get_instructions`) and the rules doc (`get_rules`)
+   straight from this working tree.
 6. `dashboard_site/`: a Cloudflare Pages project with no build step. Swap
    in your own Supabase URL and anon key.
 7. `full_report_site/`: a second Pages project behind Cloudflare Access.

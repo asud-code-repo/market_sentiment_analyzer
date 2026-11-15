@@ -104,12 +104,15 @@ install/build steps.
 
 - Don't add a CI linter, pre-commit hook, or test framework — single
   maintainer, zero ongoing-maintenance budget.
-- Don't rename or move `reference_docs/rules/crash-check-rules.md` or
-  `reference_docs/rules/project-instructions.md` — `project-instructions.md`
-  is read as project knowledge from GitHub `main` by Claude Desktop, and
-  `crash-check-rules.md` is read by path from this repo's own code (the
-  `get_rules` MCP tool serves it section by section; it is deliberately not
-  attached as project knowledge any more, since that hit Claude Desktop's
-  full-load size limit). Keep `## ` / `### ` headings stable: they are the
+- Don't rename or move `reference_docs/rules/crash-check-rules.md`,
+  `reference_docs/rules/project-instructions.md` or
+  `reference_docs/rules/portfolio-review-template.html` — all three are read
+  by path from this repo's own code, not attached as Claude Desktop project
+  knowledge: `get_instructions` serves the instructions and the review
+  template whole (since 2026-11-15, so the project no longer depends on the
+  GitHub connector, which only works for public repos), and `get_rules`
+  serves the rules doc section by section (attached, it hit Claude Desktop's
+  full-load size limit). Changes take effect on the next tool call; no
+  project Sync is needed. Keep `## ` / `### ` headings stable: they are the
   section names runs ask `get_rules` for.
 - Don't restate rule thresholds or architecture here — link to them.

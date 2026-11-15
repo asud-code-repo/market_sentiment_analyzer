@@ -27,6 +27,7 @@ import { computeFundingPressureFlag } from "./lib/repoStress.js";
 import { resolveConditional, dueEvents } from "./lib/conditionalScenarios.js";
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { loadRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
+import { readInstructionDoc } from "./lib/instructionsDoc.js";
 
 // Shown to the model on every long free-text field the report pages render.
 // The pages also split unbroken text into paragraphs, but author breaks read better.
@@ -56,6 +57,23 @@ function withLogging(name: string, handler: (...args: any[]) => Promise<any>) {
     return result;
   };
 }
+
+server.registerTool(
+  "get_instructions",
+  {
+    description:
+      "Returns this project's workflow instructions, read fresh from disk: call it FIRST in every " +
+      "chat, before any other tool, and follow what it returns as the project instructions (the " +
+      "crash check, the portfolio review and the allocation analysis). They are not attached as " +
+      "project knowledge. document: \"project_instructions\" (default) or \"portfolio_review_template\" " +
+      "(the HTML base for the portfolio review artifact; fetch it only when that workflow says to).",
+    inputSchema: { document: z.enum(["project_instructions", "portfolio_review_template"]).optional() },
+  },
+  withLogging("get_instructions", async ({ document }) => {
+    const doc = document ?? "project_instructions";
+    return { content: [{ type: "text" as const, text: readInstructionDoc(doc) }] };
+  }),
+);
 
 server.registerTool(
   "get_rules",
