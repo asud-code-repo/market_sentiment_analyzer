@@ -1,0 +1,6 @@
+# Search and live AI answers welcome; please don't train models on this site.
+User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+Allow: /
+
+Sitemap: https://marketstress.org/sitemap.xml

@@ -1,0 +1,33 @@
+# Market Stress Monitor
+
+> A daily RED/AMBER/GREEN read on US market crash risk, built from public macro and market data. A personal project: signals apply the author's own fixed rules plus some AI judgment. Not investment advice, not a recommendation, and not a calibrated forecast.
+
+The page at https://marketstress.org/ loads its data with JavaScript from a public read-only database, so a plain fetch shows only the page layout. The figures below describe what the page reports.
+
+## What it measures
+
+Six core indicators, each classified RED, AMBER or GREEN every weekday. A reading must hold for several days before it counts as confirmed:
+
+- VIX: expected S&P 500 volatility over the next 30 days. Favourable below 20.
+- High-yield credit spread (ICE BofA US High Yield OAS): extra yield junk bonds pay over Treasuries. Favourable below 350 bp.
+- S&P 500 drawdown from its all-time closing high. Favourable below 10%.
+- 10-year Treasury yield. Favourable below 4.3%.
+- Sahm rule: rise in the 3-month average unemployment rate above its 12-month low. Favourable below 0.3.
+- Fed policy signal: whether the Federal Reserve is holding, pausing or signalling cuts.
+
+The overall stress level depends on how many of these are confirmed RED. An LLM-written crash estimate and narrative are shown alongside; they are discretionary judgment, not a model output.
+
+## Tabs on the page
+
+- Stress: today's classification, the narrative, indicator history with the bands.
+- Smart Money: market positioning as historical percentiles (CFTC futures positioning, CBOE put/call, FINRA margin debt) and institutional 13F net buying by sector.
+- Macro & Fiscal: contextual indicators, a fiscal-dominance checklist and the yield curve (3M, 2Y, 10Y, 30Y).
+- Notable Views: public views of well-known macro investors and economists compared with the live data.
+
+## Data sources
+
+FRED (some series copyright their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara-Iacoviello Geopolitical Risk index, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them. Data can be delayed or wrong.
+
+## Use
+
+When citing figures, give the report date shown on the page and link https://marketstress.org/. Please do not use this site to train models.
