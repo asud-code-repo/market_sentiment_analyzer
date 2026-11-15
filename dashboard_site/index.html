@@ -410,9 +410,11 @@
   .sh .right { margin-left:auto; font:var(--t3); color:var(--text-muted); display:flex; gap:12px; align-items:center; }
   .foot { font:var(--t3); color:var(--text-muted); margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
   .foot b { color:var(--text-secondary); font-weight:500; }
-  .rfooter { margin-top:28px; padding-top:12px; border-top:1px solid var(--hair); font:var(--t3); color:var(--text-muted); display:flex; gap:20px; flex-wrap:wrap; }
-  .rfooter .disclaimer { flex-basis:100%; margin:0; color:var(--text-secondary); }
-  .rfooter .disclaimer b { color:var(--text-primary); }  .hidebtn { all:unset; cursor:pointer; font:600 11px/1 var(--font-ui); padding:5px 10px; color:var(--text-secondary); background:var(--sunk); box-shadow: inset 0 0 0 1px var(--hair-strong); }
+  .rfooter { margin-top:22px; padding-top:10px; border-top:1px solid var(--hair); font:400 10px/1.45 var(--font-ui); color:var(--text-muted); }
+  .rfooter p { margin:0; max-width:none; }
+  .rfooter p + p { margin-top:3px; }
+  .rfooter .disclaimer b { color:var(--text-secondary); font-weight:600; }
+  .hidebtn { all:unset; cursor:pointer; font:600 11px/1 var(--font-ui); padding:5px 10px; color:var(--text-secondary); background:var(--sunk); box-shadow: inset 0 0 0 1px var(--hair-strong); }
   .hidebtn:hover { color:var(--text-primary); } .hidebtn:focus-visible { outline:2px solid var(--accent); }
 
   /* ---------- ⓘ + popovers ---------- */
@@ -743,7 +745,6 @@
     .hazard { grid-template-columns:1fr; gap:12px; }
     [popover].pop, [popover].pop.wide { max-width:calc(100vw - 24px); }
     .pop dl { grid-template-columns:1fr; gap:2px; } .pop dd { margin-bottom:6px; }
-    .rfooter { flex-direction:column; gap:4px; }
     .ps-hdr { display:none; }
     .ps-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"q q" "spec pct" "now raw"; row-gap:8px; padding-right:2px; }
     .ps-row .q { grid-area:q; } .ps-row .spec { grid-area:spec; } .ps-row .pct { grid-area:pct; align-self:start; }
@@ -932,9 +933,8 @@
   </div>
 
   <footer class="rfooter">
-    <p class="disclaimer"><b>Educational and informational only. Not investment, financial, tax or trading advice.</b> This is a personal project. Signals such as RED/AMBER/GREEN bands, the stress gate and crash probability apply the author's own rules to public data; they are not recommendations to buy or sell anything. Data can be delayed, revised or wrong, and nothing here is guaranteed. Do your own research or consult a licensed professional before making financial decisions.</p>
-    <span>Read-only view of macro/market state: a stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast.</span><span>No personal account data; portfolio figures live in the local MCP tools.</span>
-    <span>Data: FRED (Federal Reserve Bank of St. Louis; some series © their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara–Iacoviello GPR index, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them.</span>
+    <p class="disclaimer"><b>For information only, not investment advice.</b> A personal project: signals apply the author's own rules, plus some AI judgment, to public data. They are not recommendations or calibrated forecasts, and data can be delayed or wrong.</p>
+    <p>Data: FRED (some series &copy; their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara&ndash;Iacoviello GPR, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them.</p>
   </footer>
   <div id="pop-layer"></div>
 </div>
