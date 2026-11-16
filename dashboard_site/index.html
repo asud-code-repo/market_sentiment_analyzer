@@ -1346,6 +1346,12 @@ const INDICATOR_INFO = {
 // the latest available reading regardless of which historical report is
 // selected above.
 const CONTEXT_INFO = {
+  ofrFsi: {
+    label: "OFR Financial Stress Index",
+    format: (v) => v.toFixed(2),
+    signal: (v) => (v > 0 ? "Above-average stress" : "Below-average stress"),
+    notable: (v) => v > 0,
+  },
   stlfsi4: {
     label: "Financial Stress Index",
     format: (v) => v.toFixed(2),
@@ -1397,10 +1403,10 @@ const CONTEXT_INFO = {
     signal: (v) => (v > 100 ? "Above $100 — stagflation accelerant watch" : "Below $100"),
     notable: (v) => v > 100,
   },
-  pcoppusdm: {
+  copperFut: {
     label: "Copper (\"Dr. Copper\")",
-    format: (v) => `$${(v / 1000).toFixed(2)}k/ton`,
-    signal: () => "Leading growth/recession-cycle indicator — informational cross-check for the Type B (Recession) crash-type diagnosis, not one of its hard trigger criteria. Monthly cadence — read the trend, not one month's move.",
+    format: (v) => `$${v.toFixed(2)}/lb`,
+    signal: () => "Leading growth/recession-cycle indicator — informational cross-check for the Type B (Recession) crash-type diagnosis, not one of its hard trigger criteria. Daily COMEX futures close — read the trend, not one day's move.",
   },
   rsafs: {
     label: "Retail Sales (Advance)",
@@ -1573,9 +1579,9 @@ function estrellaMishkinRecessionProbability(spread10y3mo) {
 // than silently disappearing.
 const CONTEXT_GROUPS = [
   { title: "Rates, inflation & dollar", cadence: "market prices, daily", keys: ["spread2s10s", "dgs30", "dfii10", "t10yie", "threefytp10", "dff", "sofr", "dtwexbgs"] },
-  { title: "Credit & financial conditions", cadence: "daily to quarterly", keys: ["stlfsi4", "nfci", "nfcirisk", "nfcicredit", "bamlc0a0cm", "regionalBankStress", "drtscilm"] },
+  { title: "Credit & financial conditions", cadence: "daily to quarterly", keys: ["ofrFsi", "stlfsi4", "nfci", "nfcirisk", "nfcicredit", "bamlc0a0cm", "regionalBankStress", "drtscilm"] },
   { title: "Liquidity", cadence: "weekly to daily", keys: ["netLiquidity", "walcl", "rrpontsyd"] },
-  { title: "Cross-asset & breadth", cadence: "market prices, 7-day / 180-day windows", keys: ["smallCapBreadth", "equalWeightBreadth", "stockBondCorrelation", "gold", "bitcoin", "dcoilwtico", "pcoppusdm"] },
+  { title: "Cross-asset & breadth", cadence: "market prices, 7-day / 180-day windows", keys: ["smallCapBreadth", "equalWeightBreadth", "stockBondCorrelation", "gold", "bitcoin", "dcoilwtico", "copperFut"] },
   { title: "Growth & labor", cadence: "weekly to monthly releases", keys: ["icsa", "ccsa", "jtshir", "rsafs", "cgbd2024", "drcclacbs", "recprousm156n", "nyFedRecessionProb"] },
   { title: "Structural & geopolitical", cadence: "monthly to quarterly, lagged", keys: ["gfdegdq188s", "ticForeignHoldings", "gprIndex"] },
 ];
@@ -1596,7 +1602,8 @@ function renderContextIndicators(latest) {
     icsa: latest.ICSA,
     drcclacbs: latest.DRCCLACBS,
     dcoilwtico: latest.DCOILWTICO,
-    pcoppusdm: latest.PCOPPUSDM,
+    copperFut: latest.COPPER_FUT,
+    ofrFsi: latest.OFR_FSI,
     rsafs: latest.RSAFS,
     ccsa: latest.CCSA,
     jtshir: latest.JTSHIR,
@@ -2678,11 +2685,13 @@ const MACRO_FRESH = [
   ["Treasury yields, TIPS, term premium", "Daily · FRED, Treasury fills the yields' lag", ["DGS10", "THREEFYTP10"], "day"],
   ["Dollar index", "Daily · Federal Reserve", ["DTWEXBGS"], "day"],
   ["Fed balance sheet · reverse repo", "Weekly · daily", ["WALCL", "RRPONTSYD"], "day"],
+  ["OFR stress index", "Daily · US Treasury OFR", ["OFR_FSI"], "day"],
   ["Financial conditions (NFCI, stress index)", "Weekly", ["NFCI", "STLFSI4"], "day"],
   ["Jobless claims", "Weekly", ["ICSA"], "day"],
   ["Treasury auctions", "After each auction · TreasuryDirect", ["AUCTION_10Y_BID_TO_COVER"], "day"],
   ["Avg debt rate · Fed share of Treasuries", "Monthly · Treasury", ["TREASURY_AVG_RATE_MARKETABLE", "MSPD_TOTAL_MARKETABLE"], "day"],
-  ["Hires, retail sales, M2, copper", "Monthly", ["JTSHIR", "RSAFS", "M2SL", "PCOPPUSDM"], "month"],
+  ["Copper", "Daily · COMEX futures close", ["COPPER_FUT"], "day"],
+  ["Hires, retail sales, M2", "Monthly", ["JTSHIR", "RSAFS", "M2SL"], "month"],
   ["Bank lending standards", "Quarterly Fed survey", ["DRTSCILM"], "quarter"],
   ["Foreign Treasury holdings (TIC)", "Monthly, ~2½ months behind", ["TIC_FOREIGN_HOLDINGS_TOTAL"], "day"],
   ["GDP · M2 / GDP", "Quarterly", ["GDP"], "quarter"],
@@ -2744,6 +2753,7 @@ const CTX_COPY = {
   dff: ["Effective fed funds", "", "The overnight interest rate banks charge each other, which the Fed sets its target for.", "The anchor for every other interest rate. It only moves when the Fed changes policy.", ""],
   sofr: ["SOFR", "repo rate", "The overnight cost of borrowing cash with Treasuries as collateral (the \"repo\" market).", "Normally sits right next to the fed funds rate. A spike above it signals a cash shortage in the financial system's plumbing, as in September 2019.", ""],
   dtwexbgs: ["Broad dollar index", "", "The dollar's value against a basket of the US's major trading partners' currencies (Federal Reserve).", "A rising dollar tightens financial conditions worldwide: dollar debts get more expensive to repay and US exports get pricier.", ""],
+  ofrFsi: ["OFR stress index", "daily · US Treasury OFR", "The Office of Financial Research's daily stress score, combining 33 market measures (credit spreads, stock valuations, funding costs, demand for safe assets, volatility) across the US and other markets.", "Zero is average. Above zero means more financial stress than normal; it peaked near 29 in late 2008. Updates daily, so it moves before the two weekly indexes below.", "Flagged above zero."],
   stlfsi4: ["Financial stress index", "St. Louis Fed", "A single score combining 18 market measures (interest rates, spreads, volatility).", "Zero is average. Above zero means more financial stress than normal; it spiked far above zero in 2008 and March 2020.", "Flagged above zero."],
   nfci: ["NFCI", "Chicago Fed conditions", "The Chicago Fed's National Financial Conditions Index: 105 measures of money markets, debt and stock markets, and banks.", "Zero is average. Negative means looser than average (borrowing is easy); positive means tighter.", "Flagged above zero."],
   nfcirisk: ["NFCI risk", "subindex", "The part of the Chicago Fed index that tracks volatility and funding risk in the financial sector.", "Zero is average; above zero means more risk than normal in markets and funding.", "Flagged above zero."],
@@ -2760,7 +2770,7 @@ const CTX_COPY = {
   gold: ["Gold (GLD)", "7-day change", "Gold's price change over 7 days, via the GLD fund.", "Often a safe haven, but not always: it fell with stocks during 2008's forced selling before rallying later.", ""],
   bitcoin: ["Bitcoin", "7-day change · not a hedge", "Bitcoin's price change over 7 days.", "Tracked for awareness, <b>not</b> as a hedge: it fell more than stocks in both March 2020 and 2022.", ""],
   dcoilwtico: ["WTI crude", "per barrel", "The price of a barrel of US benchmark crude oil.", "Expensive oil feeds inflation and slows growth at the same time (\"stagflation\" risk).", "Flagged above $100."],
-  pcoppusdm: ["Copper", "per tonne, monthly", "The world copper price per tonne.", "Copper goes into buildings, cars and electronics, so its price tracks the economic cycle (\"Dr. Copper\"). A cross-check for recession risk; read the trend, not one month.", ""],
+  copperFut: ["Copper", "per lb, COMEX futures, daily", "The price of copper for near-term delivery on the COMEX futures market, per pound.", "Copper goes into buildings, cars and electronics, so its price tracks the economic cycle (\"Dr. Copper\"). A cross-check for recession risk; read the trend over weeks, not one day.", ""],
   icsa: ["Initial claims", "weekly", "New applications for unemployment benefits each week.", "A direct read on layoffs. Readings near 200–250K are historically low; a sustained rise means layoffs are picking up.", ""],
   ccsa: ["Continuing claims", "weekly", "People still receiving unemployment benefits.", "Rising while new claims stay flat means laid-off workers are struggling to find new jobs.", ""],
   jtshir: ["Hires rate", "JOLTS", "Hires each month as a share of all jobs.", "Claims show layoffs; this shows whether people are getting hired. A falling hires rate can reveal a hiring freeze that low layoffs hide.", ""],
@@ -4671,7 +4681,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "PCOPPUSDM", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "WTREGEN", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "COPPER_FUT", "OFR_FSI", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "WTREGEN", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

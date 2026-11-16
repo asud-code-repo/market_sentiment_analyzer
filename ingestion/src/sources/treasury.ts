@@ -205,50 +205,63 @@ export async function fetchTreasuryMarketableDebt(): Promise<DataPoint[]> {
 // Daily Treasury Par Yield Curve -- the SOURCE of FRED's DGS* constant-
 // maturity yields. FRED's DGS10/DGS2/... come from the Fed's H.15 release,
 // which takes them unchanged from this table (verified 2026-11-16: every
-// November date matched FRED to the basis point). Treasury posts each day's
-// curve that afternoon; H.15 posts it the next business day and FRED after
-// that, so a 10am-ET ingest saw the 10Y a full business day staler than
-// Treasury already had it (Nov 16: FRED's latest was Nov 12, Treasury had
-// Nov 13). fred.ts uses this only to FILL dates FRED hasn't posted yet.
+// stored FRED value Sep 1 - Nov 12 matched to the basis point). Treasury
+// posts each day's curve that afternoon; H.15 posts it the next business
+// day and FRED after that, so a 10am-ET ingest saw the 10Y a full business
+// day staler than Treasury already had it (Nov 16: FRED's latest was
+// Nov 12, Treasury had Nov 13). fred.ts uses this only to FILL dates FRED
+// hasn't posted yet.
+//
+// The real (TIPS) curve is the same arrangement for FRED's DFII10 (verified
+// 2026-11-16: 50 of 50 Sep-Nov dates identical).
 //
 // The CSV download behind Treasury's "Daily Treasury Rates" page: keyless,
 // one month per request, newest date first. Not a versioned API, so the
 // columns are found by header text and a missing one throws -- the caller
 // treats any failure as "FRED-only this run".
-export const PAR_CURVE_COLUMNS: Record<string, string> = {
-  "3 Mo": "DGS3MO",
-  "2 Yr": "DGS2",
-  "5 Yr": "DGS5",
-  "10 Yr": "DGS10",
-  "30 Yr": "DGS30",
+export type TreasuryCurve = "daily_treasury_yield_curve" | "daily_treasury_real_yield_curve";
+
+// Header label -> FRED series id. Labels differ in case between the two
+// tables ("10 Yr" nominal, "10 YR" real), exactly as Treasury publishes them.
+export const CURVE_COLUMNS: Record<TreasuryCurve, Record<string, string>> = {
+  daily_treasury_yield_curve: {
+    "3 Mo": "DGS3MO",
+    "2 Yr": "DGS2",
+    "5 Yr": "DGS5",
+    "10 Yr": "DGS10",
+    "30 Yr": "DGS30",
+  },
+  daily_treasury_real_yield_curve: {
+    "10 YR": "DFII10",
+  },
 };
 
-export interface ParCurveRow {
+export interface CurveRow {
   date: string; // YYYY-MM-DD
   yields: Record<string, number>; // keyed by FRED series id
   raw: Record<string, string>; // the row's tenor columns as published
 }
 
-const PAR_CURVE_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/all";
+const CURVE_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/all";
 
-export function parseParCurveCsv(text: string): ParCurveRow[] {
+export function parseCurveCsv(text: string, columns: Record<string, string>): CurveRow[] {
   // A month with no trading days yet (the 1st, before the first close) comes
   // back as HTTP 200 with an empty body, not a header-only CSV.
   if (text.trim() === "") return [];
   const lines = text.trim().split(/\r?\n/);
   const header = (lines[0] ?? "").split(",").map((h) => h.replace(/"/g, "").trim());
   const dateCol = header.indexOf("Date");
-  const cols = Object.entries(PAR_CURVE_COLUMNS).map(([label, seriesId]) => ({ label, seriesId, idx: header.indexOf(label) }));
+  const cols = Object.entries(columns).map(([label, seriesId]) => ({ label, seriesId, idx: header.indexOf(label) }));
   const missing = cols.filter((c) => c.idx < 0).map((c) => c.label);
   if (dateCol < 0 || missing.length > 0) {
-    throw new Error(`Treasury par curve CSV missing column(s) ${[dateCol < 0 ? "Date" : "", ...missing].filter(Boolean).join(", ")}; header was: ${header.join(" | ")}`);
+    throw new Error(`Treasury curve CSV missing column(s) ${[dateCol < 0 ? "Date" : "", ...missing].filter(Boolean).join(", ")}; header was: ${header.join(" | ")}`);
   }
-  const rows: ParCurveRow[] = [];
+  const rows: CurveRow[] = [];
   for (const line of lines.slice(1)) {
     const cells = line.split(",").map((c) => c.replace(/"/g, "").trim());
     const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(cells[dateCol] ?? "");
     if (!m) continue;
-    const row: ParCurveRow = { date: `${m[3]}-${m[1]}-${m[2]}`, yields: {}, raw: {} };
+    const row: CurveRow = { date: `${m[3]}-${m[1]}-${m[2]}`, yields: {}, raw: {} };
     for (const c of cols) {
       const cell = cells[c.idx] ?? "";
       row.raw[c.label] = cell;
@@ -262,18 +275,18 @@ export function parseParCurveCsv(text: string): ParCurveRow[] {
 
 /** Current and previous calendar month (UTC), so the first business days of
  * a month still see the last days of the one before. */
-export async function fetchTreasuryParCurve(now: Date = new Date()): Promise<ParCurveRow[]> {
+export async function fetchTreasuryCurve(curve: TreasuryCurve, now: Date = new Date()): Promise<CurveRow[]> {
   const months = [0, 1].map((back) => {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
     return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   });
-  const rows: ParCurveRow[] = [];
+  const rows: CurveRow[] = [];
   for (const month of months) {
-    const url = `${PAR_CURVE_URL}/${month}?type=daily_treasury_yield_curve&field_tdr_date_value_month=${month}&page&_format=csv`;
+    const url = `${CURVE_URL}/${month}?type=${curve}&field_tdr_date_value_month=${month}&page&_format=csv`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Treasury par curve ${month}: HTTP ${res.status}`);
-    rows.push(...parseParCurveCsv(await res.text()));
+    if (!res.ok) throw new Error(`Treasury ${curve} ${month}: HTTP ${res.status}`);
+    rows.push(...parseCurveCsv(await res.text(), CURVE_COLUMNS[curve]));
   }
-  if (rows.length === 0) throw new Error("Treasury par curve returned no rows for the current or previous month");
+  if (rows.length === 0) throw new Error(`Treasury ${curve} returned no rows for the current or previous month`);
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }

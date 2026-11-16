@@ -1,7 +1,8 @@
 import { writeDataPoints, getLatestValue, type DataPoint } from "./lib/supabase.js";
 import { checkPlausibility } from "./lib/plausibility.js";
 import { fetchFred } from "./sources/fred.js";
-import { fetchYahoo, fetchYahooMove } from "./sources/yahoo.js";
+import { fetchYahoo, fetchYahooMove, fetchYahooCopper } from "./sources/yahoo.js";
+import { fetchOfrFsi } from "./sources/ofr.js";
 import { fetchEia } from "./sources/eia.js";
 import { fetchCboe } from "./sources/cboe.js";
 import { fetchCftc } from "./sources/cftc.js";
@@ -54,6 +55,10 @@ async function main() {
     // this replaced FRED's own VIXCLS.
     runSource("Yahoo", true, fetchYahoo),
     runSource("YahooMOVE", false, fetchYahooMove), // context-only (E2) — never fails the run
+    // Context-only, never fail the run: daily copper (replaces the ~2-month-
+    // late IMF monthly as the displayed reading) and the daily OFR stress index.
+    runSource("YahooCopper", false, fetchYahooCopper),
+    runSource("OFR", false, fetchOfrFsi),
     runSource("EIA", true, fetchEia),
     // CBOE is best-effort, not required: it's supplementary sentiment data,
     // not one of the 6 canonical crash indicators. Don't fail the whole run

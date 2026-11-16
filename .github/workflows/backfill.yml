@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "Leave empty for the full backfill, or 'positioning' for just CFTC/FINRA/CBOE"
+        description: "Leave empty for the full backfill, 'positioning' for just CFTC/FINRA/CBOE, or 'macro' for just copper futures + OFR stress index"
         required: false
         default: ""
 

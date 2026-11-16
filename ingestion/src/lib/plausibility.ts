@@ -55,6 +55,15 @@ const PLAUSIBILITY_RULES: Record<string, PlausibilityRule> = {
   // so they get the same bound as a second-source sanity check.
   DGS3MO: { kind: "absolute", min: 0, max: 20 },
   DGS5: { kind: "absolute", min: 0, max: 20 },
+  // Real yield and breakeven, also Treasury-filled. DFII10 history runs
+  // about -1.2% (2021) to 3%; T10YIE about 0% (2008) to 3%.
+  DFII10: { kind: "absolute", min: -5, max: 10 },
+  T10YIE: { kind: "absolute", min: -5, max: 10 },
+  // COMEX copper, $/lb: 2000-2026 ran about $0.60 to $6.50. A value outside
+  // this is a unit mixup ($/t or cents) or a garbled response.
+  COPPER_FUT: { kind: "absolute", min: 0.2, max: 30 },
+  // OFR FSI: 2000-2026 ran about -5 to +29 (Nov 2008).
+  OFR_FSI: { kind: "absolute", min: -15, max: 60 },
   // Sahm Rule: typically 0-1, real recessions have pushed it toward 2-3.
   SAHMREALTIME: { kind: "absolute", min: -1, max: 10 },
   UNRATE: { kind: "absolute", min: 0, max: 30 },

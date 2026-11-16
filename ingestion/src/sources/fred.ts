@@ -1,6 +1,6 @@
 import type { DataPoint } from "../lib/supabase.js";
 import { fetchYahooDailyCloses } from "./yahoo.js";
-import { fetchTreasuryParCurve, PAR_CURVE_COLUMNS, type ParCurveRow } from "./treasury.js";
+import { fetchTreasuryCurve, CURVE_COLUMNS, type CurveRow, type TreasuryCurve } from "./treasury.js";
 
 // FRED API is stable and well documented: https://fred.stlouisfed.org/docs/api/fred/
 // Series IDs below match the exact list in reference_docs/archive/crash-check-system-build-spec.md
@@ -429,21 +429,23 @@ async function fetchRecentSofrPolicySpread(apiKey: string): Promise<DataPoint[]>
   return buildSofrPolicySpread(sofr, toPolicy("IORB", iorb));
 }
 
-// Same-day freshness for the Treasury curve (DGS3MO/2/5/10/30), the same
-// pattern as SP500's Yahoo fill below: FRED lags Treasury's own par yield
-// curve by a business day (see fetchTreasuryParCurve), and the 10Y is a
-// gating indicator whose 2-day confirmation that lag delays. Treasury rows
-// are written only for dates AFTER FRED's latest for that series; FRED
-// stays authoritative and overwrites them on the same (series_id,
-// observation_date) key once it catches up, so never a duplicate. All five
-// tenors fill from the same Treasury dates, so the 2s10s slope and the
-// 10Y-3M recession probit never pair a fresh 10Y with a stale short end.
+// Same-day freshness for the Treasury curve (DGS3MO/2/5/10/30, plus the
+// 10Y TIPS real yield DFII10), the same pattern as SP500's Yahoo fill
+// below: FRED lags Treasury's own curves by a business day (see
+// fetchTreasuryCurve), and the 10Y is a gating indicator whose 2-day
+// confirmation that lag delays. Treasury rows are written only for dates
+// AFTER FRED's latest for that series; FRED stays authoritative and
+// overwrites them on the same (series_id, observation_date) key once it
+// catches up, so never a duplicate. All tenors fill from the same Treasury
+// dates, so the 2s10s slope and the 10Y-3M recession probit never pair a
+// fresh 10Y with a stale short end.
 export function buildTreasuryCurveFill(
   fredLatest: Map<string, { date: string; value: number }>,
-  rows: ParCurveRow[],
+  rows: CurveRow[],
+  curve: TreasuryCurve,
 ): DataPoint[] {
   const points: DataPoint[] = [];
-  for (const [label, seriesId] of Object.entries(PAR_CURVE_COLUMNS)) {
+  for (const [label, seriesId] of Object.entries(CURVE_COLUMNS[curve])) {
     const fred = fredLatest.get(seriesId);
     if (!fred) continue; // nothing to anchor on -- don't guess a window
     for (const row of rows) {
@@ -456,13 +458,47 @@ export function buildTreasuryCurveFill(
       points.push({
         series_id: seriesId,
         source: "TREASURY",
-        source_series_code: `daily_treasury_yield_curve:${label}`,
+        source_series_code: `${curve}:${label}`,
         observation_date: row.date,
         value,
         unit: "percent",
         raw_payload: { date: row.date, [label]: row.raw[label], filled_because: "not yet published on FRED" },
       });
     }
+  }
+  return points;
+}
+
+// FRED's T10YIE is exactly DGS10 - DFII10 (verified 2026-11-16: 966 of 966
+// days since 2023 match to the basis point), so a day both legs were
+// Treasury-filled gets its breakeven too -- only for dates after FRED's own
+// latest T10YIE, and overwritten by FRED's row once it lands.
+export function deriveBreakevenFill(
+  fredLatest: Map<string, { date: string; value: number }>,
+  filled: DataPoint[],
+): DataPoint[] {
+  const fredT10yie = fredLatest.get("T10YIE");
+  if (!fredT10yie) return [];
+  const byDate = new Map<string, { nominal?: number; real?: number }>();
+  for (const p of filled) {
+    if (p.series_id !== "DGS10" && p.series_id !== "DFII10") continue;
+    const entry = byDate.get(p.observation_date) ?? {};
+    if (p.series_id === "DGS10") entry.nominal = p.value;
+    else entry.real = p.value;
+    byDate.set(p.observation_date, entry);
+  }
+  const points: DataPoint[] = [];
+  for (const [date, { nominal, real }] of byDate) {
+    if (nominal === undefined || real === undefined || date <= fredT10yie.date) continue;
+    points.push({
+      series_id: "T10YIE",
+      source: "TREASURY_DERIVED",
+      source_series_code: "DGS10 - DFII10",
+      observation_date: date,
+      value: Math.round((nominal - real) * 100) / 100,
+      unit: "percent",
+      raw_payload: { computed_from: "Treasury 10Y nominal - 10Y real (FRED's own T10YIE formula)", nominal, real, filled_because: "not yet published on FRED" },
+    });
   }
   return points;
 }
@@ -708,11 +744,17 @@ export async function fetchFred(): Promise<DataPoint[]> {
 
   // Best-effort like the SP500 Yahoo fill: a Treasury outage or format
   // change degrades to FRED-only (the previous behavior), never fails FRED.
-  try {
-    points.push(...buildTreasuryCurveFill(fredLatest, await fetchTreasuryParCurve()));
-  } catch (err) {
-    console.warn(`  Treasury curve fill skipped, FRED-only this run — ${err instanceof Error ? err.message : String(err)}`);
+  // Each curve is isolated, so a broken real curve still leaves the nominal
+  // fill (the gating 10Y) in place.
+  const filled: DataPoint[] = [];
+  for (const curve of Object.keys(CURVE_COLUMNS) as TreasuryCurve[]) {
+    try {
+      filled.push(...buildTreasuryCurveFill(fredLatest, await fetchTreasuryCurve(curve), curve));
+    } catch (err) {
+      console.warn(`  Treasury ${curve} fill skipped, FRED-only this run — ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+  points.push(...filled, ...deriveBreakevenFill(fredLatest, filled));
 
   // Context-only and derived, so a failure here degrades to "no new spread
   // rows today" (the tool then reports the last stored value with its date)

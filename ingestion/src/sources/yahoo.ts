@@ -197,3 +197,42 @@ export async function fetchYahooBackfill(): Promise<DataPoint[]> {
     raw_payload: obs,
   }));
 }
+
+// COMEX copper futures (front month, $/lb), added 2026-11-16 to replace
+// FRED's PCOPPUSDM as the displayed copper reading: that IMF series is a
+// monthly AVERAGE that lands ~2 months late (Sep 2026 was the latest on
+// Nov 16), while this is a daily close. A different measure (front-month
+// futures in $/lb, not the IMF's LME-based monthly mean in $/t), so it is
+// stored under its own series_id rather than mixed into PCOPPUSDM, which
+// keeps ingesting for its 1990+ monthly history. Same unofficial-endpoint
+// risk as VIX/MOVE, and context-only like MOVE: optional in ingest.ts.
+// Continuous front-month: roll days can step a few cents, immaterial at
+// the trend scale this is read at. Yahoo serves HG=F from 2000-08-30.
+const YAHOO_COPPER_SYMBOL = "HG=F";
+
+function toCopperPoint(obs: { date: string; close: number }): DataPoint {
+  return {
+    series_id: "COPPER_FUT",
+    source: "YAHOO",
+    source_series_code: YAHOO_COPPER_SYMBOL,
+    observation_date: obs.date,
+    value: obs.close,
+    unit: "usd_per_lb",
+    raw_payload: obs,
+  };
+}
+
+export async function fetchYahooCopper(): Promise<DataPoint[]> {
+  const series = await fetchYahooDailyCloses(YAHOO_COPPER_SYMBOL, "range=3mo");
+  if (series.length === 0) {
+    throw new Error("Yahoo copper request returned no completed sessions in the last 3 months");
+  }
+  return series.map(toCopperPoint);
+}
+
+export async function fetchYahooCopperBackfill(): Promise<DataPoint[]> {
+  const period2 = Math.floor(Date.now() / 1000);
+  const series = await fetchYahooDailyCloses(YAHOO_COPPER_SYMBOL, `period1=0&period2=${period2}`);
+  console.log(`  Yahoo backfill: COPPER_FUT — ${series.length} observations since ${series[0]?.date ?? "n/a"}`);
+  return series.map(toCopperPoint);
+}

@@ -14,7 +14,7 @@ import { computeRoleFit, tickersNeeded, type PriceSeries } from "./lib/roleFit.j
 import { fetchYahooDaily, fetchSeriesHistory } from "./lib/roleFitData.js";
 import { resolveInstruments } from "./lib/instruments.js";
 import { readWatchlist, writeWatchlist, computeWatchlistStatus } from "./lib/watchlist.js";
-import { computeSeriesDelta } from "./lib/seriesDelta.js";
+import { computeSeriesDelta, getValueOnOrBefore, subtractDays } from "./lib/seriesDelta.js";
 import { computeDataFreshness } from "./lib/freshness.js";
 import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.js";
 import { computeFedEventTrigger, computeInflationPrintTrigger, computeFiscalEventTrigger } from "./lib/economicCalendar.js";
@@ -566,9 +566,10 @@ server.registerTool(
       "breadth, gold price (GLD), copper price, Bitcoin price, and sector capital-rotation. " +
       "Informational only — never part of the 6-indicator wave-authorization gate. gold_price is " +
       "directional context for the existing Type C/Type E sleeve allocation, not a new signal. " +
-      "copper_price_usd_per_ton is an informational leading-indicator cross-check for the Type B " +
+      "copper_price_usd_per_lb is an informational leading-indicator cross-check for the Type B " +
       "(Recession) crash-type diagnosis — not one of that diagnosis's hard trigger criteria " +
-      "(unemployment/Sahm/CPI), which stay unchanged; monthly cadence (IMF-sourced), not daily. " +
+      "(unemployment/Sahm/CPI), which stay unchanged; daily COMEX futures close with a 3-month change. " +
+      "ofr_financial_stress_index is the daily OFR stress score (0 = average), fresher than the weekly STLFSI4/NFCI. " +
       "bitcoin_price is tracked for " +
       "awareness only — verified NOT a crash hedge (fell more than equities in both 2020 and 2022) " +
       "— never treat it as confirming or contradicting the crash thesis. sector_rotation gives real " +
@@ -635,7 +636,7 @@ server.registerTool(
       "regional_bank_stress (KRE vs SPY) — informational only, never part of the wave gate.",
   },
   withLogging("get_context_indicators", async () => {
-    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, repoStressSpread, moveDelta, [latestCrashCheck]] =
+    const [stlfsi4, nfci, t10yie, drtscilm, rrpontsyd, dgs10, dgs2, dgs30, dgs3mo, icsa, ccsa, jtshir, drcclacbs, wti, retailSales, bamlIg, recentGradUnemployment, sofr, dtwexbgs, nfciRisk, nfciCredit, dfii10, recessionProbSmoothed, copper, ofrFsi, dff, debtToGdp, walcl, wtregen, termPremium10y, ticForeignTotal, ticForeignOfficial, gprIndex, taylorRuleGap, primaryBalance, netInterestBurden, govtSpendingShare, goldRealYieldCorrelation, stockBondCorrelation, debtDynamics, inflationTermPremium, auctionDemand, fedAbsorption, ratesDecomposition, iwmDelta, spyDelta, rspDelta, kreDelta, goldDelta, bitcoinDelta, sectorRotation, insiderActivity, marketPositioning, repoStressSpread, moveDelta, [latestCrashCheck]] =
       await Promise.all([
         getLatestDataPoint("STLFSI4"),
         getLatestDataPoint("NFCI"),
@@ -660,7 +661,8 @@ server.registerTool(
         getLatestDataPoint("NFCICREDIT"),
         getLatestDataPoint("DFII10"),
         getLatestDataPoint("RECPROUSM156N"),
-        getLatestDataPoint("PCOPPUSDM"),
+        getLatestDataPoint("COPPER_FUT"),
+        getLatestDataPoint("OFR_FSI"),
         getLatestDataPoint("DFF"),
         getLatestDataPoint("GFDEGDQ188S"),
         getLatestDataPoint("WALCL"),
@@ -846,7 +848,19 @@ server.registerTool(
           }
         : null;
 
+    // Copper's trend, not one day's close: % change vs. the close on or
+    // before 91 calendar days earlier (anchored to copper's own latest date).
+    const copperThreeMonthsAgo = copper ? await getValueOnOrBefore("COPPER_FUT", subtractDays(copper.observation_date, 91)) : null;
+    const copperChange3mPct =
+      copper && copperThreeMonthsAgo ? Math.round((copper.value / copperThreeMonthsAgo - 1) * 1000) / 10 : null;
+
     return json({
+      ofr_financial_stress_index: ofrFsi && {
+        ...ofrFsi,
+        signal:
+          (ofrFsi.value > 0 ? "above-average stress" : "below-average stress") +
+          " -- OFR (US Treasury) daily index of 33 market measures, 0 = average, peaked ~29 in Nov 2008. Daily, so it leads the weekly STLFSI4/NFCI below; context only.",
+      },
       financial_stress_index: stlfsi4 && { ...stlfsi4, signal: stlfsi4.value > 0 ? "above-average stress" : "below-average stress" },
       national_financial_conditions: nfci && { ...nfci, signal: nfci.value > 0 ? "tighter than average" : "looser than average" },
       breakeven_inflation_10y: t10yie,
@@ -917,9 +931,10 @@ server.registerTool(
       equal_weight_breadth: equalWeightBreadth,
       regional_bank_stress: regionalBankStress,
       net_liquidity: netLiquidity,
-      copper_price_usd_per_ton: copper && {
+      copper_price_usd_per_lb: copper && {
         ...copper,
-        signal: "\"Dr. Copper\" -- a classic leading growth/recession-cycle indicator. Informational cross-check for the Type B (Recession) crash-type diagnosis (crash-check-rules.md Stage 1), NOT one of that diagnosis's hard trigger criteria (unemployment/Sahm/CPI, unchanged) and never part of the 6-indicator wave-authorization gate. Monthly cadence (IMF-sourced via FRED) -- a single month's move means little, read the trend.",
+        change_3m_pct: copperChange3mPct,
+        signal: "\"Dr. Copper\" -- a classic leading growth/recession-cycle indicator. Informational cross-check for the Type B (Recession) crash-type diagnosis (crash-check-rules.md Stage 1), NOT one of that diagnosis's hard trigger criteria (unemployment/Sahm/CPI, unchanged) and never part of the 6-indicator wave-authorization gate. Daily COMEX front-month futures close (Yahoo HG=F) -- read change_3m_pct, not one day's move.",
       },
       effective_fed_funds_rate_pct: dff && {
         ...dff,

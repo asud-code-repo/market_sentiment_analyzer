@@ -1,6 +1,7 @@
 import { writeDataPoints } from "./lib/supabase.js";
 import { fetchFredBackfill } from "./sources/fred.js";
-import { fetchYahooBackfill, fetchYahooMoveBackfill } from "./sources/yahoo.js";
+import { fetchYahooBackfill, fetchYahooMoveBackfill, fetchYahooCopperBackfill } from "./sources/yahoo.js";
+import { fetchOfrFsiBackfill } from "./sources/ofr.js";
 import { fetchMassiveBackfill, partitionPrivatePoints } from "./sources/massive.js";
 import { fetchSsgaBackfill } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
@@ -40,6 +41,27 @@ async function backfillPositioning(): Promise<Awaited<ReturnType<typeof fetchCft
   return points;
 }
 
+// Daily macro-context sources added 2026-11-16 (copper futures 2000+, OFR
+// stress index 2000+). Isolated like positioning: one failing shouldn't
+// lose the other.
+async function backfillMacro(): Promise<Awaited<ReturnType<typeof fetchOfrFsiBackfill>>> {
+  const points: Awaited<ReturnType<typeof fetchOfrFsiBackfill>> = [];
+  for (const [label, fn] of [
+    ["COMEX copper futures (Yahoo HG=F, 2000-present)", fetchYahooCopperBackfill],
+    ["OFR Financial Stress Index (2000-present)", fetchOfrFsiBackfill],
+  ] as const) {
+    try {
+      console.log(`Backfilling ${label}...`);
+      const pts = await fn();
+      console.log(`${label}: ${pts.length} total observations.`);
+      points.push(...pts);
+    } catch (err) {
+      console.error(`${label} backfill failed, continuing without it: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return points;
+}
+
 async function main() {
   // `--only=positioning` runs just the positioning sources -- lets a newly
   // added source be backfilled without re-pulling every FRED series (and
@@ -50,6 +72,13 @@ async function main() {
     console.log(`Writing ${positioningPoints.length} data points to Supabase...`);
     await writeDataPoints(positioningPoints);
     console.log("Positioning backfill complete.");
+    return;
+  }
+  if (process.argv.includes("--only=macro")) {
+    const macroPoints = await backfillMacro();
+    console.log(`Writing ${macroPoints.length} data points to Supabase...`);
+    await writeDataPoints(macroPoints);
+    console.log("Macro backfill complete.");
     return;
   }
 
@@ -125,8 +154,9 @@ async function main() {
   }
 
   const positioningPoints = await backfillPositioning();
+  const macroPoints = await backfillMacro();
 
-  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints, ...positioningPoints];
+  const allPoints = [...fredPoints, ...yahooPoints, ...tickerPoints, ...ssgaPoints, ...gprPoints, ...ticPoints, ...treasuryPoints, ...positioningPoints, ...macroPoints];
   console.log(`Writing ${allPoints.length} data points to Supabase...`);
   const { publicPoints, privatePoints } = partitionPrivatePoints(allPoints);
   await writeDataPoints(publicPoints);
