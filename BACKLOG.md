@@ -38,9 +38,9 @@ full history of what was built and how lives in project memory, not here.
   builds slowly. In a fast crash (Feb 2020) the user would only learn a
   wave trigger fired on next opening the dashboard or running a Claude
   check. Proposal: add transition-only pushes when the S&P crosses a wave
-  drawdown threshold (personal policy) and when VIX crosses 35, and add
-  a post-close run to `ingest.yml` (currently 10am ET only) so the alert
-  lands the same day. Uses data already ingested, no new sources. Confirm
+  drawdown threshold (personal policy) and when VIX crosses 35. The
+  post-close run this needed so the alert lands the same day now exists
+  (6pm ET `ingest.yml` run, added 2026-11-16). Uses data already ingested, no new sources. Confirm
   exact thresholds with the user before wiring; informational alert only,
   doesn't change the 3-of-6 wave gate.
 

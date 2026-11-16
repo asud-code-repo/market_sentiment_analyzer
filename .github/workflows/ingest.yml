@@ -2,12 +2,22 @@ name: Daily ingestion + classification
 
 on:
   schedule:
-    # Always 10am US Eastern, Monday-Saturday — 4 hours of buffer before the
-    # 2pm scheduled Claude Desktop "run crash check" (see project-instructions.md),
-    # comfortably absorbing the cron-delay risk found 2026-07-14 (GitHub's
-    # scheduler has been observed running this workflow up to 62 minutes
-    # late). get_indicator_panel's data_freshness check is the actual
-    # backstop regardless of this buffer. GitHub Actions cron is fixed UTC
+    # Two runs a day, US Eastern:
+    # - 6pm Monday-Friday (added 2026-11-16): the run the daily crash check
+    #   reads. By then VIX, the S&P (Yahoo, completed sessions) and the
+    #   Treasury curve have posted TODAY's close; a morning run only ever sees
+    #   the previous day's (on 2026-11-16 the 10am run read VIX 19.3, the
+    #   close was 22.9 = AMBER). The HY spread still lags a day (ICE posts the
+    #   next morning). The scheduled check (a local Task Scheduler job
+    #   running Claude Code at 6:30pm) waits for this run's crash_checks row before
+    #   starting, so GitHub's cron delays (up to 62 minutes seen 2026-07-14)
+    #   can't make it read the morning data.
+    # - 10am Monday-Saturday: picks up what posts in the morning (HY spread,
+    #   FRED's own values for the prior day, 8:30am releases) so the dashboard
+    #   and any daytime check are current. Both runs write the same
+    #   (series, date) keys, so the evening run overwrites, never duplicates.
+    # get_indicator_panel's data_freshness check is the backstop for a
+    # missed run either way. GitHub Actions cron is fixed UTC
     # and doesn't auto-adjust for daylight saving, so this is split into two
     # entries — one per UTC offset — rather than a single year-round
     # expression. Only one of the two ever matches on a given day since the
@@ -28,6 +38,11 @@ on:
     # double-count; mcp_server/src/lib/freshness.ts expects this run.
     - cron: "0 14 * 3-10 1-6"    # Mar-Oct (EDT, UTC-4) — 14:00 UTC = 10am EDT
     - cron: "0 15 * 11,12,1,2 1-6" # Nov-Feb (EST, UTC-5) — 15:00 UTC = 10am EST
+    # Evening run, Mon-Fri. Same month approximation: in the ~2 weeks of March
+    # before the switch to EDT it fires at 5pm EST (VIX/S&P still in; the
+    # Treasury curve may not be), and in early November at 7pm EDT.
+    - cron: "0 22 * 3-10 1-5"     # Mar-Oct (EDT) — 22:00 UTC = 6pm EDT
+    - cron: "0 23 * 11,12,1,2 1-5" # Nov-Feb (EST) — 23:00 UTC = 6pm EST
   workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab
 
 jobs:

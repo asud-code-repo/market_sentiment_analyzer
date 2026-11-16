@@ -49,7 +49,7 @@ The full write-up is in
 FRED · Yahoo · Treasury · EIA · CBOE · CFTC · FINRA · SEC EDGAR
 State Street · Caldara-Iacoviello GPR · Polymarket · Massive
         │
-        ▼  GitHub Actions, 10am ET Mon–Sat (SEC 13F: manual, quarterly)
+        ▼  GitHub Actions, 10am ET Mon–Sat + 6pm ET Mon–Fri (SEC 13F: manual, quarterly)
 ┌────────────────┐     ┌───────────────────────┐     ┌────────────────┐
 │ ingestion/      │────▶│ Supabase              │◀───▶│ rule_engine/   │
 │ fetch, normalise│     │ public: market data,  │     │ panel, stress  │
@@ -68,7 +68,7 @@ State Street · Caldara-Iacoviello GPR · Polymarket · Massive
 │ evaluates waves   │   │                       │   │                       │
 └────────┬─────────┘   └──────────────────────┘   └──────────────────────┘
          │
-   Claude Desktop: "run crash check" (scheduled daily, 2pm ET)
+   Claude: "run crash check" (scheduled weekdays, 6:30pm ET, after the close)
    and "run portfolio review" (on demand)
 ```
 
