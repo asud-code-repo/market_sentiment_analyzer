@@ -2675,7 +2675,7 @@ function renderFiscalLedger(cards) {
 }
 
 const MACRO_FRESH = [
-  ["Treasury yields, TIPS, term premium", "Daily · FRED, ~1 day behind", ["DGS10", "THREEFYTP10"], "day"],
+  ["Treasury yields, TIPS, term premium", "Daily · FRED, Treasury fills the yields' lag", ["DGS10", "THREEFYTP10"], "day"],
   ["Dollar index", "Daily · Federal Reserve", ["DTWEXBGS"], "day"],
   ["Fed balance sheet · reverse repo", "Weekly · daily", ["WALCL", "RRPONTSYD"], "day"],
   ["Financial conditions (NFCI, stress index)", "Weekly", ["NFCI", "STLFSI4"], "day"],
@@ -3160,7 +3160,7 @@ const STRESS_FRESH = [
   ["VIX", "Daily close · Yahoo, next morning", "vix", "daily"],
   ["HY spread", "Daily · FRED, about 1 day behind", "hy_spread", "daily"],
   ["S&amp;P 500 (drawdown)", "Daily · FRED, Yahoo fills the lag", "sp_drawdown", "daily"],
-  ["10Y Treasury", "Daily · FRED, 1–2 days behind", "treasury_10y", "daily"],
+  ["10Y Treasury", "Daily · FRED, Treasury fills the lag", "treasury_10y", "daily"],
   ["Sahm rule", "Monthly · BLS jobs report", "sahm_rule", "monthly"],
 ];
 function stressFreshnessPop(row) {

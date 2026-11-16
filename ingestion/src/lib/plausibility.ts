@@ -51,6 +51,10 @@ const PLAUSIBILITY_RULES: Record<string, PlausibilityRule> = {
   DGS10: { kind: "absolute", min: 0, max: 20 },
   DGS2: { kind: "absolute", min: 0, max: 20 },
   DGS30: { kind: "absolute", min: 0, max: 20 },
+  // Also filled from Treasury's par curve (see fred.ts buildTreasuryCurveFill),
+  // so they get the same bound as a second-source sanity check.
+  DGS3MO: { kind: "absolute", min: 0, max: 20 },
+  DGS5: { kind: "absolute", min: 0, max: 20 },
   // Sahm Rule: typically 0-1, real recessions have pushed it toward 2-3.
   SAHMREALTIME: { kind: "absolute", min: -1, max: 10 },
   UNRATE: { kind: "absolute", min: 0, max: 30 },

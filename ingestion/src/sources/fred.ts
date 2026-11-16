@@ -1,5 +1,6 @@
 import type { DataPoint } from "../lib/supabase.js";
 import { fetchYahooDailyCloses } from "./yahoo.js";
+import { fetchTreasuryParCurve, PAR_CURVE_COLUMNS, type ParCurveRow } from "./treasury.js";
 
 // FRED API is stable and well documented: https://fred.stlouisfed.org/docs/api/fred/
 // Series IDs below match the exact list in reference_docs/archive/crash-check-system-build-spec.md
@@ -428,6 +429,44 @@ async function fetchRecentSofrPolicySpread(apiKey: string): Promise<DataPoint[]>
   return buildSofrPolicySpread(sofr, toPolicy("IORB", iorb));
 }
 
+// Same-day freshness for the Treasury curve (DGS3MO/2/5/10/30), the same
+// pattern as SP500's Yahoo fill below: FRED lags Treasury's own par yield
+// curve by a business day (see fetchTreasuryParCurve), and the 10Y is a
+// gating indicator whose 2-day confirmation that lag delays. Treasury rows
+// are written only for dates AFTER FRED's latest for that series; FRED
+// stays authoritative and overwrites them on the same (series_id,
+// observation_date) key once it catches up, so never a duplicate. All five
+// tenors fill from the same Treasury dates, so the 2s10s slope and the
+// 10Y-3M recession probit never pair a fresh 10Y with a stale short end.
+export function buildTreasuryCurveFill(
+  fredLatest: Map<string, { date: string; value: number }>,
+  rows: ParCurveRow[],
+): DataPoint[] {
+  const points: DataPoint[] = [];
+  for (const [label, seriesId] of Object.entries(PAR_CURVE_COLUMNS)) {
+    const fred = fredLatest.get(seriesId);
+    if (!fred) continue; // nothing to anchor on -- don't guess a window
+    for (const row of rows) {
+      const value = row.yields[seriesId];
+      if (value === undefined) continue;
+      if (row.date === fred.date && Math.abs(value - fred.value) > 0.005) {
+        console.warn(`  ${seriesId} ${row.date}: Treasury ${value} differs from FRED ${fred.value} — keeping FRED`);
+      }
+      if (row.date <= fred.date) continue;
+      points.push({
+        series_id: seriesId,
+        source: "TREASURY",
+        source_series_code: `daily_treasury_yield_curve:${label}`,
+        observation_date: row.date,
+        value,
+        unit: "percent",
+        raw_payload: { date: row.date, [label]: row.raw[label], filled_because: "not yet published on FRED" },
+      });
+    }
+  }
+  return points;
+}
+
 // S&P drawdown-from-ATH is one of the 6 canonical indicators, but it needs
 // two numbers FRED's "latest observation" pattern can't give us: today's
 // level AND the running all-time-high. There's no "give me the max" FRED
@@ -650,8 +689,10 @@ export async function fetchFred(): Promise<DataPoint[]> {
   }
 
   const points: DataPoint[] = [];
+  const fredLatest = new Map<string, { date: string; value: number }>();
   for (const series of FRED_SERIES) {
     const obs = await fetchLatestObservation(series.id, apiKey);
+    fredLatest.set(series.id, { date: obs.date, value: Number(obs.value) });
     points.push({
       series_id: series.id,
       source: "FRED",
@@ -664,6 +705,14 @@ export async function fetchFred(): Promise<DataPoint[]> {
   }
 
   points.push(...(await fetchSp500LevelAndAth(apiKey)));
+
+  // Best-effort like the SP500 Yahoo fill: a Treasury outage or format
+  // change degrades to FRED-only (the previous behavior), never fails FRED.
+  try {
+    points.push(...buildTreasuryCurveFill(fredLatest, await fetchTreasuryParCurve()));
+  } catch (err) {
+    console.warn(`  Treasury curve fill skipped, FRED-only this run — ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Context-only and derived, so a failure here degrades to "no new spread
   // rows today" (the tool then reports the last stored value with its date)
