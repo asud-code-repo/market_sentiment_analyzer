@@ -18,24 +18,23 @@ on:
     #   (series, date) keys, so the evening run overwrites, never duplicates.
     # get_indicator_panel's data_freshness check is the backstop for a
     # missed run either way. GitHub Actions cron is fixed UTC
-    # and doesn't auto-adjust for daylight saving, so this is split into two
-    # entries — one per UTC offset — rather than a single year-round
-    # expression. Only one of the two ever matches on a given day since the
-    # month ranges don't overlap.
+    # and doesn't auto-adjust for daylight saving, so each run is split into
+    # two entries — one per UTC offset — rather than a single year-round
+    # expression. Only one entry per run ever matches on a given day since
+    # the month ranges don't overlap.
     #
     # Approximated by calendar month, not the exact DST transition date
     # (2nd Sunday of March / 1st Sunday of November) — accurate to within
     # ~1-2 weeks around those two boundaries, off by exactly 1 hour during
-    # that window. A reasonable tradeoff vs. exact date-based logic for a
-    # job whose correctness never depends on the precise trigger time
-    # (it's reading yesterday's close either way, hours before market open).
+    # that window. Fine for the morning run (it reads yesterday's close
+    # either way); the evening run's caveat is noted beside its entries.
     #
-    # Saturday added 2026-11-14: the 10am Friday run can't see Friday's
-    # close (Yahoo stores completed sessions only; FRED lags a day), so
-    # without it a Saturday crash check read Thursday's close. Sunday is
-    # skipped — no Saturday session, it would re-pull Friday. Confirmation
-    # streaks count distinct observation dates, so the extra run can't
-    # double-count; mcp_server/src/lib/freshness.ts expects this run.
+    # Saturday 10am added 2026-11-14 so a Saturday check saw Friday's close.
+    # The Friday 6pm run now already has it, but the Saturday run stays:
+    # mcp_server/src/lib/freshness.ts expects an ingest dated Saturday on a
+    # Saturday. Sunday is skipped (no Saturday session). Confirmation
+    # streaks count distinct observation dates, so extra runs can't
+    # double-count.
     - cron: "0 14 * 3-10 1-6"    # Mar-Oct (EDT, UTC-4) — 14:00 UTC = 10am EDT
     - cron: "0 15 * 11,12,1,2 1-6" # Nov-Feb (EST, UTC-5) — 15:00 UTC = 10am EST
     # Evening run, Mon-Fri. Same month approximation: in the ~2 weeks of March
