@@ -478,6 +478,11 @@
   .pop .bands span { padding:5px 7px; background:var(--sunk); font-size:11px; color:var(--text-muted); }
   .pop .bands span b { display:block; font-size:12px; }
   .pop .bands span.on { box-shadow:inset 0 2px 0 var(--text-primary); }
+  .pop table.closes { width:100%; border-collapse:collapse; margin:4px 0 6px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .pop table.closes th { font:var(--label); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); text-align:right; padding:3px 6px; border-bottom:1px solid var(--hair); }
+  .pop table.closes td { text-align:right; padding:3px 6px; color:var(--text-secondary); border-bottom:1px solid var(--hair); }
+  .pop table.closes th:first-child, .pop table.closes td:first-child { text-align:left; }
+  .pop table.closes tr.rec td { color:var(--text-primary); font-weight:600; }
   .pop .sect { margin:10px 0 4px; font:var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--text-muted); }
   .pop dl { margin:0; display:grid; grid-template-columns:104px 1fr; gap:6px 12px; }
   .pop dt { font-weight:600; color:var(--text-primary); } .pop dd { margin:0; }
@@ -1279,6 +1284,9 @@ const SUPABASE_URL = "https://jophlgbijfahmytkrjly.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_DAU2BkfrG_3-LU_fFKW1og_yVasDG6d";
 
 let ALL_ROWS = []; // all crash_checks rows, ascending by run_at
+// Daily S&P 500 closes as stored in data_points (ascending), loaded with the
+// history charts; shown in the S&P drawdown popover. null until loaded.
+let SP500_CLOSES = null;
 let CURRENT_INDEX = -1;
 
 async function fetchFromSupabase(path) {
@@ -3195,6 +3203,31 @@ const fmtMd = (iso) => {
   const dateOnly = iso.length === 10;
   return new Date(dateOnly ? `${iso}T00:00:00Z` : iso).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(dateOnly ? { timeZone: "UTC" } : {}) });
 };
+// The S&P 500 closes behind a report's drawdown: the last 10 closes up to the
+// report's date (ET), each with its change and its distance below the record
+// close up to that day (same formula as rule_engine's drawdownPct).
+function spClosesHtml(runAt) {
+  if (!SP500_CLOSES) return '<p class="fine">Loading the daily closes…</p>';
+  const asOf = new Date(runAt).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const upto = SP500_CLOSES.filter((r) => r.observation_date <= asOf);
+  if (!upto.length) return "";
+  let max = -Infinity, maxDate = null;
+  const rows = upto.map((r, i) => {
+    if (r.value > max) { max = r.value; maxDate = r.observation_date; }
+    return { ...r, prev: i ? upto[i - 1].value : null, dd: ((max - r.value) / max) * 100, rec: r.value >= max };
+  }).slice(-10).reverse();
+  const fmt = (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const anyFill = rows.some((r) => r.source && r.source !== "FRED");
+  const body = rows.map((r) => {
+    const chg = r.prev == null ? "—" : `${sgn(((r.value - r.prev) / r.prev) * 100, 2)}%`;
+    const src = r.source && r.source !== "FRED" ? "*" : "";
+    return `<tr${r.rec ? ' class="rec"' : ""}><td>${fmtMd(r.observation_date)}${src}</td><td>${fmt(r.value)}</td><td>${chg}</td><td>${r.rec ? "record" : `${r.dd.toFixed(2)}%`}</td></tr>`;
+  }).join("");
+  return `<p class="sect">S&amp;P 500 closes used</p>
+    <table class="closes"><thead><tr><th>Date</th><th>Close</th><th>Day</th><th>Below record</th></tr></thead><tbody>${body}</tbody></table>
+    <p class="fine">Record close: <b>${fmt(max)}</b> on ${fmtMd(maxDate)}. Closes from FRED${anyFill ? "; * = filled from Yahoo until FRED publishes that day" : ""}. The report uses the latest close here.</p>`;
+}
+
 const fmtMonth = (iso) => new Date(`${iso.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 const fmtQuarter = (iso) => `Q${Math.floor((Number(iso.slice(5, 7)) - 1) / 3) + 1} ${iso.slice(0, 4)}`; // works for quarter-start (07-01) and quarter-end (06-30) dates
 
@@ -3332,8 +3365,9 @@ function renderGateLedger(row, idx) {
     if (counts[color] != null) counts[color]++;
     const info = INDICATOR_INFO[g.info];
     const pid = `i-gate-${g.info}`;
+    const closes = g.info === "drawdown" ? `<div class="sp-closes" data-run-at="${row.run_at}">${spClosesHtml(row.run_at)}</div>` : "";
     pops += popHtml(pid, `${info.label} · green if ${info.favorable}`,
-      `<p><b>What it measures.</b> ${info.what}</p><p><b>Why it matters.</b> ${info.why}</p>${g.conf ? "" : '<p class="fine">Judged manually from Fed communication rather than read from a data series, so it has no chart and no date-based streak.</p>'}`);
+      `<p><b>What it measures.</b> ${info.what}</p><p><b>Why it matters.</b> ${info.why}</p>${closes}${g.conf ? "" : '<p class="fine">Judged manually from Fed communication rather than read from a data series, so it has no chart and no date-based streak.</p>'}`, g.info === "drawdown");
     let valHtml = "—", chg = '<span class="chg flat">—</span>', spark = '<span class="spark-na">not a series</span>', streak = "Manual<small>not date-gated</small>";
     if (g.conf) {
       if (typeof value === "number") {
@@ -5107,8 +5141,10 @@ async function main() {
         fetchSeriesHistory("BAMLH0A0HYM2"),
         fetchSeriesHistory("DGS10"),
         fetchSeriesHistory("SAHMREALTIME"),
-        fetchSeriesHistory("SP500"),
+        fetchAllFromSupabase("data_points?select=observation_date,value,source&series_id=eq.SP500&order=observation_date.asc"),
       ]);
+      SP500_CLOSES = sp500History;
+      document.querySelectorAll(".sp-closes").forEach((el) => { el.innerHTML = spClosesHtml(el.dataset.runAt); });
 
       // bands' thresholds/domain caps mirror crash-check-rules.md's
       // 6-Indicator Panel table exactly -- if that table's numbers ever
