@@ -24,7 +24,10 @@
   and the copies listed in AGENTS.md, and this page must never become one
   more copy to keep in sync. Describe concepts only and link to the live
   dashboard for numbers. No personal policy (waves, accounts, watchlist).
-  Theme tokens copied from index.html, same zero-build convention as 404.html.
+  Theme tokens, top bar, section labels, "next" card and footer copy the
+  dashboard's look (index.html, body.rd), same zero-build convention as
+  404.html. The illustrations are the playful part; the frame around them
+  should look like the rest of the site.
 -->
 <style>
   :root {
@@ -32,82 +35,106 @@
     --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#6f6d67;
     --hair:rgba(11,11,11,.09); --hair-strong:rgba(11,11,11,.16);
     --good:#0a8a0a; --good-bg:#e8f7e6;
-    --warning:#b8790a; --warning-bg:#fdf1d8;
-    --critical:#d03b3b; --critical-bg:#fbe7e6;
+    --warning:#a86e08; --warning-bg:#fbf1dc;
+    --critical:#c73434; --critical-bg:#fbe7e6;
     --accent:#2a78d6; --accent-bg:#e7f0fc;
     --ink:#2b2a27; --paper:#ffffff;
     --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --t3: 400 11px/1.35 var(--font-ui);
+    --label: 600 10.5px/1 var(--font-ui);
   }
   @media (prefers-color-scheme: dark) { :root {
     --surface-1:#161615; --page:#0d0d0d; --sunk:#121211;
     --text-primary:#f4f4f1; --text-secondary:#c3c2b7; --text-muted:#9a988f;
     --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.15);
     --good:#2fb52f; --good-bg:#10250f;
-    --warning:#fab219; --warning-bg:#2c2109;
+    --warning:#fab219; --warning-bg:#251c08;
     --critical:#e66767; --critical-bg:#2c1211;
     --accent:#5a9cec; --accent-bg:#132537;
     --ink:#d9d8d2; --paper:#1f1f1d;
   } }
   * { box-sizing:border-box; }
+  :root { color-scheme: light dark; }
   html { scroll-behavior:smooth; }
-  body { margin:0; background:var(--page); color:var(--text-primary); font:400 16px/1.6 var(--font-ui); -webkit-font-smoothing:antialiased; }
+  body { margin:0; background:var(--page); color:var(--text-primary); font:400 14px/1.6 var(--font-ui); -webkit-font-smoothing:antialiased; }
   a { color:var(--accent); }
-  .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; height:46px; padding:0 24px; border-bottom:1px solid var(--hair); }
-  .brand { font:600 13px/1 var(--font-ui); color:var(--text-primary); text-decoration:none; }
+  .lbl { font:var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--text-muted); }
+
+  /* top bar: same as the dashboard's */
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; height:46px; padding:0 28px; border-bottom:1px solid var(--hair); }
+  .topleft { display:flex; align-items:center; gap:14px; min-width:0; }
+  .brand { font:600 13px/1 var(--font-ui); letter-spacing:.01em; color:var(--text-primary); text-decoration:none; white-space:nowrap; }
   .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
-  .toplink { font:600 13px/1 var(--font-ui); text-decoration:none; }
-  .toplink:hover { text-decoration:underline; }
-  main { max-width:900px; margin:0 auto; padding:0 24px 48px; }
+  .here { font:500 12px/1 var(--font-ui); color:var(--text-secondary); white-space:nowrap; }
+  .howlink { font:500 12px/1 var(--font-ui); color:var(--accent); text-decoration:none; white-space:nowrap; }
+  .howlink:hover { text-decoration:underline; }
+  main { max-width:920px; margin:0 auto; padding:0 28px 40px; }
 
   /* hero */
-  .hero { display:grid; grid-template-columns:1.1fr .9fr; gap:32px; align-items:center; padding:48px 0 24px; }
-  .kicker { font:600 11px/1 var(--font-ui); letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 12px; }
-  h1 { font:700 34px/1.15 var(--font-ui); margin:0 0 14px; letter-spacing:-.01em; }
-  .lede { font-size:18px; color:var(--text-secondary); margin:0 0 18px; }
-  .cta { display:inline-block; padding:10px 16px; border-radius:999px; background:var(--accent); color:#fff; text-decoration:none; font-weight:600; font-size:14px; }
-  .cta:hover { filter:brightness(1.08); }
+  .hero { display:grid; grid-template-columns:1.15fr .85fr; gap:36px; align-items:center; padding:36px 0 28px; border-bottom:1px solid var(--hair); }
+  .hero .lbl { display:block; margin:0 0 12px; color:var(--text-secondary); }
+  h1 { font:600 28px/1.15 var(--font-ui); margin:0 0 12px; letter-spacing:-.01em; }
+  .lede { font-size:15px; color:var(--text-secondary); margin:0 0 14px; }
+  .lede b { color:var(--text-primary); font-weight:600; }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--hair-strong); border-radius:6px; color:var(--text-primary); text-decoration:none; font:600 13px/1 var(--font-ui); }
+  .btn:hover { background:color-mix(in srgb, var(--text-primary) 6%, transparent); }
+  .btn span { color:var(--text-muted); font-weight:400; }
   .hero svg { width:100%; height:auto; }
 
-  /* steps */
-  .steps { list-style:none; margin:24px 0 0; padding:0; display:flex; flex-direction:column; gap:20px; }
-  .step { display:grid; grid-template-columns:220px 1fr; gap:28px; align-items:center; background:var(--surface-1); border:1px solid var(--hair); border-radius:20px; padding:24px 28px; }
-  .step:nth-child(even) { grid-template-columns:1fr 220px; }
-  .step:nth-child(even) .art { order:2; }
+  /* section header: the dashboard's label + note */
+  .sh { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:30px 0 10px; }
+  .sh h2 { margin:0; font:var(--label); letter-spacing:.07em; text-transform:uppercase; color:var(--text-secondary); }
+  .sh .note { font:var(--t3); font-size:12px; color:var(--text-muted); }
+
+  /* steps: ledger rows, one hairline apart */
+  .steps { list-style:none; margin:0; padding:0; border-top:1px solid var(--hair-strong); }
+  .step { display:grid; grid-template-columns:200px 1fr; gap:28px; align-items:center; padding:22px 0; border-bottom:1px solid var(--hair); }
+  .art { background:var(--sunk); border:1px solid var(--hair); border-radius:8px; padding:12px; }
   .art svg { width:100%; height:auto; display:block; }
-  .num { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--accent-bg); color:var(--accent); font-weight:700; font-size:14px; margin-bottom:8px; }
-  .step h2 { font:700 22px/1.25 var(--font-ui); margin:0 0 8px; }
+  .step .lbl { display:block; margin-bottom:6px; color:var(--accent); }
+  .step h3 { font:600 17px/1.3 var(--font-ui); margin:0 0 6px; }
   .step p { margin:0 0 8px; color:var(--text-secondary); }
+  .step p b { color:var(--text-primary); font-weight:600; }
   .step p:last-child { margin-bottom:0; }
-  .aside { font-size:14px; color:var(--text-muted); }
+  .aside { font-size:12.5px; color:var(--text-muted); }
+  .step .aside { padding-left:10px; box-shadow:inset 2px 0 0 var(--hair-strong); }
 
-  /* the six gauges */
-  h2.section { font:700 24px/1.25 var(--font-ui); margin:48px 0 6px; }
-  .section-sub { color:var(--text-secondary); margin:0 0 18px; }
-  .gauges { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
-  .g { background:var(--surface-1); border:1px solid var(--hair); border-radius:16px; padding:16px 18px; }
-  .g svg { width:44px; height:44px; display:block; margin-bottom:8px; }
-  .g h3 { margin:0 0 4px; font:700 15px/1.3 var(--font-ui); }
-  .g p { margin:0; font-size:14px; color:var(--text-secondary); line-height:1.5; }
+  /* the six readings */
+  .gauges { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .g { background:var(--surface-1); border:1px solid var(--hair-strong); border-radius:8px; padding:14px 16px; }
+  .g svg { width:38px; height:38px; display:block; margin-bottom:8px; }
+  .g h3 { margin:0 0 4px; font:600 13.5px/1.3 var(--font-ui); }
+  .g p { margin:0; font-size:13px; color:var(--text-secondary); line-height:1.5; }
+  .gauges + .aside { margin:12px 0 0; }
 
-  /* not / is */
-  .isnot { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
-  .box { border-radius:16px; padding:18px 20px; }
-  .box.is { background:var(--good-bg); }
-  .box.not { background:var(--critical-bg); }
-  .box h3 { margin:0 0 8px; font:700 16px/1.3 var(--font-ui); }
-  .box ul { margin:0; padding-left:18px; color:var(--text-secondary); font-size:15px; }
-  .box li + li { margin-top:4px; }
+  /* is / isn't: neutral, no good/bad colour (it isn't a verdict) */
+  .isnot { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .box { border:1px solid var(--hair-strong); border-radius:8px; padding:14px 16px; background:var(--surface-1); }
+  .box h3 { margin:0 0 10px; }
+  .box ul { list-style:none; margin:0; padding:0; color:var(--text-secondary); font-size:13.5px; }
+  .box li { position:relative; padding-left:20px; }
+  .box li + li { margin-top:5px; }
+  .box li::before { position:absolute; left:0; top:0; font-weight:700; }
+  .box.is li::before { content:"\2713"; color:var(--accent); }
+  .box.not li::before { content:"\2715"; color:var(--text-muted); }
 
-  .closing { text-align:center; margin:48px 0 0; padding:32px 24px; background:var(--accent-bg); border-radius:20px; }
-  .closing p { margin:0 0 16px; font-size:17px; }
-  footer { max-width:900px; margin:0 auto; padding:16px 24px 32px; border-top:1px solid var(--hair); font-size:12px; color:var(--text-muted); line-height:1.5; }
-  footer p { margin:0; }
-  footer p + p { margin-top:4px; }
-  footer b { color:var(--text-secondary); }
+  /* "next" card: same as the dashboard's foot-of-tab link */
+  .next-tab { display:flex; align-items:center; gap:14px; margin-top:32px; padding:14px 16px; border:1px solid var(--hair-strong); border-radius:8px; text-decoration:none; color:inherit; }
+  .next-tab:hover { background:color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .next-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .next-tab .t { display:block; font:600 14px/1.3 var(--font-ui); color:var(--text-primary); margin-top:4px; }
+  .next-tab .d { display:block; font:var(--t3); font-size:12px; color:var(--text-secondary); margin-top:2px; }
+  .next-tab .ar { margin-left:auto; font:400 20px/1 var(--font-ui); color:var(--text-secondary); }
+
+  /* footer: same as the dashboard's */
+  footer { max-width:920px; margin:0 auto; padding:10px 28px 32px; }
+  footer > div { border-top:1px solid var(--hair); padding-top:10px; font:400 10px/1.45 var(--font-ui); color:var(--text-muted); }
+  footer p { margin:0; } footer p + p { margin-top:3px; }
+  footer b { color:var(--text-secondary); font-weight:600; }
 
   /* illustration strokes */
-  .ink { stroke:var(--ink); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; fill:none; }
-  .ink-fill { fill:var(--paper); stroke:var(--ink); stroke-width:3; stroke-linejoin:round; }
+  .ink { stroke:var(--ink); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+  .ink-fill { fill:var(--paper); stroke:var(--ink); stroke-width:2.5; stroke-linejoin:round; }
   .f-good { fill:var(--good); } .f-warn { fill:var(--warning); } .f-crit { fill:var(--critical); } .f-accent { fill:var(--accent); }
   .f-sunk { fill:var(--sunk); } .f-ink { fill:var(--ink); } .f-muted { fill:var(--hair-strong); }
   .s-accent { stroke:var(--accent); } .s-good { stroke:var(--good); } .s-crit { stroke:var(--critical); } .s-warn { stroke:var(--warning); }
@@ -141,11 +168,14 @@
   }
 
   @media (max-width:720px) {
-    .hero { grid-template-columns:1fr; padding-top:28px; }
-    .hero .hero-art { order:-1; max-width:320px; }
-    h1 { font-size:28px; }
-    .step, .step:nth-child(even) { grid-template-columns:1fr; padding:20px; gap:14px; }
-    .step:nth-child(even) .art { order:0; }
+    .topbar { padding:0 14px; }
+    .here { display:none; }
+    main { padding:0 14px 28px; }
+    footer { padding:10px 14px 28px; }
+    .hero { grid-template-columns:1fr; gap:18px; padding-top:22px; }
+    .hero .hero-art { order:-1; max-width:300px; }
+    h1 { font-size:24px; }
+    .step { grid-template-columns:1fr; gap:12px; padding:18px 0; }
     .art { max-width:220px; }
     .gauges { grid-template-columns:1fr 1fr; }
     .isnot { grid-template-columns:1fr; }
@@ -155,18 +185,18 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">Stress Monitor <i>· macro/market</i></a>
-  <a class="toplink" href="/">Open the live dashboard &rarr;</a>
+  <div class="topleft"><a class="brand" href="/">Stress Monitor <i>· macro/market</i></a><span class="here">How it works</span></div>
+  <a class="howlink" href="/">Open the live dashboard &rarr;</a>
 </header>
 
 <main>
   <section class="hero">
     <div>
-      <p class="kicker">How it works</p>
+      <p class="lbl">How it works · in plain English</p>
       <h1>A weather station for the stock market</h1>
       <p class="lede">Every weekday, this site checks a handful of public market and economy readings and asks one question: <b>are the conditions that came before past crashes showing up right now?</b></p>
       <p class="lede" style="font-size:16px">It doesn't predict the future. Like a weather station, it tells you what the conditions are and how often weather like this turned stormy in the past.</p>
-      <a class="cta" href="/">See today's reading</a>
+      <a class="btn" href="/">See today's reading <span>&rarr;</span></a>
     </div>
     <div class="hero-art" aria-hidden="true">
       <svg viewBox="0 0 320 260">
@@ -199,6 +229,7 @@
     </div>
   </section>
 
+  <div class="sh"><h2>Six steps, every weekday</h2><span class="note">From raw public data to the reading on the dashboard</span></div>
   <ol class="steps">
     <li class="step">
       <div class="art" aria-hidden="true">
@@ -220,8 +251,8 @@
         </svg>
       </div>
       <div>
-        <span class="num">1</span>
-        <h2>Collect the readings</h2>
+        <span class="lbl">Step 1</span>
+        <h3>Collect the readings</h3>
         <p>A script runs on a schedule and pulls in public data: the Federal Reserve's FRED database, the U.S. Treasury, CBOE, the CFTC, FINRA, SEC filings and a few more. It's the same kind of data economists and fund managers look at.</p>
         <p class="aside">No guessing at this step. The numbers are stored exactly as published.</p>
       </div>
@@ -242,8 +273,8 @@
         </svg>
       </div>
       <div>
-        <span class="num">2</span>
-        <h2>Give each one a traffic light</h2>
+        <span class="lbl">Step 2</span>
+        <h3>Give each one a traffic light</h3>
         <p>Each core reading gets a colour: <b style="color:var(--good)">green</b> (calm), <b style="color:var(--warning)">amber</b> (worth watching) or <b style="color:var(--critical)">red</b> (stressed). The cut-off points are written down in advance in a rulebook, and the same number always gets the same colour.</p>
         <p class="aside">No AI decides the colours. It's plain arithmetic, so anyone can check it.</p>
       </div>
@@ -265,8 +296,8 @@
         </svg>
       </div>
       <div>
-        <span class="num">3</span>
-        <h2>Wait to be sure</h2>
+        <span class="lbl">Step 3</span>
+        <h3>Wait to be sure</h3>
         <p>Markets have bad days all the time. One red day doesn't count. A reading has to <b>stay red for a few days in a row</b> before it's "confirmed."</p>
         <p class="aside">It's like a smoke alarm that ignores burnt toast but still goes off for a real fire.</p>
       </div>
@@ -292,8 +323,8 @@
         </svg>
       </div>
       <div>
-        <span class="num">4</span>
-        <h2>Count the red lights</h2>
+        <span class="lbl">Step 4</span>
+        <h3>Count the red lights</h3>
         <p>One stressed reading by itself is common. The real warning sign in past crashes was <b>several of them going red together</b>: fear jumps, borrowing gets more expensive, stocks fall and jobs weaken all at once.</p>
         <p>So the site counts confirmed reds. Once enough are red together, the overall stress light comes on.</p>
       </div>
@@ -314,8 +345,8 @@
         </svg>
       </div>
       <div>
-        <span class="num">5</span>
-        <h2>Check how it went last time</h2>
+        <span class="lbl">Step 5</span>
+        <h3>Check how it went last time</h3>
         <p>Next to the traffic lights is a simple <b>drawdown risk band</b>. It combines two things: how far stocks have already fallen from their peak, and how jumpy the market is (the VIX "fear gauge").</p>
         <p>Each band comes with a plain record: <b>out of all the past days that looked like today, how often a big fall followed.</b> The band's cut-off points were fixed before any live results came in, so they can't be quietly retuned to look good afterward.</p>
         <p class="aside">An earlier, fancier model was retired after it failed a fair test against this simple one. Being honest about that matters more than looking clever.</p>
@@ -340,16 +371,15 @@
         </svg>
       </div>
       <div>
-        <span class="num">6</span>
-        <h2>Let AI explain, but on a short leash</h2>
+        <span class="lbl">Step 6</span>
+        <h3>Let AI explain, but on a short leash</h3>
         <p>An AI reads the day's data and writes the short story you see on the dashboard: what changed and why it might matter.</p>
         <p>It doesn't get to make up crash odds. It starts from the historical odds for today's band and can only nudge them <b>one small, fixed step</b> up or down, giving its reasons. Each of those calls is later scored against what actually happened.</p>
       </div>
     </li>
   </ol>
 
-  <h2 class="section" id="readings">The six core readings</h2>
-  <p class="section-sub">These are the ones that get traffic lights. The live dashboard shows today's values, colours and history.</p>
+  <div class="sh" id="readings"><h2>The six core readings</h2><span class="note">The ones that get traffic lights. The dashboard shows today's values, colours and history.</span></div>
   <div class="gauges">
     <div class="g">
       <svg viewBox="0 0 44 44" aria-hidden="true"><path class="ink" d="M4 30 l6 -4 l5 6 l6 -16 l5 12 l6 -8 l8 4"/><circle class="f-crit pulse" cx="21" cy="16" r="3"/></svg>
@@ -382,12 +412,12 @@
       <p>Whether the Federal Reserve is holding interest rates or starting to cut. A sudden rush to cut often means the Fed sees trouble.</p>
     </div>
   </div>
-  <p class="aside" style="margin-top:14px">Around these six, the dashboard also shows context that doesn't get a traffic light: how big investors are positioned, what large funds are buying in their SEC filings, the shape of the yield curve and a checklist on government debt. It also has a page comparing well-known economists' public views with the live data.</p>
+  <p class="aside">Around these six, the dashboard also shows context that doesn't get a traffic light: how big investors are positioned, what large funds are buying in their SEC filings, the shape of the yield curve and a checklist on government debt. It also has a page comparing well-known economists' public views with the live data.</p>
 
-  <h2 class="section">What this is, and what it isn't</h2>
+  <div class="sh"><h2>What this is, and what it isn't</h2></div>
   <div class="isnot">
     <div class="box is">
-      <h3>It is</h3>
+      <h3 class="lbl">It is</h3>
       <ul>
         <li>A daily, rules-based snapshot of market stress.</li>
         <li>Built only from public data, with the rules written down ahead of time.</li>
@@ -395,7 +425,7 @@
       </ul>
     </div>
     <div class="box not">
-      <h3>It isn't</h3>
+      <h3 class="lbl">It isn't</h3>
       <ul>
         <li>Investment advice or a recommendation to buy or sell anything.</li>
         <li>A crystal ball. Calm readings don't promise calm markets.</li>
@@ -404,15 +434,15 @@
     </div>
   </div>
 
-  <div class="closing">
-    <p>Want the numbers behind today's lights?</p>
-    <a class="cta" href="/">Open the live dashboard</a>
-  </div>
+  <a class="next-tab" href="/">
+    <span><span class="lbl">Next</span><span class="t">See today's reading</span><span class="d">The live dashboard: today's lights, the stress count, the risk band and the story behind them.</span></span>
+    <span class="ar" aria-hidden="true">&rarr;</span>
+  </a>
 </main>
 
-<footer>
+<footer><div>
   <p><b>For information only, not investment advice.</b> A personal project: signals apply the author's own rules, plus some AI judgment, to public data. They are not recommendations or calibrated forecasts, and data can be delayed or wrong.</p>
   <p>Data: FRED (some series &copy; their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara&ndash;Iacoviello GPR, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them.</p>
-</footer>
+</div></footer>
 </body>
 </html>
