@@ -22,7 +22,7 @@ diagram. Four independent Node packages, each with its own
 | `ingestion/` | Pulls FRED/EIA/CBOE/Massive/Polymarket/SEC data into Supabase `data_points`. No LLM, no classification logic. | `ingestion/` |
 | `rule_engine/` | Deterministic RED/AMBER/GREEN classification, wave-authorization gate, hazard model. Reads `data_points`, writes `crash_checks`. | `rule_engine/` |
 | `mcp_server/` | Local stdio MCP server for Claude Desktop. Merges Supabase state with `local_state/portfolio.yaml` at read-time only — never writes portfolio data anywhere. Run via `npx tsx src/server.ts` from this working tree (not published/installed). | `mcp_server/` |
-| `dashboard_site/` + `full_report_site/` | Static Cloudflare Pages sites (no build step, no `package.json`). `full_report_site` has a Pages Function (`functions/index.ts`) behind Cloudflare Access. `dashboard_site/_worker.js` (scoped by `_routes.json` to `/` and `/latest.md`) puts the latest reading into the HTML for crawlers and AI tools; it copies the indicator formats and hazard-band rates from `index.html` and targets `#stress-verdict` / `#site-summary`, so change them together. | n/a |
+| `dashboard_site/` + `full_report_site/` | Static Cloudflare Pages sites (no build step, no `package.json`). `full_report_site` has a Pages Function (`functions/index.ts`) behind Cloudflare Access. `dashboard_site/_worker.js` (scoped by `_routes.json` to `/` and `/latest.md`) puts the latest reading into the HTML for crawlers and AI tools; it copies the indicator formats and the drawdown-risk-band labels, rates and fallback formula (`ddVixReading`) from `index.html` and targets `#stress-verdict` / `#site-summary`, so change them together. | n/a |
 | `supabase/migrations/` | SQL migrations, applied via the Supabase dashboard/CLI. Not run by CI. | n/a |
 
 ## Build / typecheck commands
@@ -85,7 +85,12 @@ install/build steps.
 3. Never edit the bands in `config/monitoring.yaml` without also checking
    `dashboard_site/` for hardcoded chart bands (VIX 20/35, HY spread
    350/500bp, 10yr yield 4.3/5.0, Sahm 0.3/0.5). The dashboard doesn't
-   read the config at render time.
+   read the config at render time. The drawdown risk band (score =
+   drawdown % + VIX / 5, cutoffs 8.5 / 10) lives in
+   `rule_engine/src/hazardScorecard.ts` and is copied, with its hit rates,
+   into `dashboard_site/index.html`, `dashboard_site/_worker.js` and
+   `mcp_server/src/server.ts`. Those cutoffs were fixed before any live
+   outcome and must not be retuned from live results.
 4. Never write real portfolio/dollar data outside `local_state/*.yaml`
    (gitignored) — only the `*.example.yaml` templates are tracked.
 5. Personal policy stays out of tracked files: wave splits, crash-type

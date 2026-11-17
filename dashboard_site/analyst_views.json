@@ -99,7 +99,7 @@
           "source": { "title": "Pinetree Macro — Two Years of Return in Two Months", "url": "https://pinetreemacroresearch.substack.com/p/two-years-of-return-in-two-months", "date": "2026-08-24" },
           "check": "equity_correction_risk",
           "horizon": "near",
-          "if_differs": "This system would need confirmed crash indicators turning RED, or its hazard model moving to High."
+          "if_differs": "This system would need confirmed crash indicators turning RED, or its drawdown risk band moving to High."
         },
         {
           "topic": "markets",
@@ -240,7 +240,7 @@
           "source": { "title": "Yardeni QuickTakes — S&P 500 Valuation Dives As Earnings Soar", "url": "https://www.yardeniquicktakes.com/us-markets-call-s-p-500-valuation-dives-as-earnings-soar/", "date": "2026-11-07" },
           "check": "equity_resilient",
           "horizon": "near",
-          "if_differs": "No crash indicator confirmed RED, the hazard model out of High, and the S&P 500 less than 10% below its high."
+          "if_differs": "No crash indicator confirmed RED, the drawdown risk band out of High, and the S&P 500 less than 10% below its high."
         }
       ]
     },

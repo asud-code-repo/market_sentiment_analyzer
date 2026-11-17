@@ -2,7 +2,7 @@
 
 > A daily RED/AMBER/GREEN read on US market crash risk, built from public macro and market data. A personal project: signals apply the author's own fixed rules plus some AI judgment. Not investment advice, not a recommendation, and not a calibrated forecast.
 
-For the current reading as plain text (date, the six indicators with values and status, the stress gate, the hazard band and the latest narrative), fetch https://marketstress.org/latest.md. It refreshes within about 10 minutes of each new report. The full page at https://marketstress.org/ loads most of its charts with JavaScript; its footer carries the same one-line latest reading.
+For the current reading as plain text (date, the six indicators with values and status, the stress gate, the drawdown risk band and the latest narrative), fetch https://marketstress.org/latest.md. It refreshes within about 10 minutes of each new report. The full page at https://marketstress.org/ loads most of its charts with JavaScript; its footer carries the same one-line latest reading.
 
 ## What it measures
 

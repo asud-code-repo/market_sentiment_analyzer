@@ -8,11 +8,61 @@ and the "Statistical Hazard Model (10% Drawdown)" section of
 `reference_docs/rules/crash-check-rules.md`. Where this brief and the code
 disagree, the code wins.*
 
-**Status: design decided 2026-11-16 (section 10); nothing built yet.**
-Section 7 lists the decisions still open. Settle those with the maintainer
-before writing code.
+**Status: finished 2026-11-17. The model was retired for a two-input rule.**
+See "Outcome" directly below. The rest of this brief is the plan as
+written beforehand, kept as the record.
 
 ---
+
+## Outcome (2026-11-17)
+
+Everything below was planned before any result existed. This is what
+happened. The experiments, code, data snapshots and reports are in the
+private research repo; the pass/fail rules were committed there before each
+test ran.
+
+**Result: nothing beat the simple rule, so the simple rule replaced the
+model.** That was one of the two outcomes the plan counted as success.
+
+| Test | Question | Result |
+|---|---|---|
+| A: today's model, refit honestly | Will a 10% fall start within 21 days? | Failed badly. Ranking score (AUC) 0.545, against 0.818 for drawdown + VIX; 0.5 is a coin flip |
+| B: repaired model, 8 inputs | Same | Failed. 0.784 against 0.818: level with the simple rule at best |
+| D: deepening | Once down 5%, will it reach 10%, 15% or 20%? | Failed all six tests, including with S&P-only data back to 1951 |
+| E: tail forecast | How bad could the next 1–3 months get? | Failed at 21 and 63 days |
+| G: volatility forecast | How jumpy will prices be? | Tied VIX at 21 days; not shipped (see section 6) |
+
+"Refit honestly" means refit each year on earlier data only, using the values
+that had actually been published by each day, and scored on the following
+year.
+
+What was learned:
+- **The live model's 0.889 score came from having seen the answers.** Fitted
+  and scored on the same history it reaches about 0.9; scored on data it had
+  not seen, 0.545. Its score swung between roughly 0 and 1 from year to year,
+  because inputs that rise for decades (CPI, retail sales) sit outside
+  anything seen in training each new year.
+- **Repairing it removed the collapse but found no edge.** No input tested
+  (credit spreads, the yield curve, financial-conditions indexes, jobless
+  claims, the speed of the decline) clearly added anything to drawdown + VIX.
+- **Drawdown + VIX does rank the risk of a 10% fall starting.** As a fixed
+  band it came before 20 of the 21 such episodes since 1994, a median of 14
+  trading days ahead, though only 1–3 days ahead of sudden drops.
+- **Nothing tested says much about how deep a decline goes.** On the
+  deepening questions even the simple rule scores only 0.52–0.75.
+
+What changed in this repo:
+- The dashboard card and `get_indicator_panel` show the **drawdown risk
+  band** (score = S&P drawdown % + VIX / 5; LOW below 8.5, TRANSITIONING to
+  under 10, HIGH at 10 or above) with its measured hit rates: about 5%, 17%
+  and 44% of days, against a 12% base rate.
+- The old model is still computed each run, only so the `hazard_scorecard`
+  table (Stage 0) keeps recording both side by side. It is no longer shown.
+- The band's cutoffs were fixed before any live outcome and are not to be
+  retuned from live results.
+
+Not done, by decision: Variants C and F (unpromising after B), and the
+international expansion (gated on a US edge that did not appear).
 
 ## In plain language
 

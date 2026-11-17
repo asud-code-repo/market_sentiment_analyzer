@@ -124,6 +124,10 @@ export interface CrashCheckRow {
   // (external review 2026-09-19, F01); both otherwise leave band/raw/
   // calibrated null.
   hazard_10pct_status: string | null;
+  // Drawdown + VIX risk band (rule_engine hazardScorecard.ts), shown in place of the hazard
+  // model since 2026-11-17. Null when drawdown is already >= 10%, and on older rows.
+  dd_vix_score: number | null;
+  dd_vix_band: string | null;
   created_at: string;
 }
 
@@ -594,6 +598,8 @@ export async function writeSnapshot(qualitative: {
     hazard_10pct_band: latest.hazard_10pct_band,
     hazard_10pct_as_of: latest.hazard_10pct_as_of,
     hazard_10pct_status: latest.hazard_10pct_status,
+    dd_vix_score: latest.dd_vix_score,
+    dd_vix_band: latest.dd_vix_band,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,

@@ -1,13 +1,19 @@
-// Live scorecard for the Statistical Hazard Model (rebuild brief Stage 0,
-// reference_docs/hazard-model-rebuild-brief.md). Each scored day records
-// the model's band next to a simple drawdown + VIX baseline band, then,
-// once 21 (and 63) more S&P closes exist, whether the S&P actually touched
-// a >=10% drawdown from its all-time high in that window. This is the only
-// out-of-sample evidence the frozen model will ever get.
+// Drawdown + VIX risk band, and the live scorecard that records it next to
+// the retired logistic hazard model.
 //
-// Report-only: nothing here feeds the stress gate, wave evaluation or any
-// other decision. Public inputs only (S&P, VIX, model outputs), so the table
-// is anon-readable like crash_checks.
+// The band (baselineScore + bandBaseline) is what the dashboard and MCP show
+// since 2026-11-17: in out-of-sample tests the logistic model and three
+// rebuilt variants all failed to beat it
+// (reference_docs/hazard-model-rebuild-brief.md). The model is still scored
+// each day purely so the scorecard keeps an honest side-by-side record.
+//
+// Scorecard: each day the question applies records both bands, then, once 21
+// (and 63) more S&P closes exist, whether the S&P actually touched a >=10%
+// drawdown from its all-time high in that window.
+//
+// Nothing here feeds the stress gate, wave evaluation or any other decision.
+// Public inputs only (S&P, VIX, model outputs), so the table is anon-readable
+// like crash_checks.
 
 import type { HazardBand } from "./hazardModel.js";
 

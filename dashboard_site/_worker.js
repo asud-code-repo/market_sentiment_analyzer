@@ -24,7 +24,7 @@ const CACHE_SECONDS = 600;
 const CACHE_KEY = `${SITE}/__cache/latest-reading-v1`;
 const FETCH_TIMEOUT_MS = 2000;
 
-const LATEST_FIELDS = "run_at,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_authorized,warsh_classification,hazard_10pct_band,hazard_10pct_status,crash_probability_pct";
+const LATEST_FIELDS = "run_at,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_authorized,warsh_classification,dd_vix_band,crash_probability_pct";
 
 // Same order, labels and formats as GATE_ROWS in index.html.
 const INDICATORS = [
@@ -35,9 +35,18 @@ const INDICATORS = [
   { name: "Sahm rule", short: "Sahm rule", v: "sahm_rule_value", c: "sahm_rule_color", conf: "sahm_rule", fmt: (v) => v.toFixed(2) },
   { name: "Fed pivot signal", short: "Fed pivot signal", v: "fed_pivot_signal", c: "fed_pivot_color", conf: null, fmt: (v) => (v === "NONE" ? "none" : String(v).toLowerCase()) },
 ];
-// Copied from index.html (HAZARD_BAND_LABELS / HAZARD_BAND_HIT_RATE).
-const HAZARD_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Transitioning", HIGH: "High" };
-const HAZARD_BAND_HIT_RATE = { LOW: "3%", TRANSITIONING: "16%", HIGH: "54%" };
+// Copied from index.html (DD_VIX_BAND_LABELS / DD_VIX_HIT_RATE / ddVixReading).
+const DD_VIX_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "High" };
+const DD_VIX_HIT_RATE = { LOW: "5%", TRANSITIONING: "17%", HIGH: "44%" };
+function ddVixReading(row) {
+  const dd = row.sp_drawdown_pct == null ? null : Number(row.sp_drawdown_pct);
+  if (dd != null && dd >= 10) return { status: "ALREADY_BREACHED", band: null };
+  if (row.dd_vix_band) return { status: "ELIGIBLE", band: row.dd_vix_band };
+  const vix = row.vix_value == null ? null : Number(row.vix_value);
+  if (dd == null || vix == null) return { status: "UNAVAILABLE", band: null };
+  const score = dd + vix / 5;
+  return { status: "ELIGIBLE", band: score >= 10 ? "HIGH" : score >= 8.5 ? "TRANSITIONING" : "LOW" };
+}
 const RUN_LABEL = /^\s*Full report(?:\s*\([^)]*\)|,[^.]*)\.\s+/i;
 const DISCLAIMER = "For information only, not investment advice. A personal project: signals apply the author's own rules, plus some AI judgment, to public data. They are not recommendations or calibrated forecasts, and data can be delayed or wrong.";
 
@@ -181,11 +190,11 @@ function markdown(data) {
     ...f.indicators.map((i) => `| ${i.name} | ${i.value} | ${i.color}${i.pending ? " (pending confirmation)" : ""} | ${i.observed ?? "manual judgment"} |`),
     "",
   ];
-  const band = row.hazard_10pct_band;
-  if (row.hazard_10pct_status === "ALREADY_BREACHED") {
-    lines.push("- Hazard model: not scored (the S&P 500 is already more than 10% below its high).");
+  const { status: bandStatus, band } = ddVixReading(row);
+  if (bandStatus === "ALREADY_BREACHED") {
+    lines.push("- Drawdown risk band: not scored (the S&P 500 is already more than 10% below its high).");
   } else if (band) {
-    lines.push(`- Hazard model (a 10%+ S&P 500 drawdown within 21 trading days): ${HAZARD_BAND_LABELS[band] ?? band} band. Historically, ${HAZARD_BAND_HIT_RATE[band] ?? "an unknown share"} of days in this band were followed by such a drawdown.`);
+    lines.push(`- Drawdown risk band (could a 10%+ S&P 500 drawdown begin within 21 trading days; from S&P drawdown and VIX): ${DD_VIX_BAND_LABELS[band] ?? band}. Historically, ${DD_VIX_HIT_RATE[band] ?? "an unknown share"} of days in this band were followed by such a drawdown, against 12% on a typical day.`);
   }
   if (row.warsh_classification) lines.push(`- Fed policy regime: ${row.warsh_classification.charAt(0)}${row.warsh_classification.slice(1).toLowerCase()}.`);
   if (f.llm?.crash_probability_pct != null) {

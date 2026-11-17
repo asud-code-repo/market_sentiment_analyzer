@@ -3049,27 +3049,36 @@ function positioningSummaryHtml(measures) {
 
 
 
-// Statistical Hazard Model (10% drawdown target) — see crash-check-rules.md.
-// Deliberately a separate card from probSection's discretionary crash-
-// probability meter above, not adjacent to or blended with it: this number
-// is rule-engine-computed and walk-forward validated; that one is 100% LLM
-// judgment. Displayed as a BAND, not a precise percentage — the underlying
-// isotonic calibration curve is steppy with two wide flat plateaus, so nearby
-// raw scores inside one plateau aren't meaningfully different probabilities.
-const HAZARD_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Transitioning", HIGH: "High" };
-// Measured hit rate per band: share of days in that band followed by a >=10%
-// drawdown within 21 trading days, from a 2026-11-09 replay of the frozen
-// model over 1994-02..2026-10 (5,058 scorable days, base rate 11.8%). The
-// model's own isotonic "calibrated" % badly overstates these (LOW ~24%,
-// HIGH ~93% claimed), so display these instead. In-sample — optimistic.
-// Duplicated in mcp_server/src/server.ts; keep the two in sync.
-const HAZARD_BAND_HIT_RATE = { LOW: "3%", TRANSITIONING: "16%", HIGH: "54%" };
+// Drawdown risk band — see crash-check-rules.md "Statistical Hazard Model".
+// score = S&P drawdown % + VIX / 5; LOW < 8.5, TRANSITIONING < 10, HIGH >= 10
+// (rule_engine/src/hazardScorecard.ts). Shown since 2026-11-17 in place of
+// the 32-input logistic hazard model, which failed out-of-sample testing
+// against this rule. Deliberately a separate card from the discretionary
+// crash-probability meter, never adjacent to or blended with it.
+const DD_VIX_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "High" };
+// Share of days in each band followed by a >=10% drawdown within 21 trading
+// days, 1994-02..2026-10 (5,058 scorable days, base rate 12%). HIGH was 38%
+// in 1994-2009 and 50% in 2010-2026. Duplicated in mcp_server/src/server.ts
+// and dashboard_site/_worker.js; keep the three in sync.
+const DD_VIX_HIT_RATE = { LOW: "5%", TRANSITIONING: "17%", HIGH: "44%" };
+// The rule engine stores the band on each row (dd_vix_band). Rows written
+// before 2026-11-17 don't have it, so fall back to the same formula from the
+// row's own drawdown and VIX. Not scored once the S&P is 10%+ below its high.
+function ddVixReading(row) {
+  const dd = row.sp_drawdown_pct == null ? null : Number(row.sp_drawdown_pct);
+  if (dd != null && dd >= 10) return { status: "ALREADY_BREACHED", band: null };
+  if (row.dd_vix_band) return { status: "ELIGIBLE", band: row.dd_vix_band };
+  const vix = row.vix_value == null ? null : Number(row.vix_value);
+  if (dd == null || vix == null) return { status: "UNAVAILABLE", band: null };
+  const score = dd + vix / 5;
+  return { status: "ELIGIBLE", band: score >= 10 ? "HIGH" : score >= 8.5 ? "TRANSITIONING" : "LOW" };
+}
 // Deliberately non-RAG for all three bands (info/muted only, never
 // good/warning/critical) — this is a different signal system from the
 // 6-indicator gate, and reusing RAG colors here risks a HIGH reading being
 // mistaken for a gating RED alert, exactly what crash-check-rules.md's
 // Formatting Requirements warns against repurposing status colors for.
-const HAZARD_BAND_PILL = { LOW: "muted", TRANSITIONING: "info", HIGH: "info" };
+const DD_VIX_BAND_PILL = { LOW: "muted", TRANSITIONING: "info", HIGH: "info" };
 
 
 
@@ -3227,7 +3236,6 @@ function stressFreshnessPop(row) {
     return `<tr><td>${label}</td><td>${cadenceTxt}</td><td>${cadence === "monthly" ? fmtMonth(obs) : fmtMd(obs)}${late ? ' <b class="late">late</b>' : ""}</td></tr>`;
   });
   rows.push(`<tr><td>Fed pivot</td><td>Manual judgment, set in full reports</td><td>${row.notes ? "this report" : "carried forward"}</td></tr>`);
-  rows.push(`<tr><td>Hazard model</td><td>Computed with each refresh</td><td>${row.hazard_10pct_as_of ? fmtMd(row.hazard_10pct_as_of) : "—"}</td></tr>`);
   const body = `<p>“As of ${fmtMd(row.run_at)}” is when this report ran. Each reading it used is from an earlier close — markets publish with a lag, so they don't line up.</p>
     <table class="fresh"><thead><tr><th>Data</th><th>Updates</th><th>Latest</th></tr></thead><tbody>${rows.join("")}</tbody></table>
     <p class="fine"><b>Late</b> = older than the normal publishing lag: a daily reading more than two business days before the run, or a monthly one past 75 days. The crash check uses the same rule.</p>`;
@@ -3432,36 +3440,34 @@ function renderDistanceToRed(row) {
   return `<section class="rsec" id="section-distance">${head}${lead ? `<p class="dtr-lead">${lead}</p>` : ""}<div class="dtr">${cells}${fedCell}</div>${pop}</section>`;
 }
 
-function renderHazardSection(row) {
+function renderRiskBandSection(row) {
+  const { status, band } = ddVixReading(row);
+  const name = band ? DD_VIX_BAND_LABELS[band] : null;
   let body;
-  if (row.hazard_10pct_status === "ALREADY_BREACHED") {
-    body = `<p class="hz-read">Not scored this run: the S&amp;P is already ${row.sp_drawdown_pct != null ? `${Number(row.sp_drawdown_pct).toFixed(1)}%` : ""} below its high, past the model's 10% line. It forecasts a <i>future</i> breach, so it doesn't apply during a correction.</p>`;
-  } else if (row.hazard_10pct_band == null) {
-    body = '<p class="hz-read">Unavailable this run (a required input series was temporarily missing). Not a reading of zero.</p>';
+  if (status === "ALREADY_BREACHED") {
+    body = `<p class="hz-read">Not scored this run: the S&amp;P is already ${row.sp_drawdown_pct != null ? `${Number(row.sp_drawdown_pct).toFixed(1)}%` : ""} below its high, past the 10% line. The band is about a drop <i>starting</i>, so it doesn't apply during a correction.</p>`;
+  } else if (!band) {
+    body = '<p class="hz-read">Unavailable this run (drawdown or VIX was missing). Not a reading of zero.</p>';
   } else {
-    const band = row.hazard_10pct_band, name = HAZARD_BAND_LABELS[band] ?? band, rate = HAZARD_BAND_HIT_RATE[band];
     body = `<div class="hazard">
-      <div class="hz-read">Band is <b>${name}</b>. Since 1994, <b>${rate}</b> of ${name} readings were followed by a ≥10% S&amp;P drawdown within 21 trading days, against a <b>12%</b> base rate.</div>
-      <div class="scale">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<div class="${b === band ? "on" : ""}"><b>${HAZARD_BAND_LABELS[b]}</b>~${HAZARD_BAND_HIT_RATE[b]}${b === "LOW" ? " hit rate" : ""}</div>`).join("")}</div>
+      <div class="hz-read">Band is <b>${name}</b>. Since 1994, <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days were followed by a ≥10% S&amp;P drawdown within 21 trading days, against a <b>12%</b> base rate.</div>
+      <div class="scale">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<div class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]}${b === "LOW" ? " hit rate" : ""}</div>`).join("")}</div>
     </div>`;
   }
-  const band = row.hazard_10pct_band;
-  const name = band ? HAZARD_BAND_LABELS[band] : null;
   const today = name
-    ? `<p><b>Today's reading: ${name}</b> (data as of ${fmtMd(row.hazard_10pct_as_of)}). In the past, about <b>${HAZARD_BAND_HIT_RATE[band]}</b> of ${name} readings were followed by a 10% drop within a month. On a typical day that figure is about 12%, so conditions today look ${band === "LOW" ? "calmer" : "riskier"} than average.</p>`
+    ? `<p><b>Today's reading: ${name}</b>. In the past, about <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days were followed by a 10% drop within a month. On a typical day that figure is about 12%, so conditions today look ${band === "LOW" ? "calmer" : "riskier"} than average.</p>`
     : "";
-  const pop = popHtml("i-hazard", "Statistical hazard model · what is this?", `
-    <p><b>The question it answers.</b> How likely is the S&amp;P 500 to fall 10% or more below its all-time high within the next month (21 trading days)?</p>
+  const pop = popHtml("i-hazard", "Drawdown risk band · what is this?", `
+    <p><b>The question it answers.</b> Could the S&amp;P 500 fall 10% or more below its all-time high within the next month (21 trading days)?</p>
     ${today}
-    <p><b>What the three bands mean.</b> Each band is labelled with how often past readings in it were followed by a 10% drop within a month (1994–2026):</p>
-    <div class="bands">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<span class="${b === band ? "on" : ""}"><b>${HAZARD_BAND_LABELS[b]}</b>~${HAZARD_BAND_HIT_RATE[b]} of the time</span>`).join("")}</div>
-    <p>High means today looks like conditions that often came before a drop. It doesn't say how deep a fall would go.</p>
-    <p><b>How it's calculated.</b> 18 market and economic inputs are combined into one risk score (a logistic regression) and sorted into a band: how far the S&amp;P is below its high, volatility (VIX and realized), credit spreads, financial-stress indices, the yield curve, jobless claims and recession indicators, plus their 1-week and 1-month changes. It only runs while the S&amp;P is less than 10% off its high.</p>
-    <p><b>How to use it.</b> As context, not a trigger: it doesn't count toward the 3-of-6 wave gate. It mostly picks up a market that's already sliding. Before sudden crashes (2015, 2018, 2020, 2025) it turned High only 2–4 days ahead, and about half of past High stretches were false alarms.</p>
-    <p><b>Not the same as the LLM crash estimate.</b> This model asks a fixed question (a 10% drop within a month); that estimate is open-ended judgment. Don't compare or average the two.</p>
-    ${row.hazard_10pct_calibrated_pct != null ? `<p class="fine"><b>Fine print.</b> The model's own "calibrated" figure is ${row.hazard_10pct_calibrated_pct}% (raw score ${row.hazard_10pct_raw_pct}%). A November 2026 replay over 1994–2026 found these built-in percentages overstate the real odds: High claims ~93% but was right ~54% of the time. Rely on the band and its historical rate instead. Those rates were measured on data the model likely learned from, so real-world odds are probably a bit lower still.</p>` : ""}`, true);
+    <p><b>What the three bands mean.</b> Each band is labelled with how often past days in it were followed by a 10% drop within a month (1994–2026):</p>
+    <div class="bands">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<span class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]} of the time</span>`).join("")}</div>
+    <p><b>How it's calculated.</b> Two numbers, added together: how far the S&amp;P is below its high (in %), plus the VIX divided by 5. Under 8.5 is Low, 8.5 to 10 is Elevated, 10 or more is High. For example, the S&amp;P 5% off its high with the VIX at 25 scores exactly 10: High. It only runs while the S&amp;P is less than 10% off its high.</p>
+    <p><b>How to use it.</b> As context, not a trigger: it doesn't count toward the 3-of-6 stress gate. It mostly picks up a market that is already sliding or nervous. High came before 20 of the 21 such drops since 1994, typically about three weeks ahead, but only 1–3 days ahead of sudden ones (2015, early 2018, 2020). More than half of High days were not followed by a 10% drop, and the band says nothing about how deep a fall would go.</p>
+    <p><b>Not the same as the LLM crash estimate.</b> This band asks a fixed question (a 10% drop within a month); that estimate is open-ended judgment. Don't compare or average the two.</p>
+    <p class="fine"><b>Fine print.</b> Until November 2026 this card showed a 32-input statistical model. Tested on data it hadn't seen, that model did worse than this two-number rule, and so did three rebuilt versions, so the rule replaced it. The rates above cover 1994–2026; the High rate was 38% before 2010 and 50% since. The old model is still scored daily behind the scenes, next to this band, to keep an honest record of both.</p>`, true);
   return `<section class="rsec" id="section-hazard">
-    <div class="sh"><span class="lbl">Statistical hazard model</span><span class="note">Context only · not in the gate</span>${ib("i-hazard", "the hazard model")}</div>
+    <div class="sh"><span class="lbl">Drawdown risk band</span><span class="note">Context only · not in the gate</span>${ib("i-hazard", "the drawdown risk band")}</div>
     ${body}${pop}
   </section>`;
 }
@@ -3610,10 +3616,10 @@ function renderStressVerdict(row, priorFullReport) {
   // Which wave is active is personal policy (kept on the private Full
   // Report); this page shows only the public stress gate.
   const waveTxt = row.wave_authorized ? '<b class="bad">Stress gate met</b>' : '<b class="ok">Stress gate not met</b>';
-  const band = row.hazard_10pct_band;
-  // Dot: green for Low, amber for Transitioning/High -- never red, so a High band can't be mistaken for a gating RED.
-  const hazard = row.hazard_10pct_status === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
-    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${HAZARD_BAND_LABELS[band] ?? band} <small>${HAZARD_BAND_HIT_RATE[band] ?? ""} hist.</small>` : "Unavailable";
+  const { status: bandStatus, band } = ddVixReading(row);
+  // Dot: green for Low, amber for Elevated/High -- never red, so a High band can't be mistaken for a gating RED.
+  const hazard = bandStatus === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
+    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${DD_VIX_BAND_LABELS[band] ?? band} <small>${DD_VIX_HIT_RATE[band] ?? ""} hist.</small>` : "Unavailable";
   const regime = row.warsh_classification
     ? `${escHtml(row.warsh_classification.charAt(0) + row.warsh_classification.slice(1).toLowerCase())} <small>${row.warsh_hard_rules_active ? "hard rules on" : "hard rules off"}</small>` : "—";
   const llmRow = row.crash_probability_pct != null ? row : priorFullReport;
@@ -3625,7 +3631,7 @@ function renderStressVerdict(row, priorFullReport) {
     <div class="headline"><div class="big">${confirmed}<em>/6</em> red</div>
       <div class="sub">${waveTxt} · gate needs 3 of 6 confirmed${pending ? ` · <b class="warn">${pending} pending</b>` : ""} ${ib("i-gate", "the gate")}</div></div>
     <div class="facts">
-      <div class="fact"><span class="lbl">Hazard · 10% / 21d</span><span class="v">${hazard}</span></div>
+      <div class="fact"><span class="lbl">Drawdown risk · 10% / 21d</span><span class="v">${hazard}</span></div>
       <div class="fact"><span class="lbl">Fed regime</span><span class="v">${regime} ${ib("i-regime", "the Fed regime")}</span></div>
       <div class="fact context"><span class="lbl">LLM crash est.</span><span class="v">${llm} ${ib("i-llm", "the LLM estimate")}</span></div>
     </div>
@@ -3755,7 +3761,7 @@ function renderReport(row, priorFullReport) {
     return;
   }
   renderStressVerdict(row, priorFullReport);
-  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderDistanceToRed(row) + renderHazardSection(row) + renderProbabilitySection(row, priorFullReport);
+  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderDistanceToRed(row) + renderRiskBandSection(row) + renderProbabilitySection(row, priorFullReport);
   rail.innerHTML = renderRail(row);
   const more = document.getElementById("nar-more");
   if (more) more.addEventListener("click", () => { document.getElementById("nar-text").classList.add("open"); more.remove(); });
@@ -4235,7 +4241,7 @@ function setupTabs() {
 setupTabs();
 // Static ⓘ popovers (text that doesn't depend on the selected report).
 document.getElementById("pop-layer").innerHTML = [
-  popHtml("i-gate", "Wave-authorization gate", "<p>A deployment wave is authorized only when <b>3 of the 6</b> gate indicators are <b>confirmed RED</b>, meaning held across distinct dates, not one reading. The hazard model and the LLM estimate never count toward it.</p><p>A price/drawdown breach on its own is shown as \"observed, not authorized\" until the gate is met.</p>"),
+  popHtml("i-gate", "Wave-authorization gate", "<p>A deployment wave is authorized only when <b>3 of the 6</b> gate indicators are <b>confirmed RED</b>, meaning held across distinct dates, not one reading. The drawdown risk band and the LLM estimate never count toward it.</p><p>A price/drawdown breach on its own is shown as \"observed, not authorized\" until the gate is met.</p>"),
   popHtml("i-llm", "LLM crash estimate", "<p>Set by LLM judgment in chat-triggered full reports, derived from its scenario split (point = Crash% + ½ Bear%). <b>No defined horizon and no track record.</b></p><p>It asks a different, open-ended question from the statistical hazard model, so don't compare or average the two. Automated indicator refreshes don't change it; the strip shows the latest full report's figure.</p>"),
   popHtml("i-pos", "Market positioning · how to read it", "<p>These six measures ask one question: <b>how crowded are the main bets in the market?</b></p><p><b>The scale.</b> Each measure is ranked against its own history (5 years for futures and put/call, since 1998 for margin debt). A percentile of 83 means today's reading is higher than 83% of past readings. The middle half (solid grey) is normal. The striped amber ends are the rarest 10% each way.</p><p><b>Why crowding matters.</b> A crowded bet is fragile: if everyone is already long, there's little fresh buying left and a lot of potential selling. That's why extremes are read <b>contrarian</b>: heavy fear has often come near bottoms, heavy greed near tops.</p><p><b>What it isn't.</b> Not a timing signal (not backtested), and never part of the 3-of-6 gate.</p><p class='fine'><b>Sources.</b> CFTC Commitments of Traders (weekly; Tuesday positions released Friday), CBOE put/call (daily), FINRA margin statistics (monthly, ~3–4 week lag).</p>", true),
   popHtml("i-ext", "Positioning extremes", "<p>An extreme is a reading in the rarest 10% at either end of the measure's own history (≤10th or ≥90th percentile). High and Low are the next band in (≥75th / ≤25th).</p><p>Extremes read <b>contrarian</b>: when nearly everyone is on one side, there's little fresh money left to push further and a lot that could reverse. <b>Not backtested</b> as a timing signal.</p>"),
@@ -4401,14 +4407,14 @@ const ANALYST_CHECKS = {
   },
   equity_correction_risk: async ({ row }) => {
     if (!row) return { reading: "No crash-check data.", supports: null };
-    if (row.hazard_10pct_status === "ALREADY_BREACHED") {
+    const { status: bandStatus, band } = ddVixReading(row);
+    if (bandStatus === "ALREADY_BREACHED") {
       return { reading: "The S&amp;P is already more than 10% below its high.", supports: true };
     }
-    const band = row.hazard_10pct_band;
     const confirmed = row.confirmed_red_count ?? 0;
     const hz = band
-      ? `hazard model ${HAZARD_BAND_LABELS[band] || band}${HAZARD_BAND_HIT_RATE[band] ? ` (historically ~${HAZARD_BAND_HIT_RATE[band]} odds of a 10% drop within a month)` : ""}`
-      : "hazard model unavailable";
+      ? `drawdown risk band ${DD_VIX_BAND_LABELS[band] || band}${DD_VIX_HIT_RATE[band] ? ` (historically ~${DD_VIX_HIT_RATE[band]} of such days were followed by a 10% drop within a month)` : ""}`
+      : "drawdown risk band unavailable";
     return {
       reading: `${confirmed} of 6 crash indicators confirmed RED; ${hz}.`,
       supports: band === "HIGH" || confirmed >= 2 ? true : band === "TRANSITIONING" || (row.red_count ?? 0) >= 1 ? "partial" : false,
@@ -4708,7 +4714,7 @@ async function main() {
     // 2026-09-19, F12) — the exact bug this same pagination already fixed
     // for data_points history further down.
     ALL_ROWS = await fetchAllFromSupabase(
-      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,distance_to_red,hazard_10pct_raw_pct,hazard_10pct_calibrated_pct,hazard_10pct_band,hazard_10pct_as_of,hazard_10pct_status&order=run_at.asc",
+      "crash_checks?select=run_at,crash_probability_pct,crash_probability_low_pct,crash_probability_high_pct,scenario_bull_pct,scenario_base_pct,scenario_bear_pct,scenario_crash_pct,vix_value,vix_color,hy_spread_bps,hy_spread_color,sp_drawdown_pct,sp_drawdown_color,treasury_10y_pct,treasury_10y_color,sahm_rule_value,sahm_rule_color,fed_pivot_signal,fed_pivot_color,red_count,confirmed_red_count,confirmation_state,wave_authorized,warsh_classification,warsh_hard_rules_active,trigger_status,notes,delta_log,divergence_flags,distance_to_red,dd_vix_score,dd_vix_band&order=run_at.asc",
     );
 
     if (ALL_ROWS.length === 0) {

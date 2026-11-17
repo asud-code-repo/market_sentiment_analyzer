@@ -151,10 +151,10 @@ server.registerTool(
       "Returns the 6-indicator RED/AMBER/GREEN panel, red_count/confirmed_red_count, and wave status. " +
       "wave_authorized already reflects confirmed_red_count (see crash-check-rules.md's Signal Tiering " +
       "rule) — report that as the authorizing number, not raw red_count. Check data_freshness.is_fresh " +
-      "before proceeding (project-instructions.md step 1). hazard_model_10pct is a separate rule-engine-" +
-      "computed estimate, not the same question as your own scenario-distribution judgment (crash_" +
-      "probability_pct is derived from that, see write_snapshot) — report its band, not a re-derived " +
-      "percentage. distance_to_red gives, per numeric indicator, the rule engine's own AMBER/RED lines " +
+      "before proceeding (project-instructions.md step 1). drawdown_risk_band is a rule-engine-computed " +
+      "band from S&P drawdown + VIX, not the same question as your own scenario-distribution judgment " +
+      "(crash_probability_pct is derived from that, see write_snapshot) — report its band and " +
+      "historical hit rate, not a re-derived percentage. distance_to_red gives, per numeric indicator, the rule engine's own AMBER/RED lines " +
       "(amber_from, red_above; RED is strictly above red_above, so distance 0 is still AMBER), the " +
       "signed distance to each (positive = still below), the % move needed (for S&P drawdown, the move " +
       "in the S&P level), and red_confirmation_days_needed; fed pivot is a state. Quote these, don't " +
@@ -216,33 +216,43 @@ server.registerTool(
       // Distance-to-RED (E7): deterministic, computed by the rule engine from
       // its own thresholds — no probability or narrative, safe in step 1.
       distance_to_red: latest.distance_to_red ?? null,
-      hazard_model_10pct: {
-        status: latest.hazard_10pct_status,
-        calibrated_pct: latest.hazard_10pct_calibrated_pct,
-        band: latest.hazard_10pct_band,
-        raw_pct: latest.hazard_10pct_raw_pct,
-        as_of: latest.hazard_10pct_as_of,
-        // Measured share of days in each band followed by a >=10% drawdown
-        // within 21 trading days (2026-11-09 replay, 1994-2026, in-sample).
-        // Duplicated in dashboard_site/index.html (HAZARD_BAND_HIT_RATE).
-        historical_hit_rate_pct:
-          latest.hazard_10pct_band == null
-            ? null
-            : ({ LOW: 3, TRANSITIONING: 16, HIGH: 54 } as Record<string, number>)[latest.hazard_10pct_band] ?? null,
-        signal:
-          "Rule-engine-computed — distinct from crash_probability_pct (derived from " +
-          "the scenario distribution, which is 100% LLM judgment, see write_snapshot). Report the " +
-          "BAND plus historical_hit_rate_pct (e.g. 'High — historically ~54% of High readings were " +
-          "followed by a 10% drawdown within a month, vs ~12% base rate'). Do NOT quote calibrated_pct " +
-          "as odds: a 2026-11 replay over 1994-2026 found the model's built-in calibration badly " +
-          "overstates them (High claims ~93%, actual ~54%; Low claims ~24%, actual ~3%). Never blend " +
-          "with your own estimate. Check status before reporting a band: " +
-          "ALREADY_BREACHED means live drawdown is already >=10%, so the model's target (a FUTURE " +
-          "breach conditional on not already being past it) doesn't apply — say the threshold is " +
-          "already breached, not a fresh-breach percentage. UNAVAILABLE means this run's computation " +
-          "failed (a required input series was missing) — treat as unavailable, not a reading of " +
-          "zero. Only ELIGIBLE carries a meaningful band.",
-      },
+      // Drawdown + VIX risk band (rule_engine hazardScorecard.ts), shown in
+      // place of the logistic hazard model since 2026-11-17: the model and
+      // three rebuilt variants all failed to beat this rule out of sample
+      // (reference_docs/hazard-model-rebuild-brief.md). The model's own
+      // columns are still written, for the hazard_scorecard record only,
+      // and are deliberately not returned here.
+      drawdown_risk_band: (() => {
+        const dd = latest.sp_drawdown_pct;
+        const status =
+          dd != null && dd >= 10 ? "ALREADY_BREACHED" : latest.dd_vix_band == null ? "UNAVAILABLE" : "ELIGIBLE";
+        const band = status === "ELIGIBLE" ? latest.dd_vix_band : null;
+        return {
+          status,
+          band,
+          score: status === "ELIGIBLE" ? latest.dd_vix_score : null,
+          // Share of days in each band followed by a >=10% drawdown within 21
+          // trading days, 1994-2026 (base rate 12%). By era the HIGH rate was
+          // 38% (1994-2009) and 50% (2010-2026). Duplicated in
+          // dashboard_site/index.html and _worker.js (DD_VIX_HIT_RATE).
+          historical_hit_rate_pct:
+            band == null ? null : ({ LOW: 5, TRANSITIONING: 17, HIGH: 44 } as Record<string, number>)[band] ?? null,
+          base_rate_pct: 12,
+          signal:
+            "Rule-engine-computed from two public inputs: score = S&P drawdown % + VIX / 5; LOW below 8.5, " +
+            "TRANSITIONING 8.5 to under 10, HIGH at 10 or above. It answers 'could a 10% S&P drawdown begin " +
+            "within about a month?' Report the BAND plus historical_hit_rate_pct against the base rate (e.g. " +
+            "'High: historically about 44% of High days were followed by a 10% drawdown within 21 trading " +
+            "days, vs 12% on a typical day'). It ranks that risk reasonably (High came before 20 of the 21 such " +
+            "episodes since 1994, median 14 trading days ahead, but only 1-3 days before sudden drops) and says " +
+            "little about how DEEP a decline goes; it is not a forecast of direction. Distinct from crash_probability_pct (LLM judgment); never blend the two. It is " +
+            "not part of the 3-of-6 stress gate and never decides deployment. status: ALREADY_BREACHED means " +
+            "the S&P is already 10% or more below its high, so the question no longer applies; say that " +
+            "rather than a band. UNAVAILABLE means this row predates the band; treat as unavailable. It " +
+            "replaced the earlier 'statistical hazard model' (hazard_model_10pct) on 2026-11-17 after that " +
+            "model failed out-of-sample testing; do not quote the old model's bands or percentages.",
+        };
+      })(),
     });
   }),
 );

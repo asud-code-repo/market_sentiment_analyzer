@@ -3,6 +3,7 @@ import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import { computeDivergences } from "./divergence.js";
 import { gatherHazardFeatures, computeHazardProbability, type HazardResult } from "./hazardModel.js";
 import { updateHazardScorecard } from "./hazardScorecardStore.js";
+import { baselineScore, bandBaseline } from "./hazardScorecard.js";
 import {
   bandVix,
   bandHySpreadBps,
@@ -150,6 +151,16 @@ export async function classify(): Promise<void> {
     }
   }
 
+  // Drawdown + VIX risk band: the public-facing answer to "could a 10%
+  // drawdown start within ~21 trading days?" since 2026-11-17. The logistic
+  // model above failed every out-of-sample test against this two-input rule
+  // (reference_docs/hazard-model-rebuild-brief.md), so the rule is what the
+  // dashboard and MCP now show. The model is still computed, only so the
+  // hazard_scorecard keeps recording both side by side. Same eligibility as
+  // the model: the question has no meaning once drawdown is already >= 10%.
+  const ddVixScore = drawdown < 10 ? Math.round(baselineScore(drawdown, vix.value) * 100) / 100 : null;
+  const ddVixBand = ddVixScore === null ? null : bandBaseline(baselineScore(drawdown, vix.value));
+
   // Stage 4 recovery tracking (crash-check-rules.md "Recovery Signal and
   // 6-Month Transition", added 2026-08-16 — previously pure prose, no code).
   // Trough is a running minimum for the CURRENT OPEN episode — "open" means
@@ -255,6 +266,8 @@ export async function classify(): Promise<void> {
     hazard_10pct_band: hazard?.band ?? null,
     hazard_10pct_as_of: hazard ? sp500.observation_date : null,
     hazard_10pct_status: hazardStatus,
+    dd_vix_score: ddVixScore,
+    dd_vix_band: ddVixBand,
     raw_source_data: {
       vix, hySpread, sp500, sp500Ath, treasury10y, sahmRule,
       hazard_model_raw_probability: hazard?.raw_probability ?? null,
@@ -268,7 +281,8 @@ export async function classify(): Promise<void> {
       `Stress gate met: ${waveAuthorized}. ` +
       `Drawdown episode: ${inEpisode ? `active (trough ${sp500Trough} on ${sp500TroughDate})` : "none"}. ` +
       `Recovery confirmed: ${recoveryConfirmed}. ` +
-      `Hazard model (10% target): ${hazard ? `${hazard.band} (raw score ${(hazard.raw_probability * 100).toFixed(1)}%)` : hazardStatus}.`,
+      `Drawdown + VIX band: ${ddVixBand ?? "not scored (drawdown >= 10%)"}. ` +
+      `Hazard model (scorecard only): ${hazard ? `${hazard.band} (raw score ${(hazard.raw_probability * 100).toFixed(1)}%)` : hazardStatus}.`,
   );
 
   // Hazard scorecard (rebuild brief Stage 0): record today's model band
@@ -276,12 +290,14 @@ export async function classify(): Promise<void> {
   // outcome window has closed. Report-only and non-gating, so a failure
   // here is logged and never fails the run.
   try {
+    // A row for every day the question applies (drawdown < 10%), even when
+    // the model itself failed to compute: the band needs only drawdown + VIX.
     const msg = await updateHazardScorecard(
-      hazard
+      drawdown < 10
         ? {
             as_of_date: sp500.observation_date,
-            model_band: hazard.band,
-            model_raw_pct: Math.round(hazard.raw_probability * 10000) / 100,
+            model_band: hazard?.band ?? null,
+            model_raw_pct: hazard ? Math.round(hazard.raw_probability * 10000) / 100 : null,
             sp500_level: sp500.value,
             sp500_ath: sp500Ath.value,
             drawdown_pct: drawdown,

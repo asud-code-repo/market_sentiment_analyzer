@@ -127,6 +127,11 @@ export interface CrashCheckInsert {
   // "computation failed this run" — both leave band/raw/calibrated null, but
   // mean very different things (external review 2026-09-19, F01).
   hazard_10pct_status: "ELIGIBLE" | "ALREADY_BREACHED" | "UNAVAILABLE";
+  // Drawdown + VIX risk band (hazardScorecard.ts baselineScore/bandBaseline),
+  // shown publicly in place of the hazard model since 2026-11-17. Both null
+  // when live drawdown is already >= 10% (the question no longer applies).
+  dd_vix_score: number | null;
+  dd_vix_band: "LOW" | "TRANSITIONING" | "HIGH" | null;
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {

@@ -1,5 +1,13 @@
 # How the Hazard Model Works
 
+> **Status, 2026-11-17: this model is retired from display.** An honest
+> out-of-sample rebuild found it could not beat a two-input rule
+> (S&P drawdown + VIX), so the dashboard and `get_indicator_panel` now show
+> that rule as the "drawdown risk band". The model is still computed each
+> run, only so the `hazard_scorecard` table keeps recording both side by
+> side. This document describes the retired model and is kept as the
+> record. See `reference_docs/hazard-model-rebuild-brief.md` ("Outcome").
+
 *Written for a data engineer with no ML background. Covers what the model
 computes, where its inputs come from, how the math runs end to end, and its
 known limitations. For the formal thresholds/bands, see

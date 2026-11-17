@@ -34,14 +34,16 @@ calibrated crash-probability model**. Both reporting pages say so.
 |---|---|---|
 | 6-indicator panel, bands, confirmation windows, stress gate | Code (`rule_engine/`), thresholds in `config/monitoring.yaml` | Deterministic and reproducible |
 | Deployment waves | Code (`mcp_server/`), triggers in a private local policy file | Deterministic. The pathways were replayed against every ≥20% S&P drawdown since 1993, but the thresholds are a personal choice, not an optimised fit |
-| Hazard model: P(10%+ drawdown within ~21 trading days) | Offline-fit logistic regression, run daily in code | Replayed in-sample: it ranks risk better than drawdown alone, but its raw percentages ran about 2× too high, so the dashboard shows measured historical hit rates instead |
+| Drawdown risk band: could a 10%+ drawdown begin within ~21 trading days? | Code: S&P drawdown % + VIX / 5, three bands | Yes, modestly. Measured hit rates 1994–2026 (about 5% / 17% / 44% by band, vs a 12% base rate). It replaced a 32-input logistic model that, refit honestly out of sample, did worse than this rule |
 | Crash probability | Derived by formula from an LLM-committed bull/base/bear/crash scenario split | No: it's a considered opinion, not a statistic |
 | Crash-type diagnosis, Fed classification | LLM judgment informed by the panel and web research | No |
 
 The full write-up is in
 [`reference_docs/rules/crash-check-rules.md`](reference_docs/rules/crash-check-rules.md)
-("What this system actually is") and
-[`reference_docs/hazard-model-explained.md`](reference_docs/hazard-model-explained.md).
+("What this system actually is"). The retired hazard model is described in
+[`reference_docs/hazard-model-explained.md`](reference_docs/hazard-model-explained.md),
+and why it was retired in
+[`reference_docs/hazard-model-rebuild-brief.md`](reference_docs/hazard-model-rebuild-brief.md).
 
 ## Architecture
 
@@ -132,7 +134,7 @@ never proposed twice.
 
 Four tabs, all read-only:
 
-- **Stress:** the panel, the stress gate, distance to RED, the hazard model,
+- **Stress:** the panel, the stress gate, distance to RED, the drawdown risk band,
   the LLM crash-estimate history, upcoming market events, and indicator
   history charts with their bands.
 - **Smart Money:** market positioning, sector rotation and institutional
@@ -176,7 +178,10 @@ freshness, and install the dashboard as a home-screen app (PWA).
   retired, and later deleted, after its readings swung run to run on
   unchanged data.
 - **Self-corrections are published.** The hazard model's overstated
-  probabilities were relabeled rather than hidden. External reviews and
+  probabilities were relabeled rather than hidden, and when an honest
+  out-of-sample rebuild showed the model could not beat a two-input rule,
+  the model was retired for the rule
+  ([`hazard-model-rebuild-brief.md`](reference_docs/hazard-model-rebuild-brief.md)). External reviews and
   their outcomes are in
   [`architecture-summary-for-external-review.md`](reference_docs/architecture-summary-for-external-review.md).
 - **Refactors are checked for identical behaviour.** Moving thresholds into

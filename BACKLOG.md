@@ -239,6 +239,16 @@ full history of what was built and how lives in project memory, not here.
 
 ## The hazard-model / regime-detection work (the big one)
 
+**Resolved 2026-11-17: rebuilt, tested, and the model retired.** The
+rebuild in the private research repo refit this model honestly (walk-forward,
+data as published at the time) and tested a repaired 8-input version, a
+"will the decline deepen" model and a tail-risk forecast. None beat a
+two-input drawdown + VIX rule, so that rule is now shown as the "drawdown
+risk band" and the model runs only for the live `hazard_scorecard`. Full
+account: `reference_docs/hazard-model-rebuild-brief.md` ("Outcome"). The
+text below is the history; its open items about validating or extending
+the logistic model are closed by that result.
+
 ~~The single largest deferred item~~ — **v1 built and live 2026-08-26**: a
 logistic-regression hazard model, `P(S&P drawdown reaches >=10% from ATH
 within ~21 trading days | not already past it)`. Walk-forward validated

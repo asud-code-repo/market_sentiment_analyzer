@@ -1272,6 +1272,47 @@ version now).
 
 ## Statistical Hazard Model (10% Drawdown)
 
+**Status (2026-11-17): the model below is retired from display. Report the
+drawdown risk band instead.** The logistic model was rebuilt and tested out
+of sample in a separate research repo (see
+`reference_docs/hazard-model-rebuild-brief.md`, "Outcome"). Refit honestly,
+on data as published at the time, it ranked days far worse than a two-input
+rule (AUC 0.545 vs 0.818); a repaired 8-input version only matched the rule;
+and neither a "will the decline deepen" model nor a tail-risk forecast beat
+it either. Per the exit criterion agreed beforehand, the rule replaces the
+model.
+
+**Drawdown risk band (what to report)**: `get_indicator_panel` returns
+`drawdown_risk_band`, computed by the rule engine each run
+(`rule_engine/src/hazardScorecard.ts`) and stored on `crash_checks` as
+`dd_vix_score` / `dd_vix_band`:
+
+- score = S&P drawdown from its all-time high (%) + VIX / 5
+- LOW below 8.5; TRANSITIONING 8.5 to under 10; HIGH at 10 or above
+- It answers one question: could a drawdown of 10% or more begin within
+  about 21 trading days? It is not scored once the S&P is already 10% or
+  more below its high (`ALREADY_BREACHED`).
+- Measured hit rates, 1994–2026: LOW about 5%, TRANSITIONING about 17%,
+  HIGH about 44% of days were followed by such a drawdown, against 12% on a
+  typical day. The HIGH rate was 38% in 1994–2009 and 50% in 2010–2026.
+- What it is good for: ranking that one risk. HIGH came before 20 of the 21
+  such episodes since 1994, a median of 14 trading days ahead, but only 1–3
+  days before sudden drops (2015, February 2018, 2020). What it is not: a forecast of direction,
+  or of how deep a decline goes (on "will a 5% decline deepen" it is only
+  modestly better than chance).
+- Report the band with its hit rate against the base rate. Never quote it as
+  a probability of a crash, never blend it with `crash_probability_pct`, and
+  never use it to decide deployment: it is not one of the six stress-gate
+  inputs and wave triggers are evaluated separately.
+- The cutoffs were fixed on 2026-11-16 before any live outcome and are not
+  to be retuned from live results.
+
+The model is still computed each run and written to the `hazard_10pct_*`
+columns, only so the `hazard_scorecard` table keeps recording both side by
+side. Those columns are no longer returned by `get_indicator_panel` or shown
+on the dashboard. **Everything from here to the "Live scorecard" paragraph
+describes the retired model and is kept as the record.**
+
 **What it estimates**: P(S&P drawdown reaches ≥10% from its all-time-high
 within ~21 trading days), conditional on not already being past that
 threshold — a "is a fresh correction about to start" read, not "how deep is
@@ -1414,9 +1455,10 @@ before any live outcome so the baseline flags about the same share of days
 as the model did in the 1994–2026 replay; they are not to be retuned after
 seeing results. Once 21 and 63 more S&P closes exist, each row records
 whether the S&P touched a ≥10% drawdown from its running all-time high in
-that window. This is the model's only out-of-sample record, and the test of
-whether it beats the simple rule. Report-only: nothing reads it for a
-decision.
+that window. Since 2026-11-17 the baseline band is the one shown publicly
+(see the status note at the top of this section); the scorecard keeps the
+retired model alongside it as a running out-of-sample record. Report-only:
+nothing reads it for a decision.
 
 ---
 
