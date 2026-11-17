@@ -497,7 +497,15 @@ Growth", *AER* 2019).
 
 ### Exit criterion (agree before seeing results)
 
-Proposed, not yet confirmed:
+**Confirmed 2026-11-17, before any model was fitted.** The exact rules,
+including how each comparison is measured, are frozen in the research repo
+at `experiments/exit_criterion.json`; that file wins over this summary.
+Also decided then for question (a): reaching 10% is tested within 21 and 63
+trading days, but 15% and 20% are tested as "reached before the market
+recovers to within 2% of its high", with no fixed window. Since 1990 only 4
+of 50 five-percent declines reached 20%, and only 1 within 63 days.
+
+As agreed:
 - **Keep a model** only if the 90% bootstrap interval (resampling whole
   episodes) for its out-of-sample AUC advantage over drawdown + VIX lies
   entirely above zero.
@@ -563,6 +571,15 @@ only on evidence:
    edge worth enlarging.
 
 ### Volatility forecast for purchase pacing (Variant G)
+
+**Outcome 2026-11-17: built, tested, not shipped.** In the research repo,
+HAR did not clearly beat VIX at 21 days, so the band became two VIX cutoffs
+(JUMPY at about 20, close to the panel's existing VIX AMBER line). The
+pacing backtest then found the band JUMPY on every historical wave-trigger
+day, so it adds nothing to pacing, and splitting a wave purchase over 3–10
+days was not cheaper on average and did not narrow the range of outcomes.
+Nothing was added to `crash_checks`. The rest of this section is the
+original plan, kept for the record.
 
 **Decided 2026-11-16: the maintainer would split purchases over several
 days when markets are very jumpy.** This forecast is built to inform that
