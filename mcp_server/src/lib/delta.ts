@@ -23,6 +23,7 @@ export interface FieldDelta {
   field: string;
   from: unknown;
   to: unknown;
+  note?: string;
 }
 
 /** Only the fields that actually changed between the two most recent rows. */
@@ -31,7 +32,16 @@ export function computeDelta(latest: CrashCheckRow, prior: CrashCheckRow | undef
   const changes: FieldDelta[] = [];
   for (const field of TRACKED_FIELDS) {
     if (latest[field] !== prior[field]) {
-      changes.push({ field, from: prior[field], to: latest[field] });
+      // crash_probability_pct changed meaning on 2026-11-17 (crash + 1/2 bear,
+      // undefined buckets -> bear + crash over 63 trading days). Flag the
+      // break instead of letting a run report it as a real move.
+      const methodChanged = field === "crash_probability_pct" && (latest.scenario_method ?? null) !== (prior.scenario_method ?? null);
+      changes.push({
+        field,
+        from: prior[field],
+        to: latest[field],
+        ...(methodChanged ? { note: "definition changed (now the chance of a 10%+ fall within 63 trading days, from the tilt); not comparable, don't report as a move" } : {}),
+      });
     }
   }
   return changes;

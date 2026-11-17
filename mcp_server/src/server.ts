@@ -25,6 +25,7 @@ import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
 import { computeFundingPressureFlag } from "./lib/repoStress.js";
 import { resolveConditional, dueEvents } from "./lib/conditionalScenarios.js";
+import { priorStateOf, scenarioPriorFor, validateTiltReasons, SCENARIO_METHOD, type Tilt } from "./lib/scenarioTilt.js";
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { loadRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 import { readInstructionDoc } from "./lib/instructionsDoc.js";
@@ -110,8 +111,8 @@ server.registerTool(
     description:
       "Returns the most recent crash_checks row plus a delta vs the last row that actually had a " +
       "probability (the last full report, not just the last row — most rows are bare automated " +
-      "refreshes). Call only after independently committing to this run's scenario distribution " +
-      "(crash_probability_pct is derived from that, not independently judged -- see write_snapshot) " +
+      "refreshes). Call only after committing to this run's scenario tilt in step 7 " +
+      "(the split and crash_probability_pct are derived from it -- see write_snapshot) " +
       "— this is for the delta-log framing, not for forming the estimate itself. conditional (E8) holds the " +
       "last full report's open event predictions, which of them are due (needing an outcome in this run's " +
       "write_snapshot), and recent scoring. Use them to score and describe change, never to revise step 7.",
@@ -152,9 +153,10 @@ server.registerTool(
       "wave_authorized already reflects confirmed_red_count (see crash-check-rules.md's Signal Tiering " +
       "rule) — report that as the authorizing number, not raw red_count. Check data_freshness.is_fresh " +
       "before proceeding (project-instructions.md step 1). drawdown_risk_band is a rule-engine-computed " +
-      "band from S&P drawdown + VIX, not the same question as your own scenario-distribution judgment " +
-      "(crash_probability_pct is derived from that, see write_snapshot) — report its band and " +
-      "historical hit rate, not a re-derived percentage. distance_to_red gives, per numeric indicator, the rule engine's own AMBER/RED lines " +
+      "band from S&P drawdown + VIX — report its band and historical hit rate, not a re-derived " +
+      "percentage. scenario_prior is the frozen historical bull/base/bear/crash split for that band over " +
+      "the next 63 trading days, with the split each tilt (lower / in_line / higher, one 5-point step) " +
+      "produces: step 7 picks one tilt and up to 3 number-citing reasons (see write_snapshot). distance_to_red gives, per numeric indicator, the rule engine's own AMBER/RED lines " +
       "(amber_from, red_above; RED is strictly above red_above, so distance 0 is still AMBER), the " +
       "signed distance to each (positive = still below), the % move needed (for S&P drawdown, the move " +
       "in the S&P level), and red_confirmation_days_needed; fed pivot is a state. Quote these, don't " +
@@ -245,12 +247,31 @@ server.registerTool(
             "'High: historically about 44% of High days were followed by a 10% drawdown within 21 trading " +
             "days, vs 12% on a typical day'). It ranks that risk reasonably (High came before 20 of the 21 such " +
             "episodes since 1994, median 14 trading days ahead, but only 1-3 days before sudden drops) and says " +
-            "little about how DEEP a decline goes; it is not a forecast of direction. Distinct from crash_probability_pct (LLM judgment); never blend the two. It is " +
+            "little about how DEEP a decline goes; it is not a forecast of direction. It is the public headline risk reading; " +
+            "scenario_prior below is a separate, 63-day view built from the same band. It is " +
             "not part of the 3-of-6 stress gate and never decides deployment. status: ALREADY_BREACHED means " +
             "the S&P is already 10% or more below its high, so the question no longer applies; say that " +
             "rather than a band. UNAVAILABLE means this row predates the band; treat as unavailable. It " +
             "replaced the earlier 'statistical hazard model' (hazard_model_10pct) on 2026-11-17 after that " +
             "model failed out-of-sample testing; do not quote the old model's bands or percentages.",
+        };
+      })(),
+      // Frozen historical prior for the LLM's step-7 tilt (scenarioTilt.ts,
+      // config/scenario_prior_v1.json). Deterministic: same band, same prior.
+      scenario_prior: (() => {
+        const state = priorStateOf(latest.sp_drawdown_pct, latest.vix_value, latest.dd_vix_band);
+        if (!state) return { state: null, signal: "Unavailable: the latest row has no drawdown/VIX. Skip the tilt and say so; write_snapshot will refuse." };
+        return {
+          ...scenarioPriorFor(state),
+          signal:
+            "How days in this band have played out since 1990 over the next 63 trading days (buckets defined " +
+            "against the as-of S&P close: crash = a 20%+ fall at some close, bear = 10-20%, bull = no 10% fall " +
+            "and the day-63 close 5%+ higher, base = the rest). In step 7, pick ONE tilt: lower, in_line or " +
+            "higher than this history, judged only on what drawdown + VIX can't already see (credit, " +
+            "fiscal, upcoming events, divergences), with up to 3 reasons that each quote a number from steps " +
+            "1-6. in_line is the default when nothing clearly differs. split_by_tilt is the split the tilt " +
+            "produces; quote it, don't invent other numbers. history.fall10_episodes_approx is how many " +
+            "independent 10%+ falls the row rests on: small, so the prior is a scale, not a precise forecast.",
         };
       })(),
     });
@@ -420,7 +441,7 @@ server.registerTool(
   "write_snapshot",
   {
     description:
-      "Persists this run's qualitative synthesis (crash probability, scenario distribution, " +
+      "Persists this run's qualitative synthesis (scenario tilt, " +
       "narrative notes, delta log) back to Supabase, combined with the current indicator panel/wave " +
       "status from the latest rule-engine row. `delta_log` should be the same structured list of " +
       "factors you're already rendering in the HTML artifact's colored delta log (each " +
@@ -436,24 +457,25 @@ server.registerTool(
       "'fired' server-side once their own `date` is today or in the past, regardless of what you " +
       "supply -- you still write the qualitative outcome in `note` (was it hawkish/dovish, in-line " +
       "or a beat/miss), just don't worry about the status enum lagging behind it. " +
-      "crash_probability_pct/low/high are NOT inputs to this tool (changed 2026-09-22) -- they are " +
-      "computed server-side from the scenario distribution (point = scenario_crash_pct + 0.5 x " +
-      "scenario_bear_pct; low = scenario_crash_pct; high = scenario_bear_pct + scenario_crash_pct), so " +
-      "only commit to ONE judgment in step 7 (the scenario split), not two. Do not include any personal " +
+      "The scenario split is NOT an input (changed 2026-11-17): pass prior_state (the scenario_prior.state " +
+      "get_indicator_panel showed in step 1) and scenario_tilt (lower / in_line / higher vs that historical " +
+      "prior), plus tilt_reasons (1-3 for lower/higher, up to 3 for in_line; each must cite a number from " +
+      "steps 1-6). The server re-derives the split from the frozen prior (config/scenario_prior_v1.json) and " +
+      "stores it, with crash_probability_pct = bear + crash (chance of a 10%+ S&P fall within 63 trading " +
+      "days). It rejects the call if prior_state no longer matches the latest row (re-run step 1). Do not include any personal " +
       "dollar figures in `notes` — this is written to Supabase, which holds macro/rule state only. " +
       "conditional_scenarios (optional, max 3 events, event_date today or later): the event branches you " +
       "formed in step 7; per event, branch probabilities sum to 100, each branch split sums to 100, and " +
-      "the probability-weighted splits must be within ±5pts of this call's scenario split. Open predictions " +
+      "the probability-weighted splits must be within ±5pts of this run's tilted split (scenario_prior.split_by_tilt). Open predictions " +
       "you don't resend are carried forward; resending an event replaces it. conditional_outcomes: required " +
       "for every event get_latest_snapshot listed as due — a branch name, \"other\", or \"unresolved\" with a " +
       "reason (keeps it due; the write still succeeds). The server computes the score. Never write your own " +
       "branch probabilities into trigger_status notes (market-implied odds with a named source, e.g. CME " +
       "FedWatch, are fine).",
     inputSchema: {
-      scenario_bull_pct: z.number().min(0).max(100),
-      scenario_base_pct: z.number().min(0).max(100),
-      scenario_bear_pct: z.number().min(0).max(100),
-      scenario_crash_pct: z.number().min(0).max(100),
+      prior_state: z.enum(["LOW", "TRANSITIONING", "HIGH", "ALREADY_BREACHED"]),
+      scenario_tilt: z.enum(["lower", "in_line", "higher"]),
+      tilt_reasons: z.array(z.string()).max(3),
       notes: z.string().describe(NOTES_TEXT),
       delta_log: z
         .array(
@@ -507,61 +529,57 @@ server.registerTool(
     },
   },
   withLogging("write_snapshot", async (input) => {
-    const scenarioSum =
-      input.scenario_bull_pct + input.scenario_base_pct + input.scenario_bear_pct + input.scenario_crash_pct;
-    if (Math.abs(scenarioSum - 100) > 0.5) {
-      return json({ error: `Scenario distribution must sum to 100, got ${scenarioSum}` });
+    // Tilt-based split (2026-11-17, scenarioTilt.ts): the split is the frozen
+    // historical prior for the latest row's drawdown risk band, moved one
+    // fixed step by the tilt. Re-derived here from the same row writeSnapshot
+    // copies, never taken from the caller.
+    const [latestRow] = await getRecentCrashChecks(1);
+    const state = latestRow ? priorStateOf(latestRow.sp_drawdown_pct, latestRow.vix_value, latestRow.dd_vix_band) : null;
+    if (!state) return json({ error: "No drawdown/VIX on the latest crash_checks row, so there is no scenario prior. Nothing was written." });
+    if (state !== input.prior_state) {
+      return json({ error: `prior_state is ${input.prior_state} but the latest row's band is now ${state} (a newer rule-engine run landed). Re-run get_indicator_panel and redo step 7 from its scenario_prior. Nothing was written.` });
     }
+    const tilt = input.scenario_tilt as Tilt;
+    const reasons = (input.tilt_reasons as string[]).map((r) => r.trim()).filter(Boolean);
+    const reasonErrors = validateTiltReasons(tilt, reasons);
+    if (reasonErrors.length) return json({ error: "tilt_reasons rejected; nothing was written.", details: reasonErrors });
+    const prior = scenarioPriorFor(state);
+    const split = prior.split_by_tilt[tilt];
     // E8: merge with the last FULL report's open predictions (the latest row
     // is usually an automated refresh with none), validate, and score any
     // event whose date has passed. Rejected as a whole on any error, so a
     // run can fix and retry; "unresolved" lets a due event wait a day.
-    const { conditional_scenarios: submitted, conditional_outcomes: outcomes, ...snapshotInput } = input;
+    const { conditional_scenarios: submitted, conditional_outcomes: outcomes, prior_state: _ps, scenario_tilt, tilt_reasons: _tr, ...snapshotInput } = input;
     const lastFull = await getLatestCrashCheckWithProbability();
     const conditional = resolveConditional(
       lastFull?.conditional_scenarios ?? [],
       submitted ?? [],
       outcomes ?? [],
-      { bull: input.scenario_bull_pct, base: input.scenario_base_pct, bear: input.scenario_bear_pct, crash: input.scenario_crash_pct },
+      split,
       new Date().toISOString().slice(0, 10),
     );
     if (conditional.errors.length > 0) {
       return json({ error: "conditional_scenarios / conditional_outcomes rejected; nothing was written. Fix and call again.", details: conditional.errors });
     }
-    // crash_probability_pct/low/high are DERIVED here, not supplied by the
-    // caller (changed 2026-09-22, user question: two independently-
-    // committed LLM judgments only checked for non-contradiction still let
-    // the headline drift anywhere across a wide legal band -- e.g. 5-25 in
-    // one real report -- for no explained reason). The scenario split is
-    // the more information-rich, better-calibrated of the two by
-    // construction (a forced decomposition into 4 exhaustive/exclusive
-    // buckets summing to 100, vs. a single free-floating anchor number),
-    // and the system's own prior design already treated it as primary --
-    // that's why the Sep-20 consistency check bounded the headline BY the
-    // scenario split rather than the reverse. So: stop asking for a second
-    // independent guess, compute the headline FROM the first one instead.
-    // point = crash-bucket + half the bear-bucket (crash is definitionally
-    // included in "bear or worse"; the 0.5 weight says a Bear scenario is
-    // itself only partway to crash-severity) -- low/high reuse exactly the
-    // bounds the old consistency check already validated against
-    // (scenario_crash_pct, scenario_bear_pct + scenario_crash_pct), now as
-    // the reported range's actual definition instead of just a gate. Both
-    // are guaranteed within [0,100] and low<=point<=high by construction
-    // from the scenario fields' own already-validated 0-100/sum-100
-    // constraints -- no separate runtime check needed for something
-    // algebra already guarantees.
-    const crashProbabilityLowPct = input.scenario_crash_pct;
-    const crashProbabilityHighPct = input.scenario_bear_pct + input.scenario_crash_pct;
-    const crashProbabilityPct = Math.round(input.scenario_crash_pct + 0.5 * input.scenario_bear_pct);
+    // crash_probability_pct = bear + crash: the chance of a 10%+ fall within
+    // 63 trading days under the defined buckets. Replaced crash + 1/2 bear
+    // (2026-09-22 to 2026-11-17), whose weight had no basis. No range: the
+    // split is now fully determined by state + tilt.
     const row = await writeSnapshot({
       ...snapshotInput,
-      crash_probability_pct: crashProbabilityPct,
-      crash_probability_low_pct: crashProbabilityLowPct,
-      crash_probability_high_pct: crashProbabilityHighPct,
+      scenario_bull_pct: split.bull,
+      scenario_base_pct: split.base,
+      scenario_bear_pct: split.bear,
+      scenario_crash_pct: split.crash,
+      crash_probability_pct: split.bear + split.crash,
+      scenario_method: SCENARIO_METHOD,
+      scenario_prior_state: state,
+      scenario_tilt,
+      scenario_tilt_reasons: reasons,
       conditional_scenarios: conditional.open,
       conditional_scoring: conditional.scoring,
     });
-    return json({ written: row });
+    return json({ written: row, scenario: { prior_state: state, prior: prior.prior, tilt: scenario_tilt, split } });
   }),
 );
 

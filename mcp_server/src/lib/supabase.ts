@@ -128,6 +128,13 @@ export interface CrashCheckRow {
   // model since 2026-11-17. Null when drawdown is already >= 10%, and on older rows.
   dd_vix_score: number | null;
   dd_vix_band: string | null;
+  // S&P observation date behind sp500_level (rule engine, 2026-11-17); null on older rows.
+  sp500_as_of: string | null;
+  // Tilt-based scenario split (scenarioTilt.ts, 2026-11-17); null on older rows.
+  scenario_method: string | null;
+  scenario_prior_state: string | null;
+  scenario_tilt: string | null;
+  scenario_tilt_reasons: string[] | null;
   created_at: string;
 }
 
@@ -397,12 +404,14 @@ function pruneStaleTriggerEntries(entries: unknown[]): unknown[] {
  */
 export async function writeSnapshot(qualitative: {
   crash_probability_pct: number;
-  crash_probability_low_pct: number;
-  crash_probability_high_pct: number;
   scenario_bull_pct: number;
   scenario_base_pct: number;
   scenario_bear_pct: number;
   scenario_crash_pct: number;
+  scenario_method: string;
+  scenario_prior_state: string;
+  scenario_tilt: string;
+  scenario_tilt_reasons: string[];
   notes: string;
   // Same structured list already rendered in the HTML artifact's delta log
   // (each {sign: "pos"|"neg", text}) — optional since a run with no prior
@@ -506,11 +515,12 @@ export async function writeSnapshot(qualitative: {
     ...(qualitative.delta_log ?? []).map((d) => d.text),
     JSON.stringify(triggerStatus),
     JSON.stringify(qualitative.conditional_scenarios ?? []),
+    ...qualitative.scenario_tilt_reasons,
   ].join(" ");
   const privateHits = findPrivateTerms(publicText, loadPolicy().private_terms);
   if (privateHits.length > 0) {
     throw new Error(
-      `Refusing to write: the public crash_checks text (notes, delta_log, trigger notes or conditional scenarios) ` +
+      `Refusing to write: the public crash_checks text (notes, delta_log, trigger notes, conditional scenarios or tilt reasons) ` +
         `mentions private term(s): ${privateHits.join(", ")}. crash_checks is public: keep it to macro/market ` +
         `narrative. Account, watchlist and holdings details go in write_full_report's portfolio_context. ` +
         `Rephrase and try again.`,
@@ -600,15 +610,21 @@ export async function writeSnapshot(qualitative: {
     hazard_10pct_status: latest.hazard_10pct_status,
     dd_vix_score: latest.dd_vix_score,
     dd_vix_band: latest.dd_vix_band,
+    sp500_as_of: latest.sp500_as_of,
 
     // Qualitative fields from Claude's synthesis this run.
     crash_probability_pct: qualitative.crash_probability_pct,
-    crash_probability_low_pct: qualitative.crash_probability_low_pct,
-    crash_probability_high_pct: qualitative.crash_probability_high_pct,
+    // No range since the tilt (2026-11-17): the split is fully determined.
+    crash_probability_low_pct: null,
+    crash_probability_high_pct: null,
     scenario_bull_pct: qualitative.scenario_bull_pct,
     scenario_base_pct: qualitative.scenario_base_pct,
     scenario_bear_pct: qualitative.scenario_bear_pct,
     scenario_crash_pct: qualitative.scenario_crash_pct,
+    scenario_method: qualitative.scenario_method,
+    scenario_prior_state: qualitative.scenario_prior_state,
+    scenario_tilt: qualitative.scenario_tilt,
+    scenario_tilt_reasons: qualitative.scenario_tilt_reasons,
     notes: qualitative.notes,
     delta_log: qualitative.delta_log ?? null,
     crash_type: qualitative.crash_type ?? latest.crash_type,

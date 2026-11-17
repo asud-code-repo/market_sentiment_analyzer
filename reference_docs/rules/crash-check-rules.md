@@ -62,27 +62,18 @@ of it gets written to the "current state" table. None of it is inferred,
 estimated, or "reasonably judged" by an LLM at report time.
 
 **LLM narrative/qualitative layer (reporting) owns:** the crash-type
-diagnosis and the 4-way scenario distribution — despite the Stage 1 criteria
+diagnosis and one three-way scenario tilt. Despite the Stage 1 criteria
 below being written with hard numeric triggers, `crash_type` is never
 computed by the rule engine; it's only ever set by a caller-supplied input to
-`write_snapshot`. The scenario distribution is 100% LLM judgment too.
-**`crash_probability_pct` (and its low/high range) is the one exception,
-changed 2026-09-22**: it's no longer a caller-supplied judgment at all —
-`write_snapshot` (in `mcp_server`, not the rule engine) now derives it
-deterministically from the scenario distribution the caller supplies (point =
-`scenario_crash_pct` + 0.5×`scenario_bear_pct`; low = `scenario_crash_pct`;
-high = `scenario_bear_pct`+`scenario_crash_pct`) — see the "Crash-Probability
-Scoring Methodology" section below for why. This is a narrow exception to the
-Rule Engine Output Contract below, not a violation of it: the derivation
-lives in `mcp_server`, not `rule_engine/`, specifically because its input
-(the scenario split) is itself LLM judgment, not a real market data series —
-a genuinely deterministic layer computed from a non-deterministic input, not
-the same thing as the 6-indicator panel's bands. This is a **deliberate,
-pre-existing design decision** for `crash_type`/scenario distribution
-remaining LLM-judged, not an oversight this doc failed to catch — but it
-means this section previously overstated what's actually deterministic for
-the crash-probability headline specifically, and this paragraph exists to
-correct that rather than let the contradiction stand.
+`write_snapshot`. **The scenario split itself is no longer LLM judgment
+(changed 2026-11-17):** `write_snapshot` (in `mcp_server`) starts from a
+frozen historical split for the run's drawdown risk band and moves it one
+fixed step for the caller's tilt (`lower` / `in_line` / `higher`), then
+stores the split and `crash_probability_pct` = bear + crash. See the
+"Crash-Probability Scoring Methodology" section below. This is a narrow
+exception to the Rule Engine Output Contract below, not a violation of it:
+the derivation lives in `mcp_server`, not `rule_engine/`, because one of its
+inputs (the tilt) is LLM judgment.
 The LLM layer also reads news and Fed communication to inform the Warsh
 classification (an explicitly flagged manual judgment call — see below), and
 renders the dashboard from values the rule engine already computed for
@@ -109,17 +100,17 @@ was never meant to be, and should not be presented as if it were.
 **This is a stress-monitoring and discretionary deployment dashboard, not a
 calibrated crash-probability model.** The 6-indicator panel, band colors,
 confirmation windows, and wave-trigger thresholds are genuinely deterministic
-— reproducible, inspectable, and owned entirely by code. The crash
-probability, crash-type diagnosis, scenario distribution, and Fed/Warsh
-classification are not: they are a single person's (via an LLM) qualitative
-judgment, informed by the deterministic panel and web research, with no
-defined forecast horizon, no historical labels, no out-of-sample validation,
-and no reliability testing behind the displayed percentage. A crash
-probability of 15% is not evidence that a crash-defining event will occur
-roughly 15% of the time — treat it as a considered opinion, not a statistic.
-This system should never be presented or relied upon as if the three-wave
-deployment thresholds were empirically optimal, or as if the probability
-score were calibrated — because neither is true today.
+— reproducible, inspectable, and owned entirely by code. The crash-type
+diagnosis and Fed/Warsh classification are not: they are a single person's
+(via an LLM) qualitative judgment, informed by the deterministic panel and
+web research. The scenario split and crash probability sit in between
+(since 2026-11-17). They start from a defined, historical frequency for the
+current drawdown risk band over 3 months, which the LLM can move one 5-point
+step. That history rests on a handful of crises, and the tilt has no track
+record yet. Treat the number as history plus a considered opinion, not a
+calibrated forecast. This system should never be presented or relied upon
+as if the three-wave deployment thresholds were empirically optimal, or as
+if the probability score were calibrated — because neither is true today.
 
 ---
 
@@ -1464,7 +1455,84 @@ nothing reads it for a decision.
 
 ## Crash-Probability Scoring Methodology (IMPLEMENTED 2026-09-22 — derived, not judged)
 
-> **Status as of 2026-09-22 (current):** `crash_probability_pct` (and its
+**Current method (2026-11-17): a historical prior, tilted one step.** The
+heading's date is kept because `get_rules` serves sections by heading.
+
+**The buckets** (fixed; also used for event-conditional branches). Over the
+next 63 trading days (about 3 months), measured against the as-of S&P
+close:
+- **crash**: some close is 20% or more below it;
+- **bear**: the lowest close is 10% to under 20% below it;
+- **bull**: no close is 10% or more below it, and the day-63 close is at
+  least 5% above it;
+- **base**: everything else.
+
+`crash_probability_pct` = bear + crash: the chance of a 10%+ fall within 3
+months. There is no low/high range any more.
+
+**The prior.** `get_indicator_panel` returns `scenario_prior`: how days in
+the current drawdown risk band (Low / Elevated / High, or past a 10%
+drawdown) played out since 1990. It is frozen in
+`config/scenario_prior_v1.json`, built in the private research repo
+(experiments/h_scenario_prior) with its definitions fixed before the run.
+
+| Band | Days | ~10% fall episodes | Bull | Base | Bear | Crash | 10%+ fall |
+|---|---|---|---|---|---|---|---|
+| Low | 4,635 | 15 | 31 | 61 | 7 | 1 | 8% |
+| Elevated | 440 | 8 | 40 | 52 | 8 | 0 | 8% |
+| High | 865 | 9 | 48 | 33 | 18 | 1 | 19% |
+| Past 10% | 3,279 | 10 | 38 | 41 | 15 | 6 | 21% |
+| All days | 9,219 | | 35 | 51 | 11 | 3 | 14% |
+
+High days are both riskier and more often followed by a 5%+ rally: high
+volatility widens both tails. The split for each era (1990–2007,
+2008–2026) is in the research report. The rows rest on 8–15 independent
+episodes, so treat the prior as a scale, not a precise forecast.
+
+**The tilt.** In step 7 the LLM picks one tilt against that history:
+- `in_line` (the default) when nothing clearly differs from what drawdown
+  + VIX already capture;
+- `higher` or `lower` for something those two can't see (credit, fiscal,
+  an upcoming event, a divergence). Each moves 5 points between bull/base
+  and bear/crash, each side in proportion to its prior sizes (capped at
+  what the side holds; integer rounding by largest remainder).
+
+`higher`/`lower` need 1–3 reasons, and `in_line` allows up to 3. Each
+reason must quote a number from steps 1–6, and `write_snapshot` rejects
+one without a digit. The server re-derives the split. It never takes a
+split from the caller, and it rejects the call if the band changed since
+step 1. Reasons are public text and pass the same private-terms check as
+`notes`.
+
+**Why it replaced the free split.** Measured on the 115 runs from
+2026-07-09 to 2026-11-16:
+- the free split moved up to 19 points on the same data (mean 5.6);
+- its chance of a 10%+ fall ran about 9 points above history;
+- drawdown + VIX explained only 14% of its movement.
+
+The hazard-model rebuild found nothing that beats drawdown + VIX out of
+sample. A 6-month edge would also take decades of live scoring to confirm.
+So the number is now anchored to history, and the LLM's part is reduced
+to a claim that can be checked: "conditions differ from what the band
+sees, in this direction, for these reasons".
+
+**Scoring.** `rule_engine` adds every tilt-based report to the public
+`scenario_scorecard` table (prior, tilt, split). Once 63 more S&P closes
+exist it records the bucket that happened, the worst fall and the 63-day
+return. That record shows, over years, whether `higher` reports really saw
+more falls than `in_line` ones. It is report-only. **The prior and the
+5-point step are never retuned from these outcomes.** Event-conditional
+branches (below) are scored separately and resolve within weeks.
+
+**Display.** The public dashboard leads with the drawdown risk band. The
+LLM view appears only inside each full report: the tilt, its reasons, and
+the history bar beside the tilted bar. There is no LLM history chart any
+more, and the calendar no longer shows a percentage per day. Rows before
+2026-11-17 (`scenario_method` null) kept their undefined split and are
+labelled as not comparable. `get_latest_snapshot`'s delta flags the
+definition break.
+
+> **Status as of 2026-09-22 (superseded 2026-11-17 by the tilt above):** `crash_probability_pct` (and its
 > low/high range) is no longer a second independent LLM judgment — it's a
 > fixed arithmetic derivation from the scenario distribution, computed by
 > `mcp_server`'s `write_snapshot` (not the rule engine — see the Layer
@@ -1587,9 +1655,11 @@ base, bear, crash}]}`.
   before the event is allowed.
 - 2–5 branches with distinct names; "other" and "unresolved" are reserved.
 - Branch probabilities sum to 100, and each branch's split sums to 100.
+- Branch splits use the same buckets and 63-day horizon as the run's split
+  ("Crash-Probability Scoring Methodology").
 - The probability-weighted branch splits must be within **±5pts** of the
   run's own unconditional split, for each scenario. This ties the branches
-  to the independently committed step-7 split, so copying the last report's
+  to the step-7 split (from the tilt), so copying the last report's
   branches fails once the split has moved.
 
 **Carry-forward:** an open prediction the run doesn't resend is carried

@@ -334,9 +334,10 @@ existing wave logic has strong precision even where its timing is weak.
   calibration curve is steppy with two wide flat plateaus, so its output is
   *already* shown banded (LOW/TRANSITIONING/HIGH) rather than as a raw %,
   for exactly the categorical-over-precision reasoning the earlier review
-  proposed. Whether `crash_probability_pct` (still 100% LLM judgment)
-  should eventually get the same treatment is still an open, undecided
-  question — the hazard model didn't replace it, just sits alongside it.
+  proposed. **Resolved 2026-11-17:** `crash_probability_pct` is now the
+  bear + crash share of a frozen historical split for the drawdown risk
+  band, over 63 trading days, tilted one 5-point step by the LLM (rules doc,
+  "Crash-Probability Scoring Methodology"); the band is the public headline.
 - **Wave 2/3 threshold calibration** — still open, but no longer just a
   hunch: the Phase 0 backtest gave concrete numbers (Wave 3 fired in only
   1 of 5 real episodes, missing the single worst crash in the dataset
@@ -397,11 +398,10 @@ existing wave logic has strong precision even where its timing is weak.
   - **Forecast/alert track record system**: freeze each report's stated
     probability and hazard-model band, define what counts as a "hit"
     against realized outcomes, and score live predictions going forward.
-    Blocked on the same wall the hazard-model review hit:
-    `crash_probability_pct` has no formal target/horizon definition at all
-    (the "Crash-Probability Scoring Methodology" section is an explicit,
-    unimplemented draft) — building a track record for an undefined
-    target doesn't work until that's settled first. The largest single
+    **Partly done 2026-11-17:** the split now has defined buckets over 63
+    trading days, and `scenario_scorecard` records each tilt-based report
+    and its outcome (the hazard band has `hazard_scorecard`). Still open: a
+    public view of either record. The largest single
     item from this review; multi-session-scale, not a bolt-on feature.
   - **Whether the rate-reset trigger belongs on the public report at
     all.** It reveals the existence and rough timing of a specific

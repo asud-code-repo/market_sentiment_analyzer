@@ -1,0 +1,332 @@
+{
+ "name": "scenario_prior",
+ "version": "v1",
+ "horizon_trading_days": 63,
+ "buckets": {
+  "reference": "the S&P close on the run's as-of date (C0)",
+  "crash": "lowest close on trading days 1..63 is at least 20% below C0",
+  "bear": "lowest close on days 1..63 is 10% to under 20% below C0",
+  "bull": "no close on days 1..63 is 10% or more below C0, and the day-63 close is at least 5% above C0",
+  "base": "everything else"
+ },
+ "states": {
+  "basis": "rule_engine/src/hazardScorecard.ts: score = drawdown from all-time high (%) + VIX / 5",
+  "LOW": "score < 8.5",
+  "TRANSITIONING": "8.5 <= score < 10",
+  "HIGH": "score >= 10",
+  "ALREADY_BREACHED": "drawdown >= 10% (band not scored)"
+ },
+ "tilt": {
+  "levels": [
+   "lower",
+   "in_line",
+   "higher"
+  ],
+  "step_pts": 5,
+  "higher": "move min(5, bull+base) points from bull/base (in proportion to their prior sizes) to bear/crash (in proportion to their prior sizes; all to bear if both are 0)",
+  "lower": "move min(5, bear+crash) points from bear/crash (in proportion) to bull/base (in proportion; all to base if both are 0)",
+  "integer_allocation": "floor of each proportional share, then the remainder one point at a time by largest fractional part; ties in the order bull, base, bear, crash"
+ },
+ "prior": {
+  "LOW": {
+   "split": {
+    "bull": 31,
+    "base": 61,
+    "bear": 7,
+    "crash": 1
+   },
+   "days": 4635,
+   "fall10_episodes_approx": 15
+  },
+  "TRANSITIONING": {
+   "split": {
+    "bull": 40,
+    "base": 52,
+    "bear": 8,
+    "crash": 0
+   },
+   "days": 440,
+   "fall10_episodes_approx": 8
+  },
+  "HIGH": {
+   "split": {
+    "bull": 48,
+    "base": 33,
+    "bear": 18,
+    "crash": 1
+   },
+   "days": 865,
+   "fall10_episodes_approx": 9
+  },
+  "ALREADY_BREACHED": {
+   "split": {
+    "bull": 38,
+    "base": 41,
+    "bear": 15,
+    "crash": 6
+   },
+   "days": 3279,
+   "fall10_episodes_approx": 10
+  }
+ },
+ "all_days": {
+  "bull": 35,
+  "base": 51,
+  "bear": 11,
+  "crash": 3
+ },
+ "provenance": {
+  "research_repo": "market-hazard-model (private)",
+  "experiment": "experiments/h_scenario_prior",
+  "results_git_commit": "d67d6a5",
+  "inputs_sha256": {
+   "gspc.json": "9e352a55bfe9dd9a0f05a9c573f0c73224669f8883b1b027f32393fee5d246a9",
+   "series.json": "15bcbf977363cb8e73c23492b89270bcc4829a6478cad2747847e3a9ab2073af"
+  },
+  "sample": "1990-01-02 to 2026-08-11 (as-of days with a complete 63-day window)"
+ },
+ "samples": [
+  {
+   "state": "LOW",
+   "tilt": "lower",
+   "split": {
+    "bull": 33,
+    "base": 64,
+    "bear": 3,
+    "crash": 0
+   }
+  },
+  {
+   "state": "LOW",
+   "tilt": "in_line",
+   "split": {
+    "bull": 31,
+    "base": 61,
+    "bear": 7,
+    "crash": 1
+   }
+  },
+  {
+   "state": "LOW",
+   "tilt": "higher",
+   "split": {
+    "bull": 29,
+    "base": 58,
+    "bear": 11,
+    "crash": 2
+   }
+  },
+  {
+   "state": "TRANSITIONING",
+   "tilt": "lower",
+   "split": {
+    "bull": 42,
+    "base": 55,
+    "bear": 3,
+    "crash": 0
+   }
+  },
+  {
+   "state": "TRANSITIONING",
+   "tilt": "in_line",
+   "split": {
+    "bull": 40,
+    "base": 52,
+    "bear": 8,
+    "crash": 0
+   }
+  },
+  {
+   "state": "TRANSITIONING",
+   "tilt": "higher",
+   "split": {
+    "bull": 38,
+    "base": 49,
+    "bear": 13,
+    "crash": 0
+   }
+  },
+  {
+   "state": "HIGH",
+   "tilt": "lower",
+   "split": {
+    "bull": 51,
+    "base": 35,
+    "bear": 13,
+    "crash": 1
+   }
+  },
+  {
+   "state": "HIGH",
+   "tilt": "in_line",
+   "split": {
+    "bull": 48,
+    "base": 33,
+    "bear": 18,
+    "crash": 1
+   }
+  },
+  {
+   "state": "HIGH",
+   "tilt": "higher",
+   "split": {
+    "bull": 45,
+    "base": 31,
+    "bear": 23,
+    "crash": 1
+   }
+  },
+  {
+   "state": "ALREADY_BREACHED",
+   "tilt": "lower",
+   "split": {
+    "bull": 40,
+    "base": 44,
+    "bear": 11,
+    "crash": 5
+   }
+  },
+  {
+   "state": "ALREADY_BREACHED",
+   "tilt": "in_line",
+   "split": {
+    "bull": 38,
+    "base": 41,
+    "bear": 15,
+    "crash": 6
+   }
+  },
+  {
+   "state": "ALREADY_BREACHED",
+   "tilt": "higher",
+   "split": {
+    "bull": 36,
+    "base": 38,
+    "bear": 19,
+    "crash": 7
+   }
+  }
+ ],
+ "edge_samples": [
+  {
+   "prior": {
+    "bull": 0,
+    "base": 98,
+    "bear": 2,
+    "crash": 0
+   },
+   "tilt": "lower",
+   "split": {
+    "bull": 0,
+    "base": 100,
+    "bear": 0,
+    "crash": 0
+   }
+  },
+  {
+   "prior": {
+    "bull": 0,
+    "base": 98,
+    "bear": 2,
+    "crash": 0
+   },
+   "tilt": "higher",
+   "split": {
+    "bull": 0,
+    "base": 93,
+    "bear": 7,
+    "crash": 0
+   }
+  },
+  {
+   "prior": {
+    "bull": 60,
+    "base": 40,
+    "bear": 0,
+    "crash": 0
+   },
+   "tilt": "lower",
+   "split": {
+    "bull": 60,
+    "base": 40,
+    "bear": 0,
+    "crash": 0
+   }
+  },
+  {
+   "prior": {
+    "bull": 60,
+    "base": 40,
+    "bear": 0,
+    "crash": 0
+   },
+   "tilt": "higher",
+   "split": {
+    "bull": 57,
+    "base": 38,
+    "bear": 5,
+    "crash": 0
+   }
+  },
+  {
+   "prior": {
+    "bull": 0,
+    "base": 0,
+    "bear": 70,
+    "crash": 30
+   },
+   "tilt": "lower",
+   "split": {
+    "bull": 0,
+    "base": 5,
+    "bear": 66,
+    "crash": 29
+   }
+  },
+  {
+   "prior": {
+    "bull": 0,
+    "base": 0,
+    "bear": 70,
+    "crash": 30
+   },
+   "tilt": "higher",
+   "split": {
+    "bull": 0,
+    "base": 0,
+    "bear": 70,
+    "crash": 30
+   }
+  },
+  {
+   "prior": {
+    "bull": 33,
+    "base": 33,
+    "bear": 17,
+    "crash": 17
+   },
+   "tilt": "lower",
+   "split": {
+    "bull": 36,
+    "base": 35,
+    "bear": 14,
+    "crash": 15
+   }
+  },
+  {
+   "prior": {
+    "bull": 33,
+    "base": 33,
+    "bear": 17,
+    "crash": 17
+   },
+   "tilt": "higher",
+   "split": {
+    "bull": 30,
+    "base": 31,
+    "bear": 20,
+    "crash": 19
+   }
+  }
+ ]
+}

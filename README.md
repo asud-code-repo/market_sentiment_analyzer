@@ -135,8 +135,9 @@ never proposed twice.
 Four tabs, all read-only:
 
 - **Stress:** the panel, the stress gate, distance to RED, the drawdown risk band,
-  the LLM crash-estimate history, upcoming market events, and indicator
-  history charts with their bands.
+  each full report's 3-month LLM view (a historical split for that band,
+  tilted one step), upcoming market events, and indicator history charts
+  with their bands.
 - **Smart Money:** market positioning, sector rotation and institutional
   13F tilt.
 - **Macro & Fiscal:** the fiscal dominance checklist, contextual

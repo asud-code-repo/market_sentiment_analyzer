@@ -3,6 +3,7 @@ import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import { computeDivergences } from "./divergence.js";
 import { gatherHazardFeatures, computeHazardProbability, type HazardResult } from "./hazardModel.js";
 import { updateHazardScorecard } from "./hazardScorecardStore.js";
+import { updateScenarioScorecard } from "./scenarioScorecardStore.js";
 import { baselineScore, bandBaseline } from "./hazardScorecard.js";
 import {
   bandVix,
@@ -232,6 +233,7 @@ export async function classify(): Promise<void> {
 
   await insertCrashCheck({
     sp500_level: sp500.value,
+    sp500_as_of: sp500.observation_date,
     sp500_ath: sp500Ath.value,
     sp500_ath_date: sp500Ath.observation_date,
     vix_value: vix.value,
@@ -309,6 +311,14 @@ export async function classify(): Promise<void> {
     console.log(msg);
   } catch (err) {
     console.error("hazardScorecard: update failed (non-gating):", err);
+  }
+
+  // Scenario scorecard: tilt-based full reports and their 63-day outcomes.
+  // Report-only and non-gating, like the hazard scorecard above.
+  try {
+    console.log(await updateScenarioScorecard());
+  } catch (err) {
+    console.error("scenarioScorecard: update failed (non-gating):", err);
   }
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);

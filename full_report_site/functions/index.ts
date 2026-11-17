@@ -21,6 +21,8 @@ export interface Env {
 interface CrashCheckRow {
   run_at: string;
   crash_probability_pct: number | null;
+  scenario_method: string | null;
+  scenario_tilt: string | null;
   confirmed_red_count: number | null;
   red_count: number;
   wave_authorized: boolean | null;
@@ -150,7 +152,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       supabaseGet<FullReportRow[]>(env, "full_report_snapshots?select=*&order=run_at.desc&limit=1"),
       supabaseGet<CrashCheckRow[]>(
         env,
-        "crash_checks?select=run_at,crash_probability_pct,confirmed_red_count,red_count,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
+        "crash_checks?select=run_at,crash_probability_pct,scenario_method,scenario_tilt,confirmed_red_count,red_count,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
       ),
       supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=run_at,verdict,summary,macro_cross_reference,drift,tickers&order=run_at.desc&limit=1"),
     ]);
@@ -331,7 +333,7 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
     <div class="headline"><span class="big">${escapeHtml(big)}</span><span class="sub"><b class="${subTone}">${escapeHtml(subLead)}</b>${confirmed != null ? ` · ${confirmed} of 6 confirmed red` : ""}${firing != null ? ` · ${firing} of 3 pathways firing` : ""}</span></div>
     <div class="facts">
       ${crashCheck ? `<div class="fact"><span class="lbl">Fed regime</span><span class="v">${escapeHtml(titleCase(crashCheck.warsh_classification ?? "Pending"))}</span></div>` : ""}
-      ${crashCheck?.crash_probability_pct != null ? `<div class="fact"><span class="lbl">LLM crash est.</span><span class="v">${crashCheck.crash_probability_pct}% <small>discretionary</small></span></div>` : ""}
+      ${crashCheck?.scenario_method === "tilt_v1" && crashCheck.crash_probability_pct != null ? `<div class="fact"><span class="lbl">LLM view · 3 mo</span><span class="v">${escapeHtml(({ lower: "Lower", in_line: "In line", higher: "Higher" } as Record<string, string>)[crashCheck.scenario_tilt ?? ""] ?? "—")} <small>${crashCheck.crash_probability_pct}% chance of a 10%+ fall</small></span></div>` : ""}
       <div class="fact"><span class="lbl">Crash type</span><span class="v">${report.crash_type_diagnosis ? "Diagnosed <small>see right</small>" : "None <small>this run</small>"}</span></div>
       <div class="fact"><span class="lbl">Watchlist</span><span class="v">${buyZone} in buy zone <small>of ${report.watchlist.length}</small></span></div>
     </div>

@@ -91,6 +91,14 @@ install/build steps.
    into `dashboard_site/index.html`, `dashboard_site/_worker.js` and
    `mcp_server/src/server.ts`. Those cutoffs were fixed before any live
    outcome and must not be retuned from live results.
+   The scenario prior (`config/scenario_prior_v1.json`: the historical
+   bull/base/bear/crash split per band and the 5-point tilt step) is a
+   frozen release from the private research repo; replace it only with a
+   new versioned release, never by hand or from live outcomes. Its splits
+   are copied into `dashboard_site/index.html` (`SCENARIO_PRIOR`) and
+   `_worker.js` (`SCENARIO_PRIOR_FALL10`), and the tilt rule in
+   `mcp_server/src/lib/scenarioTilt.ts` must keep reproducing the file's
+   `samples` (its test checks this).
 4. Never write real portfolio/dollar data outside `local_state/*.yaml`
    (gitignored) — only the `*.example.yaml` templates are tracked.
 5. Personal policy stays out of tracked files: wave splits, crash-type

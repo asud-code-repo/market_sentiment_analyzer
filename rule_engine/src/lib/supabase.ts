@@ -132,6 +132,9 @@ export interface CrashCheckInsert {
   // when live drawdown is already >= 10% (the question no longer applies).
   dd_vix_score: number | null;
   dd_vix_band: "LOW" | "TRANSITIONING" | "HIGH" | null;
+  // S&P observation date behind sp500_level (2026-11-17): the as-of close the
+  // scenario scorecard measures a tilt-based report's 63-day outcome from.
+  sp500_as_of: string;
 }
 
 export async function insertCrashCheck(row: CrashCheckInsert): Promise<void> {
