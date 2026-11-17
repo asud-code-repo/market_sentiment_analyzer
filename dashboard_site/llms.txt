@@ -2,7 +2,7 @@
 
 > A daily RED/AMBER/GREEN read on US market crash risk, built from public macro and market data. A personal project: signals apply the author's own fixed rules plus some AI judgment. Not investment advice, not a recommendation, and not a calibrated forecast.
 
-For the current reading as plain text (date, the six indicators with values and status, the stress gate, the drawdown risk band and the latest narrative), fetch https://marketstress.org/latest.md. It refreshes within about 10 minutes of each new report. The full page at https://marketstress.org/ loads most of its charts with JavaScript; its footer carries the same one-line latest reading.
+For the current reading as plain text (date, the six indicators with values and status, the stress gate, the drawdown risk band, the AI's 3-month view, financial-stress and funding context, and the latest narrative), fetch https://marketstress.org/latest.md. It refreshes within about 10 minutes of each new report. The full page at https://marketstress.org/ loads most of its charts with JavaScript; its footer carries the same one-line latest reading.
 
 A plain-English, illustrated explainer of the method (no live values) is at https://marketstress.org/how-it-works.
 
@@ -17,13 +17,24 @@ Six core indicators, each classified RED, AMBER or GREEN every weekday. A readin
 - Sahm rule: rise in the 3-month average unemployment rate above its 12-month low. Favourable below 0.3.
 - Fed policy signal: whether the Federal Reserve is holding, pausing or signalling cuts.
 
-The overall stress level depends on how many of these are confirmed RED. An LLM-written crash estimate and narrative are shown alongside; they are discretionary judgment, not a model output.
+The overall stress level depends on how many of these are confirmed RED. Alongside: a drawdown risk band (S&P drawdown + VIX/5, with historical hit rates) and, in each written report, an AI view of the chance of a 10%+ fall within 3 months. The AI view starts from the historical rate for the band and may move it one fixed 5-point step, with stated reasons. The narrative is AI-written judgment, not a model output.
+
+## Context beyond the six
+
+These have no traffic light and don't count toward the gate, but they cover financial "plumbing" that can lead the headline indicators:
+
+- Financial-stress indexes: OFR Financial Stress Index (U.S. Treasury; includes other advanced and emerging economies), St. Louis Fed Financial Stress Index, Chicago Fed NFCI with its risk and credit subindices.
+- Funding and liquidity: the SOFR repo rate, overnight reverse repo, Fed balance-sheet net liquidity, the broad trade-weighted dollar.
+- Credit and economy: investment-grade spread, bank lending standards, jobless claims, credit-card delinquencies, recession probabilities, market breadth, regional-bank stress.
+- Cross-indicator divergence flags (e.g. high-yield spread vs VIX, gold vs silver).
+
+Not covered: euro-area stress (ECB CISS) and offshore dollar funding (cross-currency basis); these reach the site only once they move U.S. credit, VIX or the stress indexes above.
 
 ## Tabs on the page
 
 - Stress: today's classification, the narrative, indicator history with the bands.
 - Smart Money: market positioning as historical percentiles (CFTC futures positioning, CBOE put/call, FINRA margin debt) and institutional 13F net buying by sector.
-- Macro & Fiscal: contextual indicators, a fiscal-dominance checklist and the yield curve (3M, 2Y, 10Y, 30Y).
+- Macro & Fiscal: the context indicators above, a fiscal-dominance checklist and the yield curve (3M, 2Y, 10Y, 30Y).
 - Notable Views: public views of well-known macro investors and economists compared with the live data.
 
 ## Data sources

@@ -95,12 +95,17 @@ async function loadLatest(ctx) {
   const cache = caches.default;
   const hit = await cache.match(CACHE_KEY);
   if (hit) return hit.json();
-  const [latest, full] = await Promise.all([
+  const since = new Date(Date.now() - CONTEXT_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+  const [latest, full, context] = await Promise.all([
     supabase(`crash_checks?select=${LATEST_FIELDS}&order=run_at.desc&limit=1`),
     supabase("crash_checks?select=run_at,notes,scenario_method,scenario_prior_state,scenario_tilt,scenario_bear_pct,scenario_crash_pct&notes=not.is.null&order=run_at.desc&limit=1"),
+    // Context is optional: a failure here must not take down the reading.
+    supabase(`data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&observation_date=gte.${since}&order=observation_date.desc`).catch(() => []),
   ]);
   if (!latest[0]) return null;
-  const data = { row: latest[0], full: full[0] ?? null };
+  const ctxLatest = {};
+  for (const r of context) if (!(r.series_id in ctxLatest)) ctxLatest[r.series_id] = r;
+  const data = { row: latest[0], full: full[0] ?? null, context: ctxLatest };
   ctx.waitUntil(cache.put(CACHE_KEY, new Response(JSON.stringify(data), {
     headers: { "content-type": "application/json", "cache-control": `public, max-age=${CACHE_SECONDS}` },
   })));
@@ -114,6 +119,42 @@ async function supabase(path) {
   });
   if (!res.ok) throw new Error(`Supabase HTTP ${res.status}`);
   return res.json();
+}
+
+// ---- Context beyond the gate ---------------------------------------------
+
+// Financial-plumbing context shown on the page's Macro & Fiscal tab (no
+// traffic light, not in the gate). Listed here so AI tools reading
+// /latest.md see that the site covers more than the six gate indicators.
+// Signal wording mirrors CONTEXT_INFO in index.html; change them together.
+const CONTEXT_SERIES = ["OFR_FSI", "STLFSI4", "NFCI", "SOFR", "IORB", "DTWEXBGS"];
+const CONTEXT_LOOKBACK_DAYS = 45;
+
+function contextLines(ctx) {
+  if (!ctx) return [];
+  const v = (id) => ctx[id]?.value;
+  const d = (id) => ctx[id]?.observation_date;
+  const above = (x, hi, lo) => (x > 0 ? hi : lo);
+  const out = [];
+  if (v("OFR_FSI") != null) out.push(`| OFR Financial Stress Index (US Treasury; credit, funding, volatility, valuation, US and abroad) | ${v("OFR_FSI").toFixed(2)} | ${above(v("OFR_FSI"), "above-average stress", "below-average stress")} (0 = average) | ${d("OFR_FSI")} |`);
+  if (v("STLFSI4") != null) out.push(`| St. Louis Fed Financial Stress Index | ${v("STLFSI4").toFixed(2)} | ${above(v("STLFSI4"), "above-average stress", "below-average stress")} (0 = average) | ${d("STLFSI4")} |`);
+  if (v("NFCI") != null) out.push(`| Chicago Fed National Financial Conditions Index | ${v("NFCI").toFixed(2)} | ${above(v("NFCI"), "tighter than average", "looser than average")} (0 = average) | ${d("NFCI")} |`);
+  if (v("SOFR") != null) {
+    const gap = v("IORB") != null ? Math.round((v("SOFR") - v("IORB")) * 100) : null;
+    out.push(`| SOFR overnight repo rate | ${v("SOFR").toFixed(2)}% | ${gap == null ? "repo-market funding cost" : `${gap >= 0 ? "+" : ""}${gap} bp vs the Fed's interest on reserves (${v("IORB").toFixed(2)}%); a sustained gap above it signals a cash squeeze`} | ${d("SOFR")} |`);
+  }
+  if (v("DTWEXBGS") != null) out.push(`| Broad trade-weighted US dollar index | ${v("DTWEXBGS").toFixed(2)} | a fast rise tightens conditions for foreign dollar borrowers | ${d("DTWEXBGS")} |`);
+  if (!out.length) return [];
+  return [
+    "",
+    "## Context beyond the gate",
+    "",
+    "Shown on the page's Macro & Fiscal tab with no traffic light; they don't count toward the stress gate. The tab also has the fiscal-dominance checklist, the yield curve, Fed balance-sheet liquidity, credit-card delinquencies and breadth; the Smart Money tab has positioning percentiles (CFTC, CBOE put/call, FINRA margin debt) and 13F net buying.",
+    "",
+    "| Indicator | Value | Reading | Data date |",
+    "|---|---|---|---|",
+    ...out,
+  ];
 }
 
 // ---- Shared facts ---------------------------------------------------------
@@ -209,6 +250,7 @@ function markdown(data) {
     const tilt = { lower: "lower risk than", in_line: "in line with", higher: "higher risk than" }[f.llm.scenario_tilt] ?? f.llm.scenario_tilt;
     lines.push(`- AI view, next 3 months (${fmtDate(f.llm.run_at, false)}): ${tilt} history for this risk band. Chance of a 10%+ S&P 500 fall within 63 trading days: ${f.llm.scenario_bear_pct + f.llm.scenario_crash_pct}%${hist != null ? `, against ${hist}% for such days since 1990` : ""}. An AI judgment limited to one 5-point step from that history.`);
   }
+  lines.push(...contextLines(data.context));
   const notes = data.full?.notes ? String(data.full.notes).replace(RUN_LABEL, "").trim() : "";
   if (notes) {
     lines.push("", `## Narrative (${fmtDate(data.full.run_at, false)})`, "", notes.replace(/\r\n/g, "\n"));
