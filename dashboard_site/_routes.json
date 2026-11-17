@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/", "/latest.md"],
+  "include": ["/", "/smart-money", "/smart-money/", "/macro", "/macro/", "/views", "/views/", "/latest.md"],
   "exclude": []
 }

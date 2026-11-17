@@ -6,7 +6,8 @@
 // the same reading as plain text at /latest.md. Browsers get the same page
 // as before; the client-side render replaces the inserted headline.
 //
-// Scope: _routes.json sends only "/" and "/latest.md" here; every other file
+// Scope: _routes.json sends only "/", the tab pages (TAB_PAGES) and
+// "/latest.md" here; every other file
 // is served as a plain static asset. It lives in dashboard_site (the Pages
 // output folder) because the project has no root dir, so a functions/ folder
 // would have to sit at the repo root.
@@ -50,28 +51,89 @@ function ddVixReading(row) {
 const RUN_LABEL = /^\s*Full report(?:\s*\([^)]*\)|,[^.]*)\.\s+/i;
 const DISCLAIMER = "For information only, not investment advice. A personal project: signals apply the author's own rules, plus some AI judgment, to public data. They are not recommendations or calibrated forecasts, and data can be delayed or wrong.";
 
+// Tab pages (2026-11-17): the same index.html served at its own URL per tab,
+// with its own title/description/canonical and that tab's panel unhidden, so
+// each tab can be linked and indexed. TAB_PATHS / TAB_TITLES in index.html
+// mirror this; change them together. "/" keeps the static page's own tags.
+const TAB_PAGES = {
+  "/smart-money": {
+    tab: "smartmoney",
+    title: "Smart Money: market positioning and 13F flows · Market Stress Monitor",
+    description: "Where the money is leaning: CFTC futures positioning, CBOE put/call and FINRA margin debt as historical percentiles, sector ETF capital rotation, and institutional 13F net buying by sector. Built from public data; not investment advice.",
+  },
+  "/macro": {
+    tab: "macro",
+    title: "Macro & Fiscal: fiscal dominance, yield curve, financial stress · Market Stress Monitor",
+    description: "The slower US macro backdrop: a real-data fiscal dominance checklist, the Treasury yield curve with term premium, and financial-stress and funding indicators (OFR FSI, St. Louis Fed FSI, NFCI, SOFR, net liquidity). Built from public data; not investment advice.",
+  },
+  "/views": {
+    tab: "analysts",
+    title: "Notable Views: macro investors' views vs live data · Market Stress Monitor",
+    // Names are filled in from analyst_views.json (viewsDescription) when it loads.
+    description: "Public views of well-known macro investors and economists on debt, rates, the Fed, inflation, recession and markets, each linked and dated and checked against live data.",
+  },
+};
+const TAB_PANELS = ["stressmonitor", "smartmoney", "macro", "analysts"];
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/latest.md") return latestMarkdown(request, ctx);
-    if (url.pathname !== "/" || request.method !== "GET") return env.ASSETS.fetch(request);
+    // "/views/" -> "/views": one URL per tab.
+    if (url.pathname.length > 1 && url.pathname.endsWith("/") && TAB_PAGES[url.pathname.replace(/\/+$/, "")]) {
+      return Response.redirect(`${url.origin}${url.pathname.replace(/\/+$/, "")}${url.search}`, 301);
+    }
+    const page = TAB_PAGES[url.pathname] ?? null;
+    if (url.pathname !== "/" && !page) return env.ASSETS.fetch(request);
+    if (request.method === "HEAD") return env.ASSETS.fetch(new Request(new URL("/", url).toString(), { method: "HEAD" }));
+    if (request.method !== "GET") return env.ASSETS.fetch(request);
 
     // Fetch by URL only, so a browser's If-None-Match can't turn this into a
     // bodyless 304 for a page whose inserted text has since changed.
-    const asset = await env.ASSETS.fetch(new Request(url.toString()));
+    const asset = await env.ASSETS.fetch(new Request(new URL("/", url).toString()));
     if (!asset.ok || !(asset.headers.get("content-type") || "").includes("text/html")) return asset;
-    let data;
-    try { data = await loadLatest(ctx); } catch (e) { return asset; }
-    if (!data) return asset;
+    let data = null;
+    try { data = await loadLatest(ctx); } catch (e) { data = null; }
+    // Notable Views text comes from the static JSON, so it needs no Supabase.
+    let views = null;
+    let description = page?.description;
+    if (page?.tab === "analysts") {
+      try {
+        const r = await env.ASSETS.fetch(new Request(new URL("/analyst_views.json", url).toString()));
+        if (r.ok) {
+          const content = await r.json();
+          views = viewsHtml(content);
+          description = viewsDescription(content) ?? description;
+        }
+      } catch (e) { views = null; }
+    }
+    if (!data && !page) return asset;
 
     const headers = new Headers(asset.headers);
     headers.delete("etag");
     headers.delete("content-length");
     headers.set("cache-control", "public, max-age=0, must-revalidate");
-    return new HTMLRewriter()
-      .on("#stress-verdict", { element(el) { el.setInnerContent(verdictHtml(data), { html: true }); } })
-      .on("#site-summary", { element(el) { el.append(` ${escHtml(summarySentence(data))}`, { html: true }); } })
-      .transform(new Response(asset.body, { status: asset.status, headers }));
+    let rw = new HTMLRewriter();
+    if (data) {
+      rw = rw
+        .on("#stress-verdict", { element(el) { el.setInnerContent(verdictHtml(data), { html: true }); } })
+        .on("#site-summary", { element(el) { el.append(` ${escHtml(summarySentence(data))}`, { html: true }); } });
+    }
+    if (page) {
+      const canonical = `${SITE}${url.pathname}`;
+      rw = rw
+        .on("title", { element(el) { el.setInnerContent(page.title); } })
+        .on('meta[name="description"]', { element(el) { el.setAttribute("content", description); } })
+        .on('link[rel="canonical"]', { element(el) { el.setAttribute("href", canonical); } })
+        .on('meta[property="og:url"]', { element(el) { el.setAttribute("content", canonical); } })
+        .on('meta[property="og:title"]', { element(el) { el.setAttribute("content", page.title); } })
+        .on('meta[property="og:description"]', { element(el) { el.setAttribute("content", description); } });
+      for (const id of TAB_PANELS) {
+        rw = rw.on(`#tab-${id}`, { element(el) { if (id === page.tab) el.removeAttribute("hidden"); else el.setAttribute("hidden", ""); } });
+      }
+      if (views) rw = rw.on("#analysts-wrap", { element(el) { el.setInnerContent(views, { html: true }); } });
+    }
+    return rw.transform(new Response(asset.body, { status: asset.status, headers }));
   },
 };
 
@@ -215,6 +277,34 @@ function summarySentence(data) {
     if (list.length) parts.push(`${color}: ${list.join(", ")}.`);
   }
   return parts.join(" ");
+}
+
+// ---- Notable Views --------------------------------------------------------
+
+// The views themselves, grouped by topic, as plain HTML for /views. Uses the
+// same classes as renderAnalystViews() in index.html, which replaces it with
+// the live data comparison once the page's JavaScript runs.
+function viewsDescription(content) {
+  const names = (content.analysts ?? []).map((a) => a.name).filter(Boolean);
+  if (!names.length) return null;
+  const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  return `Public views of ${who} on debt, rates, the Fed, inflation, recession and markets, each linked and dated and checked against live data.`;
+}
+
+function viewsHtml(content) {
+  const fmt = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "");
+  const all = (content.analysts ?? []).flatMap((a) => (a.themes ?? []).map((t) => ({ a, t })));
+  const topics = (content.topics ?? []).map((topic) => ({ topic, items: all.filter((e) => e.t.topic === topic.id) })).filter((x) => x.items.length);
+  if (!topics.length) return null;
+  const view = ({ a, t }) => `<div class="vw" data-person="${escHtml(a.id)}"><span class="av">${escHtml(a.initials ?? "")}</span>`
+    + `<span class="who"><b>${escHtml(a.name)}</b><span>${escHtml(a.role ?? "")}</span></span>`
+    + `<span class="q">${escHtml(t.view)}${t.source?.url ? `<span class="src"><a href="${escHtml(t.source.url)}" target="_blank" rel="noopener">${escHtml(t.source.title ?? "Source")} ↗</a> · ${escHtml(fmt(t.source.date))}</span>` : ""}</span>`
+    + `<span class="side"></span></div>`;
+  const body = topics.map(({ topic, items }) => `<div class="nvtopic" id="nv-t-${escHtml(topic.id)}"><h3>${escHtml(topic.title)}<small>${escHtml(topic.question ?? "")} · ${items.length} view${items.length === 1 ? "" : "s"}</small></h3>`
+    + `<div class="nvgroup">${items.map(view).join("")}</div></div>`).join("");
+  return `<section class="rsec"><div class="sh"><span class="lbl">Notable Views</span><span class="note">Reviewed ${escHtml(fmt(content.last_reviewed))}</span></div>`
+    + `<p class="nar">Public views of well-known macro investors and economists, grouped by topic. Each is a short paraphrase (quotes word for word), linked and dated, and checked against this site's live data in the browser. A comparison of frameworks, not a verdict on who's right. Not affiliated with or endorsed by anyone named. Not investment advice.</p></section>`
+    + `<section class="rsec" id="nv-detail">${body}</section>`;
 }
 
 // ---- Markdown -------------------------------------------------------------

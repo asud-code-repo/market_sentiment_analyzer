@@ -890,10 +890,10 @@
       <a class="howlink" href="/how-it-works">How it works</a>
     </div>
     <nav class="tab-bar" id="tab-bar" aria-label="Sections">
-      <button class="tab-btn" data-tab="stressmonitor">Stress</button>
-      <button class="tab-btn" data-tab="smartmoney">Smart Money</button>
-      <button class="tab-btn" data-tab="macro">Macro &amp; Fiscal</button>
-      <button class="tab-btn" data-tab="analysts">Notable Views</button>
+      <a class="tab-btn" href="/" data-tab="stressmonitor">Stress</a>
+      <a class="tab-btn" href="/smart-money" data-tab="smartmoney">Smart Money</a>
+      <a class="tab-btn" href="/macro" data-tab="macro">Macro &amp; Fiscal</a>
+      <a class="tab-btn" href="/views" data-tab="analysts">Notable Views</a>
     </nav>
     <div class="topright">
     <div class="datenav" id="datenav">
@@ -4250,9 +4250,27 @@ const SECTION_TAB = {
 };
 const TAB_IDS = ["stressmonitor", "smartmoney", "macro", "analysts"];
 const TAB_STORAGE_KEY = "activeTab";
+// Each tab has its own URL (2026-11-17) so it can be linked and indexed.
+// _worker.js serves this same page at these paths and sets each one's
+// title/description/canonical (TAB_PAGES there); change them together.
+const TAB_PATHS = { stressmonitor: "/", smartmoney: "/smart-money", macro: "/macro", analysts: "/views" };
+const TAB_TITLES = {
+  stressmonitor: "Market Stress Monitor: daily crash-risk indicators",
+  smartmoney: "Smart Money: market positioning and 13F flows · Market Stress Monitor",
+  macro: "Macro & Fiscal: fiscal dominance, yield curve, financial stress · Market Stress Monitor",
+  analysts: "Notable Views: macro investors' views vs live data · Market Stress Monitor",
+};
+const tabFromPath = (path) => Object.keys(TAB_PATHS).find((id) => TAB_PATHS[id] === path.replace(/\/+$/, "") || (id === "stressmonitor" && path === "/"));
 
-function activateTab(tabId) {
+// url: "push" adds a history entry (a click), "replace" rewrites the current
+// one keeping the hash (page load / deep link), "none" leaves it (back/forward).
+function activateTab(tabId, url = "push") {
   if (!TAB_IDS.includes(tabId)) tabId = "stressmonitor";
+  if (url !== "none" && location.pathname !== TAB_PATHS[tabId]) {
+    const next = TAB_PATHS[tabId] + location.search + (url === "replace" ? location.hash : "");
+    try { history[url === "replace" ? "replaceState" : "pushState"](null, "", next); } catch (err) { /* file:// preview */ }
+  }
+  document.title = TAB_TITLES[tabId];
   for (const id of TAB_IDS) {
     document.getElementById(`tab-${id}`).hidden = id !== tabId;
   }
@@ -4292,17 +4310,27 @@ function setupTabs() {
   document.getElementById("tab-bar").addEventListener("click", (e) => {
     const btn = e.target.closest(".tab-btn");
     if (!btn) return;
+    // Real links (crawlable, open in a new tab); a plain click switches in place.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
     activateTab(btn.dataset.tab);
   });
 
-  let initialTab = "stressmonitor";
-  try {
-    const stored = localStorage.getItem(TAB_STORAGE_KEY);
-    if (stored) initialTab = stored;
-  } catch (err) {
-    // Ignore -- falls back to the default tab.
+  // A tab URL wins; only the bare "/" falls back to the last tab used.
+  let initialTab = tabFromPath(location.pathname) ?? "stressmonitor";
+  if (location.pathname === "/") {
+    try {
+      const stored = localStorage.getItem(TAB_STORAGE_KEY);
+      if (stored) initialTab = stored;
+    } catch (err) {
+      // Ignore -- falls back to the default tab.
+    }
   }
-  activateTab(initialTab);
+  activateTab(initialTab, "replace");
+  window.addEventListener("popstate", () => {
+    const id = tabFromPath(location.pathname);
+    if (id) activateTab(id, "none");
+  });
 }
 setupTabs();
 // Static ⓘ popovers (text that doesn't depend on the selected report).
@@ -5194,7 +5222,7 @@ async function main() {
 // localStorage above.
 if (location.hash) {
   const targetId = location.hash.slice(1);
-  if (SECTION_TAB[targetId]) activateTab(SECTION_TAB[targetId]);
+  if (SECTION_TAB[targetId]) activateTab(SECTION_TAB[targetId], "replace");
   const target = document.querySelector(location.hash);
   if (target) target.scrollIntoView({ block: "start" });
 }

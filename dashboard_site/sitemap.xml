@@ -5,6 +5,22 @@
     <changefreq>daily</changefreq>
   </url>
   <url>
+    <loc>https://marketstress.org/latest.md</loc>
+    <changefreq>daily</changefreq>
+  </url>
+  <url>
+    <loc>https://marketstress.org/smart-money</loc>
+    <changefreq>daily</changefreq>
+  </url>
+  <url>
+    <loc>https://marketstress.org/macro</loc>
+    <changefreq>daily</changefreq>
+  </url>
+  <url>
+    <loc>https://marketstress.org/views</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
     <loc>https://marketstress.org/how-it-works</loc>
     <changefreq>monthly</changefreq>
   </url>

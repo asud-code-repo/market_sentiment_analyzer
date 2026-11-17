@@ -32,10 +32,10 @@ Not covered: euro-area stress (ECB CISS) and offshore dollar funding (cross-curr
 
 ## Tabs on the page
 
-- Stress: today's classification, the narrative, indicator history with the bands.
-- Smart Money: market positioning as historical percentiles (CFTC futures positioning, CBOE put/call, FINRA margin debt) and institutional 13F net buying by sector.
-- Macro & Fiscal: the context indicators above, a fiscal-dominance checklist and the yield curve (3M, 2Y, 10Y, 30Y).
-- Notable Views: public views of well-known macro investors and economists compared with the live data.
+- Stress (https://marketstress.org/): today's classification, the narrative, indicator history with the bands.
+- Smart Money (https://marketstress.org/smart-money): market positioning as historical percentiles (CFTC futures positioning, CBOE put/call, FINRA margin debt) and institutional 13F net buying by sector.
+- Macro & Fiscal (https://marketstress.org/macro): the context indicators above, a fiscal-dominance checklist and the yield curve (3M, 2Y, 10Y, 30Y).
+- Notable Views (https://marketstress.org/views): public views of well-known macro investors and economists compared with the live data. The views themselves (paraphrases with source links and dates) are in the page's HTML; the comparison with live data loads with JavaScript.
 
 ## Data sources
 
