@@ -339,6 +339,9 @@
   .topright { justify-self:end; display:flex; align-items:center; gap:8px; min-width:0; }
   .brand { margin:0; font:600 13px/1 var(--font-ui); letter-spacing:.01em; white-space:nowrap; }
   .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
+  .topleft { display:flex; align-items:center; gap:14px; min-width:0; }
+  .howlink { font:500 12px/1 var(--font-ui); color:var(--accent); text-decoration:none; white-space:nowrap; }
+  .howlink:hover { text-decoration:underline; }
   /* Tabs as a segmented control (2026-11-14): as plain grey text next to
      the brand they read like a subtitle, and readers missed that there are
      four views. Centred between the brand and the date controls. */
@@ -761,7 +764,7 @@
     /* Phone: tabs right under the brand on every tab; the date controls
        (Stress only) go below them, so the tabs never move vertically. */
     .topright { order:3; margin-left:auto; padding-bottom:8px; }
-    .brand { order:1; padding-bottom:8px; }
+    .topleft { order:1; padding-bottom:8px; }
     .datenav .dn-trig { max-width:170px; overflow:hidden; } .datenav .dn-trig small { display:none; }
     /* All four tabs always visible: equal columns, long names wrap. */
     .rd .tab-bar { order:2; width:100%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 10px; }
@@ -874,7 +877,10 @@
 <body class="rd">
 <div class="wrap">
   <header class="topbar">
-    <h1 class="brand">Stress Monitor <i>· macro/market</i></h1>
+    <div class="topleft">
+      <h1 class="brand">Stress Monitor <i>· macro/market</i></h1>
+      <a class="howlink" href="/how-it-works">How it works</a>
+    </div>
     <nav class="tab-bar" id="tab-bar" aria-label="Sections">
       <button class="tab-btn" data-tab="stressmonitor">Stress</button>
       <button class="tab-btn" data-tab="smartmoney">Smart Money</button>
