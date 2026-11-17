@@ -2,6 +2,7 @@ import { getLatestDataPoint, getLatestCrashCheck, insertCrashCheck } from "./lib
 import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import { computeDivergences } from "./divergence.js";
 import { gatherHazardFeatures, computeHazardProbability, type HazardResult } from "./hazardModel.js";
+import { updateHazardScorecard } from "./hazardScorecardStore.js";
 import {
   bandVix,
   bandHySpreadBps,
@@ -128,12 +129,13 @@ export async function classify(): Promise<void> {
   // ALREADY_BREACHED and leave raw/calibrated/band null rather than
   // presenting an out-of-population number as if it still applied.
   let hazard: HazardResult | null = null;
+  let hazardFeatures: Record<string, number> | null = null;
   let hazardStatus: "ELIGIBLE" | "ALREADY_BREACHED" | "UNAVAILABLE";
   if (drawdown >= 10) {
     hazardStatus = "ALREADY_BREACHED";
   } else {
     try {
-      const hazardFeatures = await gatherHazardFeatures({
+      hazardFeatures = await gatherHazardFeatures({
         vixValue: vix.value,
         dgs10Value: treasury10y.value,
         sahmValue: sahmRule.value,
@@ -268,6 +270,30 @@ export async function classify(): Promise<void> {
       `Recovery confirmed: ${recoveryConfirmed}. ` +
       `Hazard model (10% target): ${hazard ? `${hazard.band} (raw score ${(hazard.raw_probability * 100).toFixed(1)}%)` : hazardStatus}.`,
   );
+
+  // Hazard scorecard (rebuild brief Stage 0): record today's model band
+  // next to the drawdown + VIX baseline, and score earlier days whose
+  // outcome window has closed. Report-only and non-gating, so a failure
+  // here is logged and never fails the run.
+  try {
+    const msg = await updateHazardScorecard(
+      hazard
+        ? {
+            as_of_date: sp500.observation_date,
+            model_band: hazard.band,
+            model_raw_pct: Math.round(hazard.raw_probability * 10000) / 100,
+            sp500_level: sp500.value,
+            sp500_ath: sp500Ath.value,
+            drawdown_pct: drawdown,
+            vix: vix.value,
+            inputs: hazardFeatures,
+          }
+        : null,
+    );
+    console.log(msg);
+  } catch (err) {
+    console.error("hazardScorecard: update failed (non-gating):", err);
+  }
 
   await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);
 }

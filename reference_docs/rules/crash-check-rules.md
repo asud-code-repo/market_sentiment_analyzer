@@ -1406,6 +1406,18 @@ to Claude's `write_snapshot` synthesis. `null` fields mean the model
 temporarily failed to compute that run (e.g. a transient gap in one input
 series) — treat as unavailable, never as a reading of zero.
 
+**Live scorecard (added 2026-11-16)**: every scored day is also written to
+the `hazard_scorecard` table (`rule_engine/src/hazardScorecard.ts`), next to
+a fixed baseline band: score = drawdown % + VIX / 5, LOW below 8.5,
+TRANSITIONING 8.5 to under 10, HIGH at 10 or above. The cutoffs were set
+before any live outcome so the baseline flags about the same share of days
+as the model did in the 1994–2026 replay; they are not to be retuned after
+seeing results. Once 21 and 63 more S&P closes exist, each row records
+whether the S&P touched a ≥10% drawdown from its running all-time high in
+that window. This is the model's only out-of-sample record, and the test of
+whether it beats the simple rule. Report-only: nothing reads it for a
+decision.
+
 ---
 
 ## Crash-Probability Scoring Methodology (IMPLEMENTED 2026-09-22 — derived, not judged)
