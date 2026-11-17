@@ -184,9 +184,9 @@ const FRED_SERIES: { id: string; unit: string }[] = [
                                           // (BEA NIPA, quarterly, seasonally-adjusted annual
                                           // rate). GROSS, not net interest — includes imputed
                                           // interest on federal pension liabilities, so it reads
-                                          // well above the CBO/OMB net figure. Since 2026-10-02
-                                          // only the timelier secondary "direction" read; the
-                                          // checklist's headline uses FYOINT below.
+                                          // well above the CBO/OMB net figure. No longer read by
+                                          // the checklist (Monthly Treasury Statement since
+                                          // 2026-11-16).
   { id: "FYFSD", unit: "usd_millions" }, // Federal Surplus or Deficit, annual (OMB, fiscal
                                           // year basis) — total budget balance; + FYOINT (same
                                           // fiscal year) = primary balance.
@@ -200,8 +200,13 @@ const FRED_SERIES: { id: string; unit: string }[] = [
   // fiscal year. These three are OMB's own fiscal-year actuals, so primary
   // balance and net interest % of GDP/receipts are all same-year,
   // same-convention ratios (the basis CBO/Treasury report on).
-  { id: "FYOINT", unit: "usd_millions" }, // Federal Outlays: Interest (OMB, fiscal year) — NET
-                                          // interest (budget function 900).
+  // 2026-11-16: superseded. FYOINT is GROSS interest on Treasury securities,
+  // not net (it matches MTS "Interest on Treasury Debt Securities (Gross)"
+  // to the dollar), and FYGDP trails by a year. The checklist now uses the
+  // Monthly Treasury Statement (treasury.ts fetchTreasuryMts). These still
+  // ingest, but nothing reads them.
+  { id: "FYOINT", unit: "usd_millions" }, // Federal Outlays: Interest (OMB, fiscal year) — GROSS
+                                          // interest on Treasury securities, not budget function 900.
   { id: "FYFR", unit: "usd_millions" },  // Federal Receipts (OMB, fiscal year).
   { id: "FYGDP", unit: "usd_billions" }, // GDP on a fiscal-year basis (OMB) — denominator for
                                           // the fiscal-year ratios above.

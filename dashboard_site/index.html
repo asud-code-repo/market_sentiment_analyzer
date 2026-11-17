@@ -1474,7 +1474,7 @@ const CONTEXT_INFO = {
   gfdegdq188s: {
     label: "Federal Debt (% of GDP)",
     format: (v) => `${v.toFixed(1)}%`,
-    signal: (v) => (v > 120 ? "Above 120% — the structural backdrop behind the \"fiscal dominance\" thesis (borrowing/spending overriding normal rate-vs-equity relationships). Quarterly, lags." : "Quarterly, lags — the structural debt-load backdrop behind the \"fiscal dominance\" thesis."),
+    signal: (v) => (v > 120 ? "Above 120% — the structural backdrop behind the \"fiscal dominance\" thesis (borrowing/spending overriding normal rate-vs-equity relationships)." : "The structural debt-load backdrop behind the \"fiscal dominance\" thesis."),
     notable: (v) => v > 120,
   },
   recprousm156n: {
@@ -1583,7 +1583,7 @@ const CONTEXT_GROUPS = [
   { title: "Liquidity", cadence: "weekly to daily", keys: ["netLiquidity", "walcl", "rrpontsyd"] },
   { title: "Cross-asset & breadth", cadence: "market prices, 7-day / 180-day windows", keys: ["smallCapBreadth", "equalWeightBreadth", "stockBondCorrelation", "gold", "bitcoin", "dcoilwtico", "copperFut"] },
   { title: "Growth & labor", cadence: "weekly to monthly releases", keys: ["icsa", "ccsa", "jtshir", "rsafs", "cgbd2024", "drcclacbs", "recprousm156n", "nyFedRecessionProb"] },
-  { title: "Structural & geopolitical", cadence: "monthly to quarterly, lagged", keys: ["gfdegdq188s", "ticForeignHoldings", "gprIndex"] },
+  { title: "Structural & geopolitical", cadence: "daily to monthly", keys: ["gfdegdq188s", "ticForeignHoldings", "gprIndex"] },
 ];
 
 function renderContextIndicators(latest) {
@@ -1616,7 +1616,9 @@ function renderContextIndicators(latest) {
     nfcicredit: latest.NFCICREDIT,
     dfii10: latest.DFII10,
     dff: latest.DFF,
-    gfdegdq188s: latest.GFDEGDQ188S,
+    // Treasury's daily total debt over the latest quarter's GDP: the same
+    // measure as FRED's quarterly GFDEGDQ188S, current to the last business day.
+    gfdegdq188s: latest.DEBT_TOTAL_PUBLIC != null && latest.GDP ? (latest.DEBT_TOTAL_PUBLIC / latest.GDP) * 100 : undefined,
     recprousm156n: latest.RECPROUSM156N,
     nyFedRecessionProb: nyFedProb,
     smallCapBreadth: latest.SMALL_CAP_BREADTH_SPREAD_7D,
@@ -1977,15 +1979,12 @@ async function renderFiscalDominanceChecklist() {
     const taylorRate = (inflationYoy, unemploymentGap) => 1 + 1.5 * inflationYoy - unemploymentGap;
     const signed = (n, digits) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
 
-    const [dffLatestRows, fyfsd, fyoint, fyfr, fygdp, nipaInterest, gdp, nipaReceipts, govtSpending] = await Promise.all([
+    const [dffLatestRows, mtsReceipts, mtsOutlays, mtsInterest, gdp, govtSpending] = await Promise.all([
       fetchRecent("DFF", 1),
-      fetchRecent("FYFSD", 6),
-      fetchRecent("FYOINT", 6),
-      fetchRecent("FYFR", 6),
-      fetchRecent("FYGDP", 6),
-      fetchRecent("A091RC1Q027SBEA", 4),
-      fetchRecent("GDP", 21),
-      fetchRecent("FGRECPT", 4),
+      fetchRecent("MTS_RECEIPTS", 80),
+      fetchRecent("MTS_OUTLAYS", 80),
+      fetchRecent("MTS_NET_INTEREST", 80),
+      fetchRecent("GDP", 30),
       fetchRecent("FGEXPND", 21),
     ]);
 
@@ -2019,55 +2018,91 @@ stage: "Policy constraint", stress: gap < 0, rule: "policy rate below the rule",
       }
     }
 
-    // 2 & 3 use OMB fiscal-year actuals, all the same fiscal year: FYFSD
-    // (total balance) + FYOINT (NET interest) = primary balance; FYOINT /
-    // FYGDP and / FYFR = net-interest burden. FYFSD/FYOINT/FYFR are
-    // $millions, FYGDP is $billions.
-    const fiscalYears = joinByDate(fyfsd, fyoint, fyfr, fygdp).map(({ date, values: [deficit, interest, receipts, fyGdp] }) => ({
-      fy: date.slice(0, 4),
-      primaryB: (deficit + interest) / 1000,
-      interestB: interest / 1000,
-      receiptsB: receipts / 1000,
-      gdpB: fyGdp,
-    }));
+    // 2 & 3 use the Monthly Treasury Statement (mirrors regimeIndicators.ts
+    // getFiscalWindows): 12-month sums of receipts, outlays and budget
+    // function 900 net interest ($ billions). Latest 12 months, the same 12
+    // months one and five years earlier, and the last fiscal year (12 months
+    // to the latest September). GDP for each window = average of the four
+    // latest completed BEA quarters, so ratios divide same-window flows by
+    // same-window output.
+    const monthIdx = (d) => Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1;
+    const monthLabel = (d) => new Date(`${d}T00:00:00Z`).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+    const mtsMonths = joinByDate(mtsReceipts, mtsOutlays, mtsInterest)
+      .map(({ date, values: [r, o, n] }) => ({ date, r, o, n }))
+      .reverse();
+    const gdp4 = (asOf) => {
+      const done = gdp.filter((q) => monthIdx(q.observation_date) + 2 <= monthIdx(asOf)).slice(0, 4);
+      if (done.length < 4 || monthIdx(done[0].observation_date) - monthIdx(done[3].observation_date) !== 9) return null;
+      return done.reduce((a, q) => a + q.value, 0) / 4;
+    };
+    const fiscalWindow = (endDate) => {
+      const end = mtsMonths.findIndex((m) => m.date === endDate);
+      if (end < 11) return null;
+      const w = mtsMonths.slice(end - 11, end + 1);
+      if (monthIdx(w[11].date) - monthIdx(w[0].date) !== 11) return null;
+      const gdpB = gdp4(endDate);
+      if (gdpB == null) return null;
+      const receiptsB = w.reduce((a, m) => a + m.r, 0);
+      const interestB = w.reduce((a, m) => a + m.n, 0);
+      const balanceB = receiptsB - w.reduce((a, m) => a + m.o, 0);
+      return { to: endDate, receiptsB, interestB, primaryB: balanceB + interestB, gdpB };
+    };
+    const lastMonth = mtsMonths[mtsMonths.length - 1]?.date;
+    const windowBack = (n) => {
+      const m = lastMonth && mtsMonths.find((x) => monthIdx(x.date) === monthIdx(lastMonth) - n);
+      return m ? fiscalWindow(m.date) : null;
+    };
+    const fNow = lastMonth ? fiscalWindow(lastMonth) : null;
+    const fYearAgo = windowBack(12);
+    const fFiveAgo = windowBack(60);
+    const lastSept = [...mtsMonths].reverse().find((m) => m.date.slice(5, 7) === "09");
+    const fFy = lastSept ? fiscalWindow(lastSept.date) : null;
+    const fyLabel = lastSept ? `FY${lastSept.date.slice(0, 4)}` : "";
+    const timingNote = "One month can shift the 12-month total when benefit payments move across a month end, so compare with a year earlier, not last month.";
 
-    // 2. Primary balance (deficit excluding interest), with prior FY.
-    if (fiscalYears.length > 0) {
-      const [latest, prior] = fiscalYears;
-      const pctGdp = (r) => (r.primaryB / r.gdpB) * 100;
+    // 2. Primary balance (deficit excluding interest).
+    if (fNow) {
+      const pctGdp = (w) => (w.primaryB / w.gdpB) * 100;
+      const money = (b, minus) => `${b >= 0 ? "+" : minus}$${Math.abs(b).toFixed(0)}B`;
+      const word = (w) => (w.primaryB < 0 ? "shortfall" : "surplus");
       cards.push({
-stage: "Fiscal pressure", stress: latest.primaryB < 0, rule: "primary deficit",
-        label: `Primary Balance, FY${latest.fy} (ex-interest)`,
-        key: "primary", name: "Primary balance", sub: `FY${latest.fy}, ex-interest`,
-        val: `${latest.primaryB >= 0 ? "+" : "−"}$${Math.abs(latest.primaryB).toFixed(0)}B`, valSub: `${sgn(pctGdp(latest), 1)}% of GDP`,
-        today: `FY${latest.fy} ${latest.primaryB < 0 ? "shortfall" : "surplus"} of $${Math.abs(latest.primaryB).toFixed(0)}B (${Math.abs(pctGdp(latest)).toFixed(1)}% of GDP)${prior ? `, vs a ${prior.primaryB < 0 ? "shortfall" : "surplus"} of $${Math.abs(prior.primaryB).toFixed(0)}B (${Math.abs(pctGdp(prior)).toFixed(1)}%) in FY${prior.fy}` : ""}.`,
-        value: `${latest.primaryB >= 0 ? "+" : "-"}$${Math.abs(latest.primaryB).toFixed(0)}B (${signed(pctGdp(latest), 1)}% GDP)`,
-        trend: prior ? `FY${prior.fy}: ${prior.primaryB >= 0 ? "+" : "-"}$${Math.abs(prior.primaryB).toFixed(0)}B (${signed(pctGdp(prior), 1)}% GDP)` : null,
-        detail: `${latest.primaryB < 0
+stage: "Fiscal pressure", stress: fNow.primaryB < 0, rule: "primary deficit",
+        label: `Primary Balance, 12 months to ${monthLabel(fNow.to)} (ex-interest)`,
+        key: "primary", name: "Primary balance", sub: `12 months to ${monthLabel(fNow.to)}, ex-interest`,
+        val: money(fNow.primaryB, "−"), valSub: `${sgn(pctGdp(fNow), 1)}% of GDP`,
+        today: `A ${word(fNow)} of $${Math.abs(fNow.primaryB).toFixed(0)}B (${Math.abs(pctGdp(fNow)).toFixed(1)}% of GDP) over the last 12 months${fYearAgo ? `, vs $${Math.abs(fYearAgo.primaryB).toFixed(0)}B (${Math.abs(pctGdp(fYearAgo)).toFixed(1)}%) a year earlier` : ""}.${fFy ? ` ${fyLabel}: ${word(fFy)} of $${Math.abs(fFy.primaryB).toFixed(0)}B (${Math.abs(pctGdp(fFy)).toFixed(1)}%).` : ""}`,
+        value: `${money(fNow.primaryB, "-")} (${signed(pctGdp(fNow), 1)}% GDP)`,
+        trend: [fYearAgo && `Year earlier: ${money(fYearAgo.primaryB, "-")} (${signed(pctGdp(fYearAgo), 1)}% GDP)`, fFy && `${fyLabel}: ${money(fFy.primaryB, "-")} (${signed(pctGdp(fFy), 1)}% GDP)`].filter(Boolean).join(" · ") || null,
+        detail: `${fNow.primaryB < 0
           ? "A primary DEFICIT even excluding interest payments — the textbook 'active fiscal policy' signature (spending/taxes not adjusting to stabilize debt on their own)."
-          : "A primary surplus/balance — any deficit is being driven by interest costs, not ongoing spending/tax decisions. Weaker fiscal-dominance evidence."} OMB fiscal-year actuals — annual, so this lags up to a year.`,
+          : "A primary surplus/balance — any deficit is being driven by interest costs, not ongoing spending/tax decisions. Weaker fiscal-dominance evidence."} Monthly Treasury Statement, updated about two weeks after each month ends. ${timingNote}`,
       });
     }
 
-    // 3. Net interest as % of GDP and % of federal receipts (OMB NET
-    // interest), with prior FY and 5 FYs earlier. BEA's quarterly
-    // A091RC1Q027SBEA is GROSS interest (incl. imputed pension interest),
-    // so it's shown only as the timelier direction-of-travel read.
-    if (fiscalYears.length > 0) {
-      const [latest, prior] = fiscalYears;
-      const fiveBack = fiscalYears[5];
-      const fmt = (r) => `${((r.interestB / r.gdpB) * 100).toFixed(2)}% / ${((r.interestB / r.receiptsB) * 100).toFixed(2)}%`;
-      const trendParts = [prior && `FY${prior.fy}: ${fmt(prior)}`, fiveBack && `FY${fiveBack.fy}: ${fmt(fiveBack)}`].filter(Boolean);
-      const [nipa] = joinByDate(nipaInterest, gdp, nipaReceipts);
+    // 3. Net interest as % of GDP and % of federal receipts.
+    if (fNow) {
+      const pg = (w) => (w.interestB / w.gdpB) * 100;
+      const pr = (w) => (w.interestB / w.receiptsB) * 100;
+      const fmt = (w) => `${pg(w).toFixed(2)}% / ${pr(w).toFixed(2)}%`;
+      const trendParts = [
+        fYearAgo && `Year earlier: ${fmt(fYearAgo)}`,
+        fFiveAgo && `5 years earlier: ${fmt(fFiveAgo)}`,
+        fFy && `${fyLabel}: ${fmt(fFy)}`,
+      ].filter(Boolean);
       cards.push({
-stage: "Fiscal pressure", stress: prior ? latest.interestB / latest.receiptsB > prior.interestB / prior.receiptsB : null, rule: "% of receipts up vs. prior fiscal year",
-        label: `Net Interest, FY${latest.fy} (% GDP / % Receipts)`,
-        key: "interest", name: "Net interest", sub: `FY${latest.fy}`,
-        val: `${((latest.interestB / latest.gdpB) * 100).toFixed(2)}% · ${((latest.interestB / latest.receiptsB) * 100).toFixed(1)}%`, valSub: "of GDP · of receipts",
-        today: `${((latest.interestB / latest.gdpB) * 100).toFixed(2)}% of GDP and ${((latest.interestB / latest.receiptsB) * 100).toFixed(1)}% of tax revenue${prior ? `, vs ${((prior.interestB / prior.gdpB) * 100).toFixed(2)}% and ${((prior.interestB / prior.receiptsB) * 100).toFixed(1)}% in FY${prior.fy}` : ""}.`,
-        value: fmt(latest),
+stage: "Fiscal pressure", stress: fYearAgo ? pr(fNow) > pr(fYearAgo) : null, rule: "% of receipts up vs. the same 12 months a year earlier",
+        label: `Net Interest, 12 months to ${monthLabel(fNow.to)} (% GDP / % Receipts)`,
+        key: "interest", name: "Net interest", sub: `12 months to ${monthLabel(fNow.to)}`,
+        val: `${pg(fNow).toFixed(2)}% · ${pr(fNow).toFixed(1)}%`, valSub: "of GDP · of receipts",
+        today: `${pg(fNow).toFixed(2)}% of GDP and ${pr(fNow).toFixed(1)}% of tax revenue over the last 12 months${fYearAgo ? `, vs ${pg(fYearAgo).toFixed(2)}% and ${pr(fYearAgo).toFixed(1)}% a year earlier` : ""}.`,
+        value: fmt(fNow),
         trend: trendParts.length ? trendParts.join(" · ") : null,
-        detail: `Rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. The receipts share is the more commonly-cited, more mechanistically direct cut. OMB net interest (FYOINT), annual.${nipa ? ` Timelier quarterly read (BEA gross interest payments, ${nipa.date}): ${((nipa.values[0] / nipa.values[1]) * 100).toFixed(2)}% / ${((nipa.values[0] / nipa.values[2]) * 100).toFixed(2)}% — gross, so it reads higher; use for direction, not level.` : ""}`,
+        detail: `Rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. The receipts share is the more commonly-cited, more mechanistically direct cut. Net interest as the budget reports it (interest the Treasury pays its own trust funds nets out), from the Monthly Treasury Statement. ${timingNote}`,
+        // Read by the Notable Views tab's fiscal_pressure check.
+        niTrend: {
+          now: { pct: pg(fNow), label: monthLabel(fNow.to) },
+          five: fFiveAgo ? { pct: pg(fFiveAgo), label: monthLabel(fFiveAgo.to) } : null,
+        },
       });
     }
 
@@ -2140,13 +2175,14 @@ stage: "Fiscal pressure", stress: back(4) ? pct(latest) > pct(back(4)) : null, r
     // 6-8. Debt dynamics (added 2026-10-02) -- mirrors regimeIndicators.ts's
     // computeDebtDynamics. r = Treasury's average rate on marketable debt
     // (monthly, excl. TIPS/FRNs); g = nominal GDP YoY (same quarter a year
-    // earlier); d = debt held by the public % GDP. Debt/GDP is stable when
+    // earlier); d = debt held by the public % GDP (Treasury's daily figure
+    // over the latest quarter's GDP). Debt/GDP is stable when
     // the primary balance = d*(r-g)/(1+g).
     const [avgRates, gdpReal, gdpPot, debtPctRows, dgs2Rows, dgs5Rows, dgs10Rows, dfii10Rows] = await Promise.all([
       fetchRecent("TREASURY_AVG_RATE_MARKETABLE", 40),
       fetchRecent("GDPC1", 8),
       fetchRecent("GDPPOT", 8),
-      fetchRecent("FYGFGDQ188S", 1),
+      fetchRecent("DEBT_HELD_BY_PUBLIC", 1),
       fetchRecent("DGS2", 1),
       fetchRecent("DGS5", 1),
       fetchRecent("DGS10", 1),
@@ -2210,21 +2246,21 @@ stage: "Fiscal pressure", stress: rgYearAgo != null ? rg > rgYearAgo : null, rul
     }
 
     // 8. Debt-stabilizing primary balance + rate-sensitivity.
-    const debtNow = debtPctRows[0];
+    const debtNow = debtPctRows[0] && gdp[0]?.value ? { value: (debtPctRows[0].value / gdp[0].value) * 100 } : null;
     if (avgNow && gNow && debtNow) {
       const pbStar = stabilizing(debtNow.value, avgNow.value, gNow.pct);
       const pb50 = stabilizing(debtNow.value, avgNow.value + 0.5, gNow.pct);
       const pb100 = stabilizing(debtNow.value, avgNow.value + 1, gNow.pct);
-      const actual = fiscalYears[0] ? (fiscalYears[0].primaryB / fiscalYears[0].gdpB) * 100 : null;
+      const actual = fNow ? (fNow.primaryB / fNow.gdpB) * 100 : null;
       const gapPts = actual != null ? actual - pbStar : null;
       cards.push({
 stage: "Fiscal pressure", stress: gapPts != null ? gapPts < 0 : null, rule: "actual primary balance short of stabilizing",
         label: "Debt-Stabilizing Primary Balance",
         key: "stab", name: "Debt-stabilizing primary balance", sub: "at today's r and g", val: `${sgn(pbStar, 1)}% GDP`,
-        today: `Needed: ${sgn(pbStar, 1)}% of GDP.${gapPts != null ? ` Actual FY${fiscalYears[0].fy}: ${sgn(actual, 1)}%, ${Math.abs(gapPts).toFixed(1)} points ${gapPts < 0 ? "short, so debt/GDP is rising" : "better, so debt/GDP is falling"}.` : ""} If rates were 0.5 points higher the bar would be ${sgn(pb50, 1)}%; 1 point higher, ${sgn(pb100, 1)}%.`,
+        today: `Needed: ${sgn(pbStar, 1)}% of GDP.${gapPts != null ? ` Actual, last 12 months: ${sgn(actual, 1)}%, ${Math.abs(gapPts).toFixed(1)} points ${gapPts < 0 ? "short, so debt/GDP is rising" : "better, so debt/GDP is falling"}.` : ""} If rates were 0.5 points higher the bar would be ${sgn(pb50, 1)}%; 1 point higher, ${sgn(pb100, 1)}%.`,
         value: `${signed(pbStar, 1)}% GDP`,
         trend: `+50bp avg rate: ${signed(pb50, 1)}% · +100bp: ${signed(pb100, 1)}%`,
-        detail: `Primary balance needed to hold debt held by the public flat at ${debtNow.value.toFixed(1)}% of GDP at today's r and g (+ = surplus).${gapPts != null ? ` Actual FY${fiscalYears[0].fy}: ${signed(actual, 1)}% — ${gapPts < 0 ? `${Math.abs(gapPts).toFixed(1)}pts short, so debt/GDP is on a rising path.` : `${gapPts.toFixed(1)}pts better, so debt/GDP is on a falling path.`}` : ""} The +50/+100bp rows raise the AVERAGE debt rate, which takes years of rollover. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g.`,
+        detail: `Primary balance needed to hold debt held by the public flat at ${debtNow.value.toFixed(1)}% of GDP at today's r and g (+ = surplus).${gapPts != null ? ` Actual, 12 months to ${monthLabel(fNow.to)}: ${signed(actual, 1)}% — ${gapPts < 0 ? `${Math.abs(gapPts).toFixed(1)}pts short, so debt/GDP is on a rising path.` : `${gapPts.toFixed(1)}pts better, so debt/GDP is on a falling path.`}` : ""} The +50/+100bp rows raise the AVERAGE debt rate, which takes years of rollover. Approximate: mixes the last 12 months' primary balance with today's debt and the latest quarter's GDP and growth.`,
       });
     }
 
@@ -2695,9 +2731,10 @@ const MACRO_FRESH = [
   ["Bank lending standards", "Quarterly Fed survey", ["DRTSCILM"], "quarter"],
   ["Foreign Treasury holdings (TIC)", "Monthly, ~2½ months behind", ["TIC_FOREIGN_HOLDINGS_TOTAL"], "day"],
   ["GDP · M2 / GDP", "Quarterly", ["GDP"], "quarter"],
-  ["Debt / GDP · card delinquency", "Quarterly, lagged", ["GFDEGDQ188S", "DRCCLACBS"], "quarter"],
+  ["Federal debt", "Daily · Treasury", ["DEBT_TOTAL_PUBLIC"], "day"],
+  ["Card delinquency", "Quarterly, lagged", ["DRCCLACBS"], "quarter"],
   ["Geopolitical risk index", "Monthly", ["GPR_INDEX"], "month"],
-  ["Budget figures (OMB)", "Annual, up to a year behind", ["FYFSD"], "fy"],
+  ["Budget figures (Monthly Treasury Statement)", "Monthly, ~2 weeks after month end", ["MTS_NET_INTEREST"], "month"],
 ];
 let macroFreshLoaded = false;
 async function loadMacroFreshness() {
@@ -2779,7 +2816,7 @@ const CTX_COPY = {
   drcclacbs: ["Card delinquency", "30+ days, quarterly", "The share of bank credit-card balances that are 30+ days past due.", "Rising means more households are struggling to keep up with payments.", ""],
   recprousm156n: ["Recession prob.", "Chauvet-Piger", "A published model's estimate of the chance the US is <b>already</b> in a recession, based on four monthly economic indicators.", "Normally near zero; it jumps toward 100% during recessions. Used as an outside cross-check, not part of any rule here.", ""],
   nyFedRecessionProb: ["Recession prob.", "NY Fed, 12 months", "The chance of a recession within 12 months, from the New York Fed's formula based on the gap between 10-year and 3-month Treasury yields.", "Rises when short-term rates sit above long-term ones (an inverted curve). Computed here from daily yields rather than the NY Fed's monthly averages, so it can differ slightly from their published number.", ""],
-  gfdegdq188s: ["Federal debt", "% of GDP, gross", "Total federal government debt as a share of the economy (quarterly).", "This is <b>gross</b> debt, including money the government owes its own trust funds such as Social Security. The fiscal checklist uses debt held by the public, which leaves those out.", "Flagged above 120%."],
+  gfdegdq188s: ["Federal debt", "% of GDP, gross", "Total federal government debt as a share of the economy: Treasury's daily debt total over the latest quarter's GDP.", "This is <b>gross</b> debt, including money the government owes its own trust funds such as Social Security. The fiscal checklist uses debt held by the public, which leaves those out.", "Flagged above 120%."],
   ticForeignHoldings: ["Foreign UST holdings", "total / official · ~2 mo lag", "Treasuries held by foreign investors: the total, and the part held by foreign central banks and governments (\"official\").", "Sustained selling by official holders raises the question of who will keep buying US debt. One month's change can just be currency moves.", ""],
   gprIndex: ["Geopolitical risk index", "Caldara-Iacoviello", "A count of newspaper articles about war, terrorism and geopolitical tension across 10 major papers (Federal Reserve Board), monthly.", "100 is the 1985–2019 average. Spikes come with major conflicts and attacks.", "Flagged above 150 (roughly the top 10% of its history)."],
 };
@@ -4245,18 +4282,15 @@ const ANALYST_CHECKS = {
   // burden his crisis call is about.
   fiscal_pressure: async ({ fiscal, history }) => {
     const c = fiscal.filter((x) => x.stage === "Fiscal pressure" && x.stress != null);
-    const [oint, gdp] = await Promise.all([history("FYOINT", 8), history("FYGDP", 8)]);
-    const gdpBy = new Map(gdp.map((r) => [r.observation_date, r.value]));
-    // FYOINT is $millions, FYGDP $billions (same as the fiscal checklist).
-    const share = oint
-      .filter((r) => gdpBy.get(r.observation_date))
-      .map((r) => ({ fy: r.observation_date.slice(0, 4), pct: (r.value / 1000 / gdpBy.get(r.observation_date)) * 100 }));
-    const last = share[0], five = share[5];
+    // Same 12-month net-interest windows the checklist's Net interest card
+    // computes (Monthly Treasury Statement), latest vs. five years earlier.
+    const ni = fiscal.find((x) => x.key === "interest")?.niTrend;
+    const last = ni?.now, five = ni?.five;
     const rising = last && five ? last.pct > five.pct : null;
     const total = c.length + (rising != null ? 1 : 0);
     if (total === 0) return { reading: "Fiscal checks unavailable.", supports: null };
     const n = c.filter((x) => x.stress).length + (rising ? 1 : 0);
-    const trend = rising != null ? `Net interest has gone from ${five.pct.toFixed(1)}% of GDP (FY${five.fy}) to ${last.pct.toFixed(1)}% (FY${last.fy}). ` : "";
+    const trend = rising != null ? `Net interest has gone from ${five.pct.toFixed(1)}% of GDP (12 months to ${five.label}) to ${last.pct.toFixed(1)}% (12 months to ${last.label}). ` : "";
     return {
       reading: `${trend}${n} of ${total} fiscal-pressure checks point to stress (the Fiscal Dominance checklist on the Macro &amp; Fiscal tab, plus this 5-year trend).`,
       supports: n / total >= 0.5 ? true : n > 0 ? "partial" : false,
@@ -4681,7 +4715,7 @@ async function main() {
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
     try {
-      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "COPPER_FUT", "OFR_FSI", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "GFDEGDQ188S", "WALCL", "WTREGEN", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
+      const CONTEXT_SERIES = ["STLFSI4", "NFCI", "T10YIE", "DRTSCILM", "RRPONTSYD", "DGS10", "DGS2", "ICSA", "DRCCLACBS", "DCOILWTICO", "COPPER_FUT", "OFR_FSI", "RSAFS", "CCSA", "JTSHIR", "BAMLC0A0CM", "CGBD2024", "DGS30", "SOFR", "DTWEXBGS", "NFCIRISK", "NFCICREDIT", "DFII10", "RECPROUSM156N", "DGS3MO", "DFF", "DEBT_TOTAL_PUBLIC", "GDP", "WALCL", "WTREGEN", "THREEFYTP10", "TIC_FOREIGN_HOLDINGS_TOTAL", "TIC_FOREIGN_OFFICIAL_HOLDINGS", "GPR_INDEX"];
       // One query per series, not a single combined "order by date, limit N"
       // query across all of them — a shared limit silently crowds out
       // low-frequency (quarterly) series like DRCCLACBS/DRTSCILM once enough

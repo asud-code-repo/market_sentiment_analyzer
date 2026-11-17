@@ -20,7 +20,7 @@ import { estrellaMishkinRecessionProbability } from "./lib/recessionProbability.
 import { computeFedEventTrigger, computeInflationPrintTrigger, computeFiscalEventTrigger } from "./lib/economicCalendar.js";
 import { computeSectorRotation } from "./lib/sectorRotation.js";
 import { logTokenUsage } from "./lib/tokenLog.js";
-import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, summarizeFiscalStages } from "./lib/regimeIndicators.js";
+import { computeTaylorRuleGap, computePrimaryBalance, computeNetInterestBurden, computeGovtSpendingShare, computeGoldRealYieldCorrelation, computeStockBondCorrelation, computeDebtDynamics, computeInflationTermPremium, computeAuctionDemand, computeFedAbsorption, computeRatesDecomposition, computeFederalDebtPctGdp, summarizeFiscalStages } from "./lib/regimeIndicators.js";
 import { computeInsiderClusterSignals } from "./lib/insiderCluster.js";
 import { computeMarketPositioning } from "./lib/positioning.js";
 import { computeFundingPressureFlag } from "./lib/repoStress.js";
@@ -591,8 +591,9 @@ server.registerTool(
       "fields are external published models (Chauvet-Piger; NY Fed Estrella-Mishkin) — calibration " +
       "cross-checks only, never validation of your own estimate. effective_fed_funds_rate_pct " +
       "(DFF) is the Fed's own overnight rate -- distinct from the market-priced yield_curve_2s10s/" +
-      "thirty_year_treasury_pct series above. federal_debt_pct_gdp (GFDEGDQ188S) is quarterly and " +
-      "lags by design -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
+      "thirty_year_treasury_pct series above. federal_debt_pct_gdp is Treasury's daily total debt over " +
+      "the latest quarter's GDP (same measure as FRED's quarterly GFDEGDQ188S, current to the last business " +
+      "day) -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate " +
       "levels/borrowing overriding the usual yield-vs-equity relationship), added 2026-09-22. " +
       "fiscal_dominance_checklist (added 2026-09-22, see crash-check-rules.md's section of the " +
       "same name for the full methodology) is 12 real-data checks for whether Fed policy is " +
@@ -600,9 +601,9 @@ server.registerTool(
       "Rule gap on core PCE (is the Fed's actual rate below what inflation/employment alone would justify; " +
       "the headline-CPI version is returned alongside for comparison), " +
       "primary balance (is the government running a deficit even excluding interest payments, " +
-      "OMB fiscal-year FYFSD + FYOINT), net-interest burden as % of GDP and of receipts (OMB " +
-      "fiscal-year NET interest; the quarterly BEA figure is returned separately as nipa_gross_* " +
-      "-- gross, reads higher, use for direction only), gold's rolling correlation with real yields (has the " +
+      "latest 12 months of the Monthly Treasury Statement, with the same 12 months a year earlier and the " +
+      "last fiscal year alongside), net-interest burden as % of GDP and of receipts (same 12 months, " +
+      "budget function 900 NET interest, the CBO figure), gold's rolling correlation with real yields (has the " +
       "normal inverse relationship broken down, the debasement-hedge tell), and (added 2026-09-28, " +
       "prompted by an external research note) govt_spending_pct_gdp -- federal spending as a FLOW " +
       "share of GDP (FGEXPND/GDP), a different question from federal_debt_pct_gdp's debt STOCK. " +
@@ -664,7 +665,7 @@ server.registerTool(
         getLatestDataPoint("COPPER_FUT"),
         getLatestDataPoint("OFR_FSI"),
         getLatestDataPoint("DFF"),
-        getLatestDataPoint("GFDEGDQ188S"),
+        computeFederalDebtPctGdp(),
         getLatestDataPoint("WALCL"),
         getLatestDataPoint("WTREGEN"),
         getLatestDataPoint("THREEFYTP10"),
@@ -942,7 +943,7 @@ server.registerTool(
       },
       federal_debt_pct_gdp: debtToGdp && {
         ...debtToGdp,
-        signal: "quarterly, lags -- the structural debt-load backdrop behind a \"fiscal dominance\" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold.",
+        signal: `Total federal debt is ${debtToGdp.total_debt_pct_gdp}% of GDP as of ${debtToGdp.debt_as_of}${debtToGdp.one_year_earlier_total_debt_pct_gdp != null ? ` (a year earlier: ${debtToGdp.one_year_earlier_total_debt_pct_gdp}%)` : ""}${debtToGdp.debt_held_by_public_pct_gdp != null ? `; held by the public ${debtToGdp.debt_held_by_public_pct_gdp}%` : ""} -- the structural debt-load backdrop behind a "fiscal dominance" read (rate levels/borrowing overriding the usual yield-vs-equity relationship). Level alone isn't a crash signal; watch the trend/rate of change, not a single threshold. ${debtToGdp.caveat}`,
       },
       // 12 real-data checks for whether Fed policy is actually CONSTRAINED by
       // the debt burden (the Leeper fiscal/monetary regime framework's
@@ -964,11 +965,11 @@ server.registerTool(
         },
         primary_balance: primaryBalance && {
           ...primaryBalance,
-          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B (${primaryBalance.primary_balance_pct_gdp}% of GDP) for FY ${primaryBalance.fiscal_year}${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp != null ? `, vs. ${primaryBalance.prior_fiscal_year_primary_balance_pct_gdp}% of GDP the prior fiscal year` : ""}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."} ${primaryBalance.caveat}`,
+          signal: `Primary balance (deficit excluding interest) is $${primaryBalance.primary_balance_usd_billions}B (${primaryBalance.primary_balance_pct_gdp}% of GDP) over the 12 months to ${primaryBalance.months_to}${primaryBalance.year_earlier_primary_balance_pct_gdp != null ? `, vs. ${primaryBalance.year_earlier_primary_balance_pct_gdp}% of GDP for the same 12 months a year earlier` : ""}${primaryBalance.fiscal_year_primary_balance_pct_gdp != null ? ` (FY ${primaryBalance.fiscal_year}: $${primaryBalance.fiscal_year_primary_balance_usd_billions}B, ${primaryBalance.fiscal_year_primary_balance_pct_gdp}%)` : ""}. ${primaryBalance.primary_balance_usd_billions < 0 ? "A primary DEFICIT even excluding interest payments is the textbook 'active fiscal policy' signature -- the government isn't adjusting spending/taxes to stabilize debt on its own." : "A primary surplus (or balance) means the deficit, if any, is being driven by interest costs rather than ongoing new spending/tax decisions -- weaker fiscal-dominance evidence."} ${primaryBalance.caveat}`,
         },
         net_interest_pct_gdp: netInterestBurden && {
           ...netInterestBurden,
-          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP and ${netInterestBurden.net_interest_pct_revenue}% of federal receipts for FY ${netInterestBurden.fiscal_year}${netInterestBurden.prior_fiscal_year_pct_gdp != null ? ` (prior FY: ${netInterestBurden.prior_fiscal_year_pct_gdp}% / ${netInterestBurden.prior_fiscal_year_pct_revenue}%` + (netInterestBurden.five_years_earlier_pct_gdp != null ? `; FY ${netInterestBurden.five_years_earlier_fiscal_year}: ${netInterestBurden.five_years_earlier_pct_gdp}% / ${netInterestBurden.five_years_earlier_pct_revenue}%)` : ")") : ""}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. ${netInterestBurden.caveat}`,
+          signal: `Net interest is ${netInterestBurden.net_interest_pct_gdp}% of GDP and ${netInterestBurden.net_interest_pct_revenue}% of federal receipts over the 12 months to ${netInterestBurden.months_to}${netInterestBurden.year_earlier_pct_gdp != null ? ` (a year earlier: ${netInterestBurden.year_earlier_pct_gdp}% / ${netInterestBurden.year_earlier_pct_revenue}%` + (netInterestBurden.five_years_earlier_pct_gdp != null ? `; 12 months to ${netInterestBurden.five_years_earlier_months_to}: ${netInterestBurden.five_years_earlier_pct_gdp}% / ${netInterestBurden.five_years_earlier_pct_revenue}%)` : ")") : ""}${netInterestBurden.fiscal_year_pct_gdp != null ? `; FY ${netInterestBurden.fiscal_year}: ${netInterestBurden.fiscal_year_pct_gdp}% / ${netInterestBurden.fiscal_year_pct_revenue}%` : ""}. The revenue share is closer to the actual debt-sustainability question (can the government service this from its own income) than the GDP share; rising in either means debt service is an increasingly large, increasingly hard-to-reverse constraint on the budget. ${netInterestBurden.caveat}`,
         },
         gold_real_yield_correlation: goldRealYieldCorrelation && {
           ...goldRealYieldCorrelation,
@@ -991,7 +992,7 @@ server.registerTool(
         },
         debt_stabilizing_primary_balance: debtDynamics.debt_stabilizing_primary_balance && {
           ...debtDynamics.debt_stabilizing_primary_balance,
-          signal: `Holding debt held by the public flat at ${debtDynamics.debt_stabilizing_primary_balance.debt_held_by_public_pct_gdp}% of GDP needs a primary balance of ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_primary_balance_pct_gdp)}% of GDP at today's r and g (${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_50bp_pct_gdp)}% if the average debt rate rises 50bp, ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_100bp_pct_gdp)}% at +100bp).${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp != null ? ` The actual FY ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_fiscal_year} primary balance is ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_pct_gdp}% of GDP, ${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp < 0 ? `${Math.abs(debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp)}pts short of stabilizing -- debt/GDP is on a rising path.` : `${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp}pts better than stabilizing -- debt/GDP is on a falling path.`}` : ""} ${debtDynamics.debt_stabilizing_primary_balance.caveat}`,
+          signal: `Holding debt held by the public flat at ${debtDynamics.debt_stabilizing_primary_balance.debt_held_by_public_pct_gdp}% of GDP needs a primary balance of ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_primary_balance_pct_gdp)}% of GDP at today's r and g (${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_50bp_pct_gdp)}% if the average debt rate rises 50bp, ${signed(debtDynamics.debt_stabilizing_primary_balance.stabilizing_at_plus_100bp_pct_gdp)}% at +100bp).${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp != null ? ` The actual primary balance over the 12 months to ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_months_to} is ${debtDynamics.debt_stabilizing_primary_balance.actual_primary_balance_pct_gdp}% of GDP, ${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp < 0 ? `${Math.abs(debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp)}pts short of stabilizing -- debt/GDP is on a rising path.` : `${debtDynamics.debt_stabilizing_primary_balance.gap_vs_stabilizing_pct_gdp}pts better than stabilizing -- debt/GDP is on a falling path.`}` : ""} ${debtDynamics.debt_stabilizing_primary_balance.caveat}`,
         },
         inflation_expectations_term_premium: inflationTermPremium && {
           ...inflationTermPremium,

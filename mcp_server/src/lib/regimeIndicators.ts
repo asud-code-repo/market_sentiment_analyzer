@@ -23,6 +23,10 @@ import { isWeakAuction, WEAK_AUCTION_TENORS, WEAK_AUCTION_BTC_BELOW_AVG, WEAK_AU
 // interest, and pairing a latest-quarter annualized figure with the prior
 // full fiscal year's deficit mixed periods. The Taylor Rule gap now uses
 // core PCE (the Fed's own target measure) instead of headline CPI.
+//
+// 2026-11-16: primary balance and net interest moved again, to the Monthly
+// Treasury Statement (rolling 12 months) -- FYOINT turned out to be gross
+// interest too. See the block above computePrimaryBalance.
 
 interface Point {
   date: string;
@@ -179,32 +183,124 @@ export async function computeTaylorRuleGap(): Promise<TaylorRuleGapResult | null
   };
 }
 
-/** Joined OMB fiscal-year rows (FYFSD, FYOINT, FYFR, FYGDP), newest first.
- * FYFSD/FYOINT/FYFR are $ millions, FYGDP is $ billions. */
-async function getFiscalYearRows(count: number) {
-  const [fyfsd, fyoint, fyfr, fygdp] = await Promise.all([
-    getRecentPoints("FYFSD", count),
-    getRecentPoints("FYOINT", count),
-    getRecentPoints("FYFR", count),
-    getRecentPoints("FYGDP", count),
-  ]);
-  return joinByDate(fyfsd, fyoint, fyfr, fygdp).map(({ date, values: [deficit, interest, receipts, gdp] }) => ({
-    fiscal_year: date.slice(0, 4),
-    total_balance_usd_billions: deficit / 1000,
-    net_interest_usd_billions: interest / 1000,
-    receipts_usd_billions: receipts / 1000,
-    gdp_usd_billions: gdp,
-  }));
+// Primary balance and net interest come from the Monthly Treasury Statement
+// (MTS_RECEIPTS / MTS_OUTLAYS / MTS_NET_INTEREST, $ billions per month, see
+// ingestion/src/sources/treasury.ts) since 2026-11-16. Before that they used
+// OMB's annual FYFSD/FYOINT/FYFR/FYGDP, which had two problems: FYOINT is
+// GROSS interest on Treasury securities (it includes ~$200bn a year paid to
+// the government's own trust funds, so "net interest" read ~25% high and the
+// primary deficit ~$245bn too small), and FYGDP trails the budget series by
+// a year, so the date join silently dropped the newest fiscal year. The
+// headline is now the latest 12 months (about two weeks old), with the same
+// 12 months a year earlier for trend and the last completed fiscal year
+// alongside. GDP for any 12-month window = the average of the four latest
+// completed quarters of BEA nominal GDP (SAAR), so every ratio divides
+// same-window flows by same-window output.
+
+interface MtsMonth {
+  date: string; // month end, YYYY-MM-DD
+  receipts: number;
+  outlays: number;
+  netInterest: number;
 }
 
+const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
+
+/** MTS months joined on month end, oldest first. */
+async function getMtsMonths(count: number): Promise<MtsMonth[]> {
+  const [receipts, outlays, netInterest] = await Promise.all([
+    getRecentPoints("MTS_RECEIPTS", count),
+    getRecentPoints("MTS_OUTLAYS", count),
+    getRecentPoints("MTS_NET_INTEREST", count),
+  ]);
+  return joinByDate(receipts, outlays, netInterest)
+    .map(({ date, values: [r, o, n] }) => ({ date, receipts: r, outlays: o, netInterest: n }))
+    .reverse();
+}
+
+/** Average of the four latest BEA quarters fully ended by `asOf` (quarter
+ * start + 2 months <= asOf's month), from a newest-first quarterly series.
+ * Null unless the four are consecutive. */
+function trailingFourQuarterGdp(gdp: Point[], asOf: string): { avg: number; through: string } | null {
+  const done = gdp.filter((p) => monthIndex(p.date) + 2 <= monthIndex(asOf)).slice(0, 4);
+  if (done.length < 4 || monthIndex(done[0].date) - monthIndex(done[3].date) !== 9) return null;
+  return { avg: done.reduce((a, p) => a + p.value, 0) / 4, through: done[0].date };
+}
+
+interface FiscalWindow {
+  months_to: string;
+  receipts: number;
+  balance: number;
+  net_interest: number;
+  primary: number;
+  gdp: number;
+  gdp_through: string;
+}
+
+/** 12-month sums ending at `endDate` (must be 12 consecutive months). */
+function fiscalWindow(months: MtsMonth[], endDate: string, gdp: Point[]): FiscalWindow | null {
+  const end = months.findIndex((m) => m.date === endDate);
+  if (end < 11) return null;
+  const w = months.slice(end - 11, end + 1);
+  if (monthIndex(w[11].date) - monthIndex(w[0].date) !== 11) return null;
+  const g = trailingFourQuarterGdp(gdp, endDate);
+  if (!g) return null;
+  const receipts = w.reduce((a, m) => a + m.receipts, 0);
+  const balance = receipts - w.reduce((a, m) => a + m.outlays, 0);
+  const net_interest = w.reduce((a, m) => a + m.netInterest, 0);
+  return { months_to: endDate, receipts, balance, net_interest, primary: balance + net_interest, gdp: g.avg, gdp_through: g.through };
+}
+
+const monthsBack = (months: MtsMonth[], fromDate: string, n: number) =>
+  months.find((m) => monthIndex(m.date) === monthIndex(fromDate) - n)?.date ?? null;
+
+interface FiscalWindows {
+  latest: FiscalWindow;
+  yearEarlier: FiscalWindow | null;
+  fiveYearsEarlier: FiscalWindow | null;
+  fiscalYear: (FiscalWindow & { fiscal_year: string }) | null;
+}
+
+/** Latest 12 months, the same 12 months one and five years earlier, and the
+ * last completed fiscal year (12 months to the latest September). */
+async function getFiscalWindows(): Promise<FiscalWindows | null> {
+  const [months, gdp] = await Promise.all([getMtsMonths(80), getRecentPoints("GDP", 30)]);
+  const last = months[months.length - 1];
+  if (!last) return null;
+  const latest = fiscalWindow(months, last.date, gdp);
+  if (!latest) return null;
+  const at = (n: number) => {
+    const d = monthsBack(months, last.date, n);
+    return d ? fiscalWindow(months, d, gdp) : null;
+  };
+  const september = [...months].reverse().find((m) => m.date.slice(5, 7) === "09");
+  const fy = september ? fiscalWindow(months, september.date, gdp) : null;
+  return {
+    latest,
+    yearEarlier: at(12),
+    fiveYearsEarlier: at(60),
+    fiscalYear: fy && september ? { ...fy, fiscal_year: september.date.slice(0, 4) } : null,
+  };
+}
+
+const pctOf = (part: number, whole: number) => round2((part / whole) * 100);
+
+const PAYMENT_TIMING_CAVEAT =
+  "A 12-month sum can move by tens of billions when a benefit payment date falls on a weekend and the payments shift into the previous month (CBO adjusts for this; these figures don't), so compare with the same 12 months a year earlier rather than with last month.";
+
 export interface PrimaryBalanceResult {
+  months_to: string;
+  receipts_usd_billions: number;
   total_balance_usd_billions: number;
   net_interest_usd_billions: number;
   primary_balance_usd_billions: number;
   primary_balance_pct_gdp: number;
-  fiscal_year: string;
-  prior_fiscal_year_primary_balance_usd_billions: number | null;
-  prior_fiscal_year_primary_balance_pct_gdp: number | null;
+  year_earlier_primary_balance_usd_billions: number | null;
+  year_earlier_primary_balance_pct_gdp: number | null;
+  fiscal_year: string | null;
+  fiscal_year_primary_balance_usd_billions: number | null;
+  fiscal_year_primary_balance_pct_gdp: number | null;
+  gdp_through: string;
   caveat: string;
 }
 
@@ -217,44 +313,45 @@ export interface PrimaryBalanceResult {
  * regime framework (the fiscal authority isn't adjusting the primary
  * balance to stabilize debt).
  *
- * Both legs are OMB fiscal-year actuals for the SAME fiscal year (FYFSD +
- * FYOINT, joined on observation date) -- the CBO/OMB definition of the
- * primary deficit. Also returned as % of fiscal-year GDP (FYGDP), the
- * comparable-across-years form, with the prior fiscal year for trend.
+ * Latest 12 months of the Monthly Treasury Statement, with net interest =
+ * budget function 900 (the CBO definition), vs. the same 12 months a year
+ * earlier and the last completed fiscal year.
  */
 export async function computePrimaryBalance(): Promise<PrimaryBalanceResult | null> {
-  const rows = await getFiscalYearRows(3);
-  if (rows.length === 0) return null;
-  const primary = (r: (typeof rows)[number]) => r.total_balance_usd_billions + r.net_interest_usd_billions;
-  const pctGdp = (r: (typeof rows)[number]) => (primary(r) / r.gdp_usd_billions) * 100;
-  const [latest, prior] = rows;
-
+  const w = await getFiscalWindows();
+  if (!w) return null;
+  const { latest, yearEarlier: ye, fiscalYear: fy } = w;
   return {
-    total_balance_usd_billions: round1(latest.total_balance_usd_billions),
-    net_interest_usd_billions: round1(latest.net_interest_usd_billions),
-    primary_balance_usd_billions: round1(primary(latest)),
-    primary_balance_pct_gdp: round2(pctGdp(latest)),
-    fiscal_year: latest.fiscal_year,
-    prior_fiscal_year_primary_balance_usd_billions: prior ? round1(primary(prior)) : null,
-    prior_fiscal_year_primary_balance_pct_gdp: prior ? round2(pctGdp(prior)) : null,
-    caveat:
-      "OMB fiscal-year actuals (FYFSD total balance + FYOINT net interest, same fiscal year), so this is annual and lags: the latest reading is the most recently completed fiscal year, not the current one.",
+    months_to: latest.months_to,
+    receipts_usd_billions: round1(latest.receipts),
+    total_balance_usd_billions: round1(latest.balance),
+    net_interest_usd_billions: round1(latest.net_interest),
+    primary_balance_usd_billions: round1(latest.primary),
+    primary_balance_pct_gdp: pctOf(latest.primary, latest.gdp),
+    year_earlier_primary_balance_usd_billions: ye ? round1(ye.primary) : null,
+    year_earlier_primary_balance_pct_gdp: ye ? pctOf(ye.primary, ye.gdp) : null,
+    fiscal_year: fy ? fy.fiscal_year : null,
+    fiscal_year_primary_balance_usd_billions: fy ? round1(fy.primary) : null,
+    fiscal_year_primary_balance_pct_gdp: fy ? pctOf(fy.primary, fy.gdp) : null,
+    gdp_through: latest.gdp_through,
+    caveat: `Monthly Treasury Statement, the 12 months to ${latest.months_to} (about two weeks after month end); net interest is budget function 900, the figure CBO reports. GDP is the average of the four latest BEA quarters, through the quarter starting ${latest.gdp_through}. ${PAYMENT_TIMING_CAVEAT}`,
   };
 }
 
 export interface NetInterestBurdenResult {
-  fiscal_year: string;
+  months_to: string;
   net_interest_usd_billions: number;
   net_interest_pct_gdp: number;
   net_interest_pct_revenue: number;
-  prior_fiscal_year_pct_gdp: number | null;
-  prior_fiscal_year_pct_revenue: number | null;
-  five_years_earlier_fiscal_year: string | null;
+  year_earlier_pct_gdp: number | null;
+  year_earlier_pct_revenue: number | null;
+  five_years_earlier_months_to: string | null;
   five_years_earlier_pct_gdp: number | null;
   five_years_earlier_pct_revenue: number | null;
-  nipa_gross_interest_pct_gdp: number | null;
-  nipa_gross_interest_pct_revenue: number | null;
-  nipa_as_of: string | null;
+  fiscal_year: string | null;
+  fiscal_year_net_interest_usd_billions: number | null;
+  fiscal_year_pct_gdp: number | null;
+  fiscal_year_pct_revenue: number | null;
   caveat: string;
 }
 
@@ -262,48 +359,69 @@ export interface NetInterestBurdenResult {
  * Two cuts of the same net-interest burden, not two separate checks: % of
  * GDP and % of total federal receipts. pct_revenue is closer to the actual
  * debt-sustainability question ("can the government service this from its
- * own income") and is the more commonly-cited cut in practice.
- *
- * Headline numbers are OMB fiscal-year NET interest (FYOINT) over FYGDP and
- * FYFR -- the same basis CBO and Treasury report. Before 2026-10-02 this
- * used BEA's A091RC1Q027SBEA, which is GROSS NIPA interest payments
- * (includes imputed interest on federal employee pension liabilities and
- * nets out none of the government's interest receipts), so it read
- * materially higher than the commonly-cited net figure. That NIPA ratio is
- * kept as nipa_gross_* -- it updates quarterly, so it's the timelier
- * direction-of-travel read between annual OMB prints, but its LEVEL isn't
- * comparable to the headline. Trend: prior fiscal year and five years
- * earlier.
+ * own income") and is the more commonly-cited cut in practice. Latest 12
+ * months of the Monthly Treasury Statement (budget function 900 net
+ * interest over receipts and GDP for the same window), vs. the same 12
+ * months one and five years earlier, plus the last completed fiscal year.
  */
 export async function computeNetInterestBurden(): Promise<NetInterestBurdenResult | null> {
-  const [rows, nipaInterest, nipaGdp, nipaReceipts] = await Promise.all([
-    getFiscalYearRows(6),
-    getRecentPoints("A091RC1Q027SBEA", 4),
-    getRecentPoints("GDP", 4),
-    getRecentPoints("FGRECPT", 4),
-  ]);
-  if (rows.length === 0) return null;
-  const pctGdp = (r: (typeof rows)[number]) => round2((r.net_interest_usd_billions / r.gdp_usd_billions) * 100);
-  const pctRevenue = (r: (typeof rows)[number]) => round2((r.net_interest_usd_billions / r.receipts_usd_billions) * 100);
-  const [latest, prior] = rows;
-  const fiveBack = rows[5];
-  const [nipa] = joinByDate(nipaInterest, nipaGdp, nipaReceipts);
-
+  const w = await getFiscalWindows();
+  if (!w) return null;
+  const { latest, yearEarlier: ye, fiveYearsEarlier: five, fiscalYear: fy } = w;
   return {
-    fiscal_year: latest.fiscal_year,
-    net_interest_usd_billions: round1(latest.net_interest_usd_billions),
-    net_interest_pct_gdp: pctGdp(latest),
-    net_interest_pct_revenue: pctRevenue(latest),
-    prior_fiscal_year_pct_gdp: prior ? pctGdp(prior) : null,
-    prior_fiscal_year_pct_revenue: prior ? pctRevenue(prior) : null,
-    five_years_earlier_fiscal_year: fiveBack ? fiveBack.fiscal_year : null,
-    five_years_earlier_pct_gdp: fiveBack ? pctGdp(fiveBack) : null,
-    five_years_earlier_pct_revenue: fiveBack ? pctRevenue(fiveBack) : null,
-    nipa_gross_interest_pct_gdp: nipa ? round2((nipa.values[0] / nipa.values[1]) * 100) : null,
-    nipa_gross_interest_pct_revenue: nipa ? round2((nipa.values[0] / nipa.values[2]) * 100) : null,
-    nipa_as_of: nipa ? nipa.date : null,
-    caveat:
-      "Headline is OMB fiscal-year NET interest (FYOINT) / FYGDP and / FYFR -- annual, so it lags up to a year. nipa_gross_* is BEA's quarterly GROSS interest payments (A091RC1Q027SBEA, includes imputed pension interest) over GDP / FGRECPT: timelier, but reads structurally higher -- use it for direction between annual prints, not as a level.",
+    months_to: latest.months_to,
+    net_interest_usd_billions: round1(latest.net_interest),
+    net_interest_pct_gdp: pctOf(latest.net_interest, latest.gdp),
+    net_interest_pct_revenue: pctOf(latest.net_interest, latest.receipts),
+    year_earlier_pct_gdp: ye ? pctOf(ye.net_interest, ye.gdp) : null,
+    year_earlier_pct_revenue: ye ? pctOf(ye.net_interest, ye.receipts) : null,
+    five_years_earlier_months_to: five ? five.months_to : null,
+    five_years_earlier_pct_gdp: five ? pctOf(five.net_interest, five.gdp) : null,
+    five_years_earlier_pct_revenue: five ? pctOf(five.net_interest, five.receipts) : null,
+    fiscal_year: fy ? fy.fiscal_year : null,
+    fiscal_year_net_interest_usd_billions: fy ? round1(fy.net_interest) : null,
+    fiscal_year_pct_gdp: fy ? pctOf(fy.net_interest, fy.gdp) : null,
+    fiscal_year_pct_revenue: fy ? pctOf(fy.net_interest, fy.receipts) : null,
+    caveat: `Monthly Treasury Statement, the 12 months to ${latest.months_to}: budget function 900 NET interest (the CBO figure; interest the Treasury pays its own trust funds nets out) over receipts and over average GDP for the same window. ${PAYMENT_TIMING_CAVEAT}`,
+  };
+}
+
+export interface FederalDebtPctGdpResult {
+  total_debt_pct_gdp: number;
+  debt_held_by_public_pct_gdp: number | null;
+  total_debt_usd_billions: number;
+  debt_as_of: string;
+  gdp_quarter: string;
+  one_year_earlier_total_debt_pct_gdp: number | null;
+  caveat: string;
+}
+
+/**
+ * Debt / GDP from Treasury's daily Debt to the Penny over the latest
+ * quarter's nominal GDP (SAAR). FRED's GFDEGDQ188S is exactly the
+ * quarter-end figure / that quarter's GDP (checked to 2 decimals,
+ * 2026-11-16), so this is the same measure, current to the last business
+ * day instead of the last quarter end. Year earlier: debt ~365 days back
+ * over GDP four quarters back.
+ */
+export async function computeFederalDebtPctGdp(): Promise<FederalDebtPctGdpResult | null> {
+  const [total, pub, gdp] = await Promise.all([
+    getLatestDataPoint("DEBT_TOTAL_PUBLIC"),
+    getLatestDataPoint("DEBT_HELD_BY_PUBLIC"),
+    getRecentPoints("GDP", 5),
+  ]);
+  const q = gdp[0];
+  if (!total || !q || q.value === 0) return null;
+  const yearAgoDebt = await getPointOnOrBefore("DEBT_TOTAL_PUBLIC", subtractDays(total.observation_date, 365));
+  const yearAgoGdp = gdp.find((p) => p.date === subtractQuarters(q.date, 4));
+  return {
+    total_debt_pct_gdp: pctOf(total.value, q.value),
+    debt_held_by_public_pct_gdp: pub ? pctOf(pub.value, q.value) : null,
+    total_debt_usd_billions: round1(total.value),
+    debt_as_of: total.observation_date,
+    gdp_quarter: q.date,
+    one_year_earlier_total_debt_pct_gdp: yearAgoDebt && yearAgoGdp ? pctOf(yearAgoDebt.value, yearAgoGdp.value) : null,
+    caveat: `Treasury's Debt to the Penny (${total.observation_date}) over BEA nominal GDP for the quarter starting ${q.date} (SAAR) -- the same measure as FRED's quarterly GFDEGDQ188S, current to the last business day. Total public debt includes ~$7.8T held by federal trust funds; debt_held_by_public_pct_gdp excludes it.`,
   };
 }
 
@@ -607,7 +725,7 @@ export interface DebtDynamicsResult {
     stabilizing_at_plus_50bp_pct_gdp: number;
     stabilizing_at_plus_100bp_pct_gdp: number;
     actual_primary_balance_pct_gdp: number | null;
-    actual_primary_balance_fiscal_year: string | null;
+    actual_primary_balance_months_to: string | null;
     gap_vs_stabilizing_pct_gdp: number | null;
     caveat: string;
   } | null;
@@ -625,17 +743,19 @@ export interface DebtDynamicsResult {
  * r = Treasury's average rate on outstanding marketable debt (monthly,
  * TREASURY_AVG_RATE_MARKETABLE) -- the rate the existing stock actually
  * costs, not today's marginal yield. g = nominal GDP YoY (same quarter a
- * year earlier). d = debt held by the public % of GDP (FYGFGDQ188S).
+ * year earlier). d = debt held by the public % of GDP: Treasury's daily
+ * DEBT_HELD_BY_PUBLIC over the latest quarter's GDP (since 2026-11-16; was
+ * FRED's quarterly FYGFGDQ188S, the same measure a quarter late).
  * Real version for context: 10yr TIPS yield minus CBO potential real
  * growth (GDPPOT YoY), with actual real growth (GDPC1) alongside.
  */
 export async function computeDebtDynamics(): Promise<DebtDynamicsResult> {
-  const [avgRates, gdp, gdpReal, gdpPot, debtPct, dgs2, dgs5, dgs10, dfii10, primary] = await Promise.all([
+  const [avgRates, gdp, gdpReal, gdpPot, debtHeld, dgs2, dgs5, dgs10, dfii10, primary] = await Promise.all([
     getRecentPoints("TREASURY_AVG_RATE_MARKETABLE", 40),
     getRecentPoints("GDP", 12),
     getRecentPoints("GDPC1", 8),
     getRecentPoints("GDPPOT", 8),
-    getRecentPoints("FYGFGDQ188S", 1),
+    getLatestDataPoint("DEBT_HELD_BY_PUBLIC"),
     getLatestDataPoint("DGS2"),
     getLatestDataPoint("DGS5"),
     getLatestDataPoint("DGS10"),
@@ -691,7 +811,10 @@ export async function computeDebtDynamics(): Promise<DebtDynamicsResult> {
         }
       : null;
 
-  const d = debtPct[0];
+  const d =
+    debtHeld && gdp[0] && gdp[0].value !== 0
+      ? { date: debtHeld.observation_date, value: (debtHeld.value / gdp[0].value) * 100 }
+      : null;
   const debt_stabilizing_primary_balance =
     avgNow && gNow && d
       ? (() => {
@@ -704,10 +827,10 @@ export async function computeDebtDynamics(): Promise<DebtDynamicsResult> {
             stabilizing_at_plus_50bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 0.5, gNow.pct)),
             stabilizing_at_plus_100bp_pct_gdp: round2(stabilizingPrimaryBalance(d.value, avgNow.value + 1, gNow.pct)),
             actual_primary_balance_pct_gdp: actual,
-            actual_primary_balance_fiscal_year: primary ? primary.fiscal_year : null,
+            actual_primary_balance_months_to: primary ? primary.months_to : null,
             gap_vs_stabilizing_pct_gdp: actual !== null ? round2(actual - stabilizing) : null,
             caveat:
-              "Primary balance (% of GDP, + = surplus) that would hold debt-held-by-the-public/GDP flat at today's r and g: d*(r-g)/(1+g). Negative gap = the actual primary balance is short of that, so debt/GDP is rising. The +50/+100bp rows raise the AVERAGE rate on the debt, which takes years of rollover to happen, not a move in market yields. Approximate: mixes the latest fiscal-year primary balance with the latest quarterly d and g; d includes Treasuries held by the Fed, whose interest is largely remitted back to Treasury.",
+              "Primary balance (% of GDP, + = surplus) that would hold debt-held-by-the-public/GDP flat at today's r and g: d*(r-g)/(1+g). Negative gap = the actual primary balance is short of that, so debt/GDP is rising. The +50/+100bp rows raise the AVERAGE rate on the debt, which takes years of rollover to happen, not a move in market yields. Approximate: mixes the latest 12-month primary balance with today's debt over the latest quarter's GDP for d, and the latest quarterly g; d includes Treasuries held by the Fed, whose interest is largely remitted back to Treasury.",
           };
         })()
       : null;
@@ -1116,7 +1239,7 @@ export function summarizeFiscalStages(r: {
       question: "Is the fiscal position getting harder to sustain?",
       checks: [
         { check: "Primary balance", points_to_stress: r.primary ? r.primary.primary_balance_usd_billions < 0 : null, rule: "primary deficit" },
-        { check: "Net interest", points_to_stress: r.interest ? gt(r.interest.net_interest_pct_revenue, r.interest.prior_fiscal_year_pct_revenue) : null, rule: "% of receipts up vs. prior fiscal year" },
+        { check: "Net interest", points_to_stress: r.interest ? gt(r.interest.net_interest_pct_revenue, r.interest.year_earlier_pct_revenue) : null, rule: "% of receipts up vs. the same 12 months a year earlier" },
         { check: "Govt spending share", points_to_stress: r.spending ? gt(r.spending.govt_spending_pct_gdp, r.spending.one_year_earlier_pct_gdp) : null, rule: "% of GDP up vs. a year earlier" },
         { check: "Avg rate on debt", points_to_stress: avg && avg.rollover_gap_10y_pct != null ? avg.rollover_gap_10y_pct > 0 : null, rule: "10y market yield above the average (rollover raises cost)" },
         { check: "r − g", points_to_stress: rg ? gt(rg.nominal_r_minus_g_pct, rg.nominal_r_minus_g_one_year_earlier_pct) : null, rule: "up vs. a year earlier" },

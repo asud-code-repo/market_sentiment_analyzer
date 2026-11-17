@@ -202,6 +202,98 @@ export async function fetchTreasuryMarketableDebt(): Promise<DataPoint[]> {
   return points;
 }
 
+// Treasury Fiscal Data API -- Monthly Treasury Statement, table 9
+// ("Summary of Receipts and Outlays by Function"). Added 2026-11-16 for the
+// Fiscal Dominance checklist's primary balance and net interest, which had
+// used OMB's annual FYOINT. FYOINT turned out to be GROSS interest on
+// Treasury securities (equal to MTS "Interest on Treasury Debt Securities
+// (Gross)" to the dollar: $1,216bn in FY2025), which includes ~$200bn a year
+// paid to the government's own trust funds. Budget function 900 "Net
+// Interest" here is the figure CBO reports ($971bn in FY2025). MTS is
+// monthly, ~2 weeks after month end, so the checklist can use a rolling
+// 12-month sum instead of a fiscal year that is up to 13 months old.
+//
+// Three lines per month, $ billions, dated to the month end:
+//   120 "Total" under Receipts        -> MTS_RECEIPTS
+//   340 "Total" under Net Outlays     -> MTS_OUTLAYS
+//   320 "Net Interest"                -> MTS_NET_INTEREST
+// Line codes are the table's own and are checked against the labels, so a
+// renumbered table throws instead of storing the wrong line. Summed over a
+// fiscal year these reproduce OMB's receipts and deficit within $5bn
+// (FY2016-FY2026, checked 2026-11-16). This table format starts March 2015
+// (first complete fiscal year: FY2016). Full history every run (~420 rows).
+const MTS_LINES: Record<string, { seriesId: string; label: string }> = {
+  "120": { seriesId: "MTS_RECEIPTS", label: "Total" },
+  "340": { seriesId: "MTS_OUTLAYS", label: "Total" },
+  "320": { seriesId: "MTS_NET_INTEREST", label: "Net Interest" },
+};
+
+export async function fetchTreasuryMts(): Promise<DataPoint[]> {
+  const rows = await fetchFiscalData<AuctionRow>("/v1/accounting/mts/mts_table_9", {
+    fields: "record_date,line_code_nbr,classification_desc,current_month_rcpt_outly_amt",
+    filter: `line_code_nbr:in:(${Object.keys(MTS_LINES).join(",")})`,
+    sort: "-record_date",
+  });
+  requireFields(rows, ["record_date", "line_code_nbr", "classification_desc", "current_month_rcpt_outly_amt"], "Treasury mts_table_9");
+
+  const points: DataPoint[] = [];
+  for (const row of rows) {
+    const line = MTS_LINES[row.line_code_nbr ?? ""];
+    if (!line) continue;
+    if ((row.classification_desc ?? "").trim() !== line.label) {
+      throw new Error(`Treasury mts_table_9 line ${row.line_code_nbr} on ${row.record_date} is "${row.classification_desc}", expected "${line.label}" -- table renumbered`);
+    }
+    const value = Number(row.current_month_rcpt_outly_amt);
+    const date = row.record_date ?? "";
+    if (!Number.isFinite(value) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    points.push({
+      series_id: line.seriesId,
+      source: "TREASURY_FISCALDATA",
+      source_series_code: `mts_table_9:${row.line_code_nbr}`,
+      observation_date: date,
+      value: value / 1e9,
+      unit: "usd_billions",
+      raw_payload: row,
+    });
+  }
+  if (points.length === 0) throw new Error("Treasury mts_table_9 returned no usable rows");
+  return points;
+}
+
+// Treasury Fiscal Data API -- Debt to the Penny, daily (each business day,
+// for the previous one). Added 2026-11-16: FRED's GFDEGDQ188S debt/GDP is
+// exactly this table's quarter-end total / that quarter's GDP (checked to 2
+// decimals for 3 quarters), so dividing the latest daily figure by the latest
+// GDP gives the same measure without waiting for the quarter to close.
+// Total public debt and debt held by the public, $ billions. The last ~400
+// days every run, enough for year-earlier comparisons.
+export async function fetchDebtToPenny(now: Date = new Date()): Promise<DataPoint[]> {
+  const since = new Date(now.getTime() - 400 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await fetchFiscalData<AuctionRow>("/v2/accounting/od/debt_to_penny", {
+    fields: "record_date,tot_pub_debt_out_amt,debt_held_public_amt",
+    filter: `record_date:gte:${since}`,
+    sort: "-record_date",
+  });
+  requireFields(rows, ["record_date", "tot_pub_debt_out_amt", "debt_held_public_amt"], "Treasury debt_to_penny");
+
+  const points: DataPoint[] = [];
+  for (const row of rows) {
+    const date = row.record_date ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const base = { source: "TREASURY_FISCALDATA", observation_date: date, unit: "usd_billions", raw_payload: row };
+    const total = Number(row.tot_pub_debt_out_amt);
+    const pub = Number(row.debt_held_public_amt);
+    if (Number.isFinite(total) && total > 0) {
+      points.push({ ...base, series_id: "DEBT_TOTAL_PUBLIC", source_series_code: "debt_to_penny:tot_pub_debt_out_amt", value: total / 1e9 });
+    }
+    if (Number.isFinite(pub) && pub > 0) {
+      points.push({ ...base, series_id: "DEBT_HELD_BY_PUBLIC", source_series_code: "debt_to_penny:debt_held_public_amt", value: pub / 1e9 });
+    }
+  }
+  if (points.length === 0) throw new Error("Treasury debt_to_penny returned no usable rows");
+  return points;
+}
+
 // Daily Treasury Par Yield Curve -- the SOURCE of FRED's DGS* constant-
 // maturity yields. FRED's DGS10/DGS2/... come from the Fed's H.15 release,
 // which takes them unchanged from this table (verified 2026-11-16: every

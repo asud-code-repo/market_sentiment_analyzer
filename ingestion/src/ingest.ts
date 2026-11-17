@@ -12,7 +12,7 @@ import { fetchMassive, partitionPrivatePoints } from "./sources/massive.js";
 import { fetchSsga } from "./sources/ssga.js";
 import { fetchGpr } from "./sources/gpr.js";
 import { fetchTic } from "./sources/tic.js";
-import { fetchTreasuryAvgRates, fetchTreasuryAuctions, fetchTreasuryMarketableDebt } from "./sources/treasury.js";
+import { fetchTreasuryAvgRates, fetchTreasuryAuctions, fetchTreasuryMarketableDebt, fetchTreasuryMts, fetchDebtToPenny } from "./sources/treasury.js";
 import { fetchAndWriteForm4 } from "./sources/secForm4.js";
 
 interface SourceResult {
@@ -94,6 +94,10 @@ async function main() {
     // fiscal-dominance checklist's round-2 checks (see treasury.ts).
     runSource("TreasuryAuctions", false, fetchTreasuryAuctions),
     runSource("TreasuryMarketableDebt", false, fetchTreasuryMarketableDebt),
+    // Same tier: the checklist's primary balance / net interest (monthly
+    // statement, full history every run) and daily debt for debt/GDP.
+    runSource("TreasuryMTS", false, fetchTreasuryMts),
+    runSource("DebtToPenny", false, () => fetchDebtToPenny()),
   ]);
 
   const insiderRowCount = await insiderPromise;
