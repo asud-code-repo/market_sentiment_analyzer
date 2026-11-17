@@ -551,12 +551,7 @@
   .dtr .steps span.on[data-status=critical] { background:var(--critical); }
   .dtr-na { font:var(--t3); color:var(--text-muted); padding:6px 0; }
 
-  /* ---------- LLM estimate (full reports) ---------- */
-  .llm-now { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
-  .llm-now .n { font:var(--t1); font-size:18px; }
-  .llm-now small { font:var(--t3); color:var(--text-muted); }
-  .rd .stackbar.prior { height:6px; opacity:.45; }
-  .rd .bar-lbl { font:var(--t3); font-size:11px; color:var(--text-muted); margin-top:8px; }
+  /* ---------- AI view (full reports) ---------- */
   .rd .tilt-reasons { margin:10px 0 0; padding-left:18px; } .rd .tilt-reasons li { font:var(--t3); font-size:12px; color:var(--text-secondary); }
   .rd .stackbar { height:10px; border-radius:2px; margin-top:6px; }
   .rd .legend { font:var(--t3); color:var(--text-secondary); margin-top:8px; gap:14px; }
@@ -3480,7 +3475,7 @@ function renderRiskBandSection(row) {
     body = '<p class="hz-read">Unavailable this run (drawdown or VIX was missing). Not a reading of zero.</p>';
   } else {
     body = `<div class="hazard">
-      <div class="hz-read">Band is <b>${name}</b>. Since 1994, <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days were followed by a ≥10% S&amp;P drawdown within 21 trading days, against a <b>12%</b> base rate.</div>
+      <div class="hz-read">Band is <b>${name}</b>. Since 1994, <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days saw the S&amp;P close 10% or more below its all-time high within the next month. On a typical day: <b>12%</b>. Context only, not in the stress gate.</div>
       <div class="scale">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<div class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]}${b === "LOW" ? " hit rate" : ""}</div>`).join("")}</div>
     </div>`;
   }
@@ -3494,9 +3489,9 @@ function renderRiskBandSection(row) {
     <div class="bands">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<span class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]} of the time</span>`).join("")}</div>
     <p><b>How it's calculated.</b> Two numbers, added together: how far the S&amp;P is below its high (in %), plus the VIX divided by 5. Under 8.5 is Low, 8.5 to 10 is Elevated, 10 or more is High. For example, the S&amp;P 5% off its high with the VIX at 25 scores exactly 10: High. It only runs while the S&amp;P is less than 10% off its high.</p>
     <p><b>How to use it.</b> As context, not a trigger: it doesn't count toward the 3-of-6 stress gate. It mostly picks up a market that is already sliding or nervous. High came before 20 of the 21 such drops since 1994, typically about three weeks ahead, but only 1–3 days ahead of sudden ones (2015, early 2018, 2020). More than half of High days were not followed by a 10% drop, and the band says nothing about how deep a fall would go.</p>
-    <p><b>The LLM view builds on it.</b> Each full report starts from how days in this band have played out over the next 3 months, and the LLM can tilt that one step if it sees something drawdown and VIX don't.</p>`, true);
+    <p><b>The AI view builds on it.</b> Each full report starts from how days in this band have played out over the next 3 months, and the AI can move that one step if it sees something drawdown and VIX don't.</p>`, true);
   return `<section class="rsec" id="section-hazard">
-    <div class="sh"><span class="lbl">Drawdown risk band</span><span class="note">Context only · not in the gate</span>${ib("i-hazard", "the drawdown risk band")}</div>
+    <div class="sh"><span class="lbl">Drawdown risk band</span><span class="note">Could the S&amp;P end up 10% below its peak within a month?</span>${ib("i-hazard", "the drawdown risk band")}</div>
     ${body}${pop}
   </section>`;
 }
@@ -3513,38 +3508,27 @@ const SCENARIO_PRIOR = {
   ALREADY_BREACHED: { bull: 38, base: 41, bear: 15, crash: 6 },
 };
 const SCENARIO_STATE_LABEL = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "High", ALREADY_BREACHED: "past-10%" };
-const TILT_LABEL = { lower: "Lower risk than history", in_line: "In line with history", higher: "Higher risk than history" };
 
-function scenarioBar(s, cls = "") {
-  return `<div class="stackbar ${cls}">
-      <div class="seg bull" style="width:${s.bull}%;"></div><div class="seg base" style="width:${s.base}%;"></div>
-      <div class="seg bear" style="width:${s.bear}%;"></div><div class="seg crash" style="width:${s.crash}%;"></div>
-    </div>`;
-}
-
+// Public wording (2026-11-17): one plain sentence in the band section's
+// style, no bars or legend; the change log is not shown publicly. Reports
+// before the tilt (no scenario_method) show nothing here.
 function renderProbabilitySection(row) {
-  if (row.scenario_bull_pct == null) return "";
-  const split = { bull: row.scenario_bull_pct, base: row.scenario_base_pct, bear: row.scenario_bear_pct, crash: row.scenario_crash_pct };
-  const legend = `<div class="legend">
-      <div class="item"><span class="dot bull"></span>Bull ${split.bull}%</div><div class="item"><span class="dot base"></span>Base ${split.base}%</div>
-      <div class="item"><span class="dot bear"></span>Bear ${split.bear}%</div><div class="item"><span class="dot crash"></span>Crash ${split.crash}%</div>
-    </div>`;
   const prior = row.scenario_method === "tilt_v1" ? SCENARIO_PRIOR[row.scenario_prior_state] : null;
-  if (!prior) {
-    return `<section class="rsec" id="section-probability">
-    <div class="sh"><span class="lbl">LLM scenario split · older report</span><span class="note">No defined size or horizon; not comparable with newer reports</span>${ib("i-llm", "the LLM view")}</div>
-    ${scenarioBar(split)}${legend}${renderDeltaLog(row.delta_log)}
-  </section>`;
-  }
+  if (!prior || row.scenario_bear_pct == null) return "";
+  const now = row.scenario_bear_pct + row.scenario_crash_pct;
+  const hist = prior.bear + prior.crash;
   const stateName = SCENARIO_STATE_LABEL[row.scenario_prior_state] ?? row.scenario_prior_state;
+  const verdict = {
+    higher: `The AI puts today at <b>${now}%</b>, higher than usual, because:`,
+    lower: `The AI puts today at <b>${now}%</b>, lower than usual, because:`,
+    in_line: `The AI sees nothing that changes this, so today stays at <b>${now}%</b>.`,
+  }[row.scenario_tilt] ?? `The AI puts today at <b>${now}%</b>.`;
   const reasons = Array.isArray(row.scenario_tilt_reasons) && row.scenario_tilt_reasons.length
     ? `<ul class="tilt-reasons">${row.scenario_tilt_reasons.map((r) => `<li>${escHtml(r)}</li>`).join("")}</ul>` : "";
   return `<section class="rsec" id="section-probability">
-    <div class="sh"><span class="lbl">LLM view · next 3 months</span><span class="note">History for ${escHtml(stateName)} days, tilted one step</span>${ib("i-llm", "the LLM view")}</div>
-    <div class="llm-now"><span class="n">${escHtml(TILT_LABEL[row.scenario_tilt] ?? row.scenario_tilt)}</span>
-      <small>10%+ fall within 3 months: ${split.bear + split.crash}% (history: ${prior.bear + prior.crash}%)</small></div>
-    <div class="bar-lbl">History, ${escHtml(stateName)} days since 1990</div>${scenarioBar(prior, "prior")}
-    <div class="bar-lbl">This report</div>${scenarioBar(split)}${legend}${reasons}${renderDeltaLog(row.delta_log)}
+    <div class="sh"><span class="lbl">Next 3 months · AI view</span><span class="note">Could the S&amp;P fall another 10% from today's level?</span>${ib("i-llm", "the AI view")}</div>
+    <div class="hz-read">Since 1990, <b>${hist}%</b> of ${escHtml(stateName)} days were followed by the S&amp;P falling 10% or more from that day's close within the next 3 months. ${verdict}</div>
+    ${reasons}
   </section>`;
 }
 
@@ -3669,7 +3653,7 @@ function renderStressVerdict(row, priorFullReport) {
   const { status: bandStatus, band } = ddVixReading(row);
   // Dot: green for Low, amber for Elevated/High -- never red, so a High band can't be mistaken for a gating RED.
   const hazard = bandStatus === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
-    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${DD_VIX_BAND_LABELS[band] ?? band} <small>${DD_VIX_HIT_RATE[band] ?? ""} hist.</small>` : "Unavailable";
+    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${DD_VIX_BAND_LABELS[band] ?? band} <small>${DD_VIX_HIT_RATE[band] ?? ""} of past cases</small>` : "Unavailable";
   const regime = row.warsh_classification
     ? `${escHtml(row.warsh_classification.charAt(0) + row.warsh_classification.slice(1).toLowerCase())} <small>${row.warsh_hard_rules_active ? "hard rules on" : "hard rules off"}</small>` : "—";
   const fresh = stressFreshnessPop(row);
@@ -3679,7 +3663,7 @@ function renderStressVerdict(row, priorFullReport) {
     <div class="headline"><div class="big">${confirmed}<em>/6</em> red</div>
       <div class="sub">${waveTxt} · gate needs 3 of 6 confirmed${pending ? ` · <b class="warn">${pending} pending</b>` : ""} ${ib("i-gate", "the gate")}</div></div>
     <div class="facts">
-      <div class="fact"><span class="lbl">Drawdown risk · 10% / 21d</span><span class="v">${hazard}</span></div>
+      <div class="fact"><span class="lbl">Drawdown risk · 10% off peak, next month</span><span class="v">${hazard}</span></div>
       <div class="fact"><span class="lbl">Fed regime</span><span class="v">${regime} ${ib("i-regime", "the Fed regime")}</span></div>
     </div>
     <div class="stamp"><b${localTimeTitle(row.run_at)}>As of ${fmtStampET(row.run_at)}</b><br>${row.notes ? "Full chat-triggered report" : "Automated indicator refresh"}<br><button class="info txt" popovertarget="i-fresh-stress">Data freshness${fresh.anyLate ? ' <b class="late">· late</b>' : ""} ⓘ</button></div>
@@ -4284,8 +4268,8 @@ function setupTabs() {
 setupTabs();
 // Static ⓘ popovers (text that doesn't depend on the selected report).
 document.getElementById("pop-layer").innerHTML = [
-  popHtml("i-gate", "Wave-authorization gate", "<p>A deployment wave is authorized only when <b>3 of the 6</b> gate indicators are <b>confirmed RED</b>, meaning held across distinct dates, not one reading. The drawdown risk band and the LLM view never count toward it.</p><p>A price/drawdown breach on its own is shown as \"observed, not authorized\" until the gate is met.</p>"),
-  popHtml("i-llm", "LLM view · next 3 months", "<p><b>Where it starts.</b> How days in today's drawdown risk band have played out over the next 3 months (63 trading days) since 1990: crash = a fall of 20% or more at some close, bear = 10–20%, bull = no 10% fall and at least 5% higher at the end, base = the rest.</p><p><b>What the LLM adds.</b> One choice: lower, in line with, or higher than that history, moving 5 points between the calm and the falling buckets, with up to three reasons that each cite a number. It looks only for what drawdown and VIX can't see, such as credit, fiscal stress or an upcoming event.</p><p><b>Why so constrained.</b> Free LLM estimates moved up to 19 points on the same data and ran above history. This keeps the view tied to the record. Each report's outcome is recorded after 3 months; the history and the step are never retuned from them.</p><p>Not part of the 3-of-6 gate. Reports before 17 Nov 2026 used an undefined split and aren't comparable.</p>"),
+  popHtml("i-gate", "Wave-authorization gate", "<p>A deployment wave is authorized only when <b>3 of the 6</b> gate indicators are <b>confirmed RED</b>, meaning held across distinct dates, not one reading. The drawdown risk band and the AI view never count toward it.</p><p>A price/drawdown breach on its own is shown as \"observed, not authorized\" until the gate is met.</p>"),
+  popHtml("i-llm", "AI view · next 3 months", "<p><b>Where it starts.</b> How days in today's drawdown risk band have played out over the next 3 months (63 trading days) since 1990: crash = a fall of 20% or more at some close, bear = 10–20%, bull = no 10% fall and at least 5% higher at the end, base = the rest. The headline figure is bear + crash: the chance of a 10%+ fall.</p><p><b>What the AI adds.</b> The AI is an LLM (Claude). It makes one choice: lower, in line with, or higher than that history, moving 5 points between the calm and the falling buckets, with up to three reasons that each cite a number. It looks only for what drawdown and VIX can't see, such as credit, fiscal stress or an upcoming event.</p><p><b>Why so constrained.</b> Free LLM estimates moved up to 19 points on the same data and ran above history. This keeps the view tied to the record. Each report's outcome is recorded after 3 months; the history and the step are never retuned from them.</p><p>Not part of the 3-of-6 gate. Reports before 17 Nov 2026 used an undefined split and aren't comparable.</p>"),
   popHtml("i-pos", "Market positioning · how to read it", "<p>These six measures ask one question: <b>how crowded are the main bets in the market?</b></p><p><b>The scale.</b> Each measure is ranked against its own history (5 years for futures and put/call, since 1998 for margin debt). A percentile of 83 means today's reading is higher than 83% of past readings. The middle half (solid grey) is normal. The striped amber ends are the rarest 10% each way.</p><p><b>Why crowding matters.</b> A crowded bet is fragile: if everyone is already long, there's little fresh buying left and a lot of potential selling. That's why extremes are read <b>contrarian</b>: heavy fear has often come near bottoms, heavy greed near tops.</p><p><b>What it isn't.</b> Not a timing signal (not backtested), and never part of the 3-of-6 gate.</p><p class='fine'><b>Sources.</b> CFTC Commitments of Traders (weekly; Tuesday positions released Friday), CBOE put/call (daily), FINRA margin statistics (monthly, ~3–4 week lag).</p>", true),
   popHtml("i-ext", "Positioning extremes", "<p>An extreme is a reading in the rarest 10% at either end of the measure's own history (≤10th or ≥90th percentile). High and Low are the next band in (≥75th / ≤25th).</p><p>Extremes read <b>contrarian</b>: when nearly everyone is on one side, there's little fresh money left to push further and a lot that could reverse. <b>Not backtested</b> as a timing signal.</p>"),
   popHtml("i-rot", "Sector capital rotation · how to read it",

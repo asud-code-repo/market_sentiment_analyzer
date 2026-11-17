@@ -207,7 +207,7 @@ function markdown(data) {
     // SCENARIO_PRIOR_FALL10: bear + crash of config/scenario_prior_v1.json "prior"; copied in index.html too.
     const hist = SCENARIO_PRIOR_FALL10[f.llm.scenario_prior_state];
     const tilt = { lower: "lower risk than", in_line: "in line with", higher: "higher risk than" }[f.llm.scenario_tilt] ?? f.llm.scenario_tilt;
-    lines.push(`- LLM view, next 3 months (${fmtDate(f.llm.run_at, false)}): ${tilt} history for this risk band. Chance of a 10%+ S&P 500 fall within 63 trading days: ${f.llm.scenario_bear_pct + f.llm.scenario_crash_pct}%${hist != null ? `, against ${hist}% for such days since 1990` : ""}. An AI judgment limited to one 5-point step from that history.`);
+    lines.push(`- AI view, next 3 months (${fmtDate(f.llm.run_at, false)}): ${tilt} history for this risk band. Chance of a 10%+ S&P 500 fall within 63 trading days: ${f.llm.scenario_bear_pct + f.llm.scenario_crash_pct}%${hist != null ? `, against ${hist}% for such days since 1990` : ""}. An AI judgment limited to one 5-point step from that history.`);
   }
   const notes = data.full?.notes ? String(data.full.notes).replace(RUN_LABEL, "").trim() : "";
   if (notes) {
