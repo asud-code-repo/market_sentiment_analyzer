@@ -4,4 +4,8 @@
     <loc>https://marketstress.org/</loc>
     <changefreq>daily</changefreq>
   </url>
+  <url>
+    <loc>https://marketstress.org/how-it-works</loc>
+    <changefreq>monthly</changefreq>
+  </url>
 </urlset>

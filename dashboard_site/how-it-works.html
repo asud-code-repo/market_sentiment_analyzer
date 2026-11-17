@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works: Market Stress Monitor</title>
+<meta name="description" content="A plain-English, illustrated explainer of how the Market Stress Monitor reads market crash risk: public data in, fixed traffic-light rules, a confirmation wait, a stress count, a drawdown risk band with its historical hit rates, and a small, bounded role for AI. Not investment advice.">
+<link rel="canonical" href="https://marketstress.org/how-it-works">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Market Stress Monitor">
+<meta property="og:url" content="https://marketstress.org/how-it-works">
+<meta property="og:title" content="How the Market Stress Monitor works">
+<meta property="og:description" content="Public data in, fixed traffic-light rules, a wait for confirmation, and honest odds. Explained in plain English.">
+<meta property="og:image" content="https://marketstress.org/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<meta name="theme-color" content="#0d0d0d">
+<!--
+  Evergreen explainer (2026-11-17). Deliberately carries NO live values and
+  NO thresholds, cutoffs, gate counts, confirmation-day counts or hit rates:
+  those live in config/monitoring.yaml, rule_engine/src/hazardScorecard.ts
+  and the copies listed in AGENTS.md, and this page must never become one
+  more copy to keep in sync. Describe concepts only and link to the live
+  dashboard for numbers. No personal policy (waves, accounts, watchlist).
+  Theme tokens copied from index.html, same zero-build convention as 404.html.
+-->
+<style>
+  :root {
+    --surface-1:#fcfcfb; --page:#f9f9f7; --sunk:#f1f0ec;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#6f6d67;
+    --hair:rgba(11,11,11,.09); --hair-strong:rgba(11,11,11,.16);
+    --good:#0a8a0a; --good-bg:#e8f7e6;
+    --warning:#b8790a; --warning-bg:#fdf1d8;
+    --critical:#d03b3b; --critical-bg:#fbe7e6;
+    --accent:#2a78d6; --accent-bg:#e7f0fc;
+    --ink:#2b2a27; --paper:#ffffff;
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --surface-1:#161615; --page:#0d0d0d; --sunk:#121211;
+    --text-primary:#f4f4f1; --text-secondary:#c3c2b7; --text-muted:#9a988f;
+    --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.15);
+    --good:#2fb52f; --good-bg:#10250f;
+    --warning:#fab219; --warning-bg:#2c2109;
+    --critical:#e66767; --critical-bg:#2c1211;
+    --accent:#5a9cec; --accent-bg:#132537;
+    --ink:#d9d8d2; --paper:#1f1f1d;
+  } }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--page); color:var(--text-primary); font:400 16px/1.6 var(--font-ui); -webkit-font-smoothing:antialiased; }
+  a { color:var(--accent); }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; height:46px; padding:0 24px; border-bottom:1px solid var(--hair); }
+  .brand { font:600 13px/1 var(--font-ui); color:var(--text-primary); text-decoration:none; }
+  .brand i { font-style:normal; color:var(--text-muted); font-weight:400; }
+  .toplink { font:600 13px/1 var(--font-ui); text-decoration:none; }
+  .toplink:hover { text-decoration:underline; }
+  main { max-width:900px; margin:0 auto; padding:0 24px 48px; }
+
+  /* hero */
+  .hero { display:grid; grid-template-columns:1.1fr .9fr; gap:32px; align-items:center; padding:48px 0 24px; }
+  .kicker { font:600 11px/1 var(--font-ui); letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 12px; }
+  h1 { font:700 34px/1.15 var(--font-ui); margin:0 0 14px; letter-spacing:-.01em; }
+  .lede { font-size:18px; color:var(--text-secondary); margin:0 0 18px; }
+  .cta { display:inline-block; padding:10px 16px; border-radius:999px; background:var(--accent); color:#fff; text-decoration:none; font-weight:600; font-size:14px; }
+  .cta:hover { filter:brightness(1.08); }
+  .hero svg { width:100%; height:auto; }
+
+  /* steps */
+  .steps { list-style:none; margin:24px 0 0; padding:0; display:flex; flex-direction:column; gap:20px; }
+  .step { display:grid; grid-template-columns:220px 1fr; gap:28px; align-items:center; background:var(--surface-1); border:1px solid var(--hair); border-radius:20px; padding:24px 28px; }
+  .step:nth-child(even) { grid-template-columns:1fr 220px; }
+  .step:nth-child(even) .art { order:2; }
+  .art svg { width:100%; height:auto; display:block; }
+  .num { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--accent-bg); color:var(--accent); font-weight:700; font-size:14px; margin-bottom:8px; }
+  .step h2 { font:700 22px/1.25 var(--font-ui); margin:0 0 8px; }
+  .step p { margin:0 0 8px; color:var(--text-secondary); }
+  .step p:last-child { margin-bottom:0; }
+  .aside { font-size:14px; color:var(--text-muted); }
+
+  /* the six gauges */
+  h2.section { font:700 24px/1.25 var(--font-ui); margin:48px 0 6px; }
+  .section-sub { color:var(--text-secondary); margin:0 0 18px; }
+  .gauges { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .g { background:var(--surface-1); border:1px solid var(--hair); border-radius:16px; padding:16px 18px; }
+  .g svg { width:44px; height:44px; display:block; margin-bottom:8px; }
+  .g h3 { margin:0 0 4px; font:700 15px/1.3 var(--font-ui); }
+  .g p { margin:0; font-size:14px; color:var(--text-secondary); line-height:1.5; }
+
+  /* not / is */
+  .isnot { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+  .box { border-radius:16px; padding:18px 20px; }
+  .box.is { background:var(--good-bg); }
+  .box.not { background:var(--critical-bg); }
+  .box h3 { margin:0 0 8px; font:700 16px/1.3 var(--font-ui); }
+  .box ul { margin:0; padding-left:18px; color:var(--text-secondary); font-size:15px; }
+  .box li + li { margin-top:4px; }
+
+  .closing { text-align:center; margin:48px 0 0; padding:32px 24px; background:var(--accent-bg); border-radius:20px; }
+  .closing p { margin:0 0 16px; font-size:17px; }
+  footer { max-width:900px; margin:0 auto; padding:16px 24px 32px; border-top:1px solid var(--hair); font-size:12px; color:var(--text-muted); line-height:1.5; }
+  footer p { margin:0; }
+  footer p + p { margin-top:4px; }
+  footer b { color:var(--text-secondary); }
+
+  /* illustration strokes */
+  .ink { stroke:var(--ink); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+  .ink-fill { fill:var(--paper); stroke:var(--ink); stroke-width:3; stroke-linejoin:round; }
+  .f-good { fill:var(--good); } .f-warn { fill:var(--warning); } .f-crit { fill:var(--critical); } .f-accent { fill:var(--accent); }
+  .f-sunk { fill:var(--sunk); } .f-ink { fill:var(--ink); } .f-muted { fill:var(--hair-strong); }
+  .s-accent { stroke:var(--accent); } .s-good { stroke:var(--good); } .s-crit { stroke:var(--critical); } .s-warn { stroke:var(--warning); }
+  .t { font:700 13px var(--font-ui); fill:var(--ink); }
+
+  /* motion: gentle, and off for anyone who asks for less */
+  @keyframes wobble { 0%,100% { transform:rotate(-14deg); } 50% { transform:rotate(18deg); } }
+  @keyframes flow { to { stroke-dashoffset:-24; } }
+  @keyframes bob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
+  @keyframes blink3 { 0%,30% { opacity:.18; } 34%,100% { opacity:1; } }
+  @keyframes cycle-g { 0%,30% { opacity:1; } 33%,100% { opacity:.18; } }
+  @keyframes cycle-a { 0%,32% { opacity:.18; } 34%,63% { opacity:1; } 66%,100% { opacity:.18; } }
+  @keyframes cycle-r { 0%,65% { opacity:.18; } 67%,97% { opacity:1; } 100% { opacity:.18; } }
+  @keyframes tick-in { 0%,20% { opacity:0; transform:scale(.4); } 30%,100% { opacity:1; transform:scale(1); } }
+  @keyframes pulse { 0%,100% { opacity:.45; } 50% { opacity:1; } }
+  @keyframes nudge { 0%,35% { transform:translateX(0); } 50%,85% { transform:translateX(14px); } 100% { transform:translateX(0); } }
+  .needle { transform-box:fill-box; transform-origin:50% 100%; animation:wobble 3.2s ease-in-out infinite; }
+  .flow { stroke-dasharray:6 6; animation:flow 1s linear infinite; }
+  .bob { animation:bob 2.6s ease-in-out infinite; }
+  .bob.d1 { animation-delay:.4s; } .bob.d2 { animation-delay:.8s; }
+  .lg { animation:cycle-g 4.5s infinite; } .la { animation:cycle-a 4.5s infinite; } .lr { animation:cycle-r 4.5s infinite; }
+  .tick { transform-box:fill-box; transform-origin:center; animation:tick-in 4s ease-out infinite; }
+  .tick.d1 { animation-delay:.5s; } .tick.d2 { animation-delay:1s; }
+  .c-on { animation:blink3 4s ease-in-out infinite; }
+  .c-on.d1 { animation-delay:.4s; } .c-on.d2 { animation-delay:.8s; }
+  .pulse { animation:pulse 2s ease-in-out infinite; }
+  .nudge { animation:nudge 4s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; }
+    html { scroll-behavior:auto; }
+  }
+
+  @media (max-width:720px) {
+    .hero { grid-template-columns:1fr; padding-top:28px; }
+    .hero .hero-art { order:-1; max-width:320px; }
+    h1 { font-size:28px; }
+    .step, .step:nth-child(even) { grid-template-columns:1fr; padding:20px; gap:14px; }
+    .step:nth-child(even) .art { order:0; }
+    .art { max-width:220px; }
+    .gauges { grid-template-columns:1fr 1fr; }
+    .isnot { grid-template-columns:1fr; }
+  }
+  @media (max-width:440px) { .gauges { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">Stress Monitor <i>· macro/market</i></a>
+  <a class="toplink" href="/">Open the live dashboard &rarr;</a>
+</header>
+
+<main>
+  <section class="hero">
+    <div>
+      <p class="kicker">How it works</p>
+      <h1>A weather station for the stock market</h1>
+      <p class="lede">Every weekday, this site checks a handful of public market and economy readings and asks one question: <b>are the conditions that came before past crashes showing up right now?</b></p>
+      <p class="lede" style="font-size:16px">It doesn't predict the future. Like a weather station, it tells you what the conditions are and how often weather like this turned stormy in the past.</p>
+      <a class="cta" href="/">See today's reading</a>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 320 260">
+        <!-- ground + mast -->
+        <path class="ink" d="M20 232 H300"/>
+        <path class="ink" d="M160 232 V96"/>
+        <path class="ink" d="M128 232 L160 180 L192 232"/>
+        <!-- wind cups spinning-ish -->
+        <g class="bob">
+          <path class="ink" d="M160 96 V66"/>
+          <circle class="ink-fill" cx="160" cy="58" r="9"/>
+          <path class="ink" d="M160 58 H118 M160 58 H202"/>
+          <path class="ink-fill" d="M108 50 a12 12 0 0 1 20 0 Z"/>
+          <path class="ink-fill" d="M192 50 a12 12 0 0 1 20 0 Z"/>
+        </g>
+        <!-- gauge box -->
+        <rect class="ink-fill" x="96" y="110" width="128" height="72" rx="14"/>
+        <path class="ink" d="M120 160 a40 40 0 0 1 80 0"/>
+        <path d="M120 160 a40 40 0 0 1 22 -35.6" stroke="var(--good)" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <path d="M146 121.3 a40 40 0 0 1 28 0" stroke="var(--warning)" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <path d="M178 124.4 a40 40 0 0 1 22 35.6" stroke="var(--critical)" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <rect class="needle f-ink" x="158" y="126" width="4" height="34" rx="2"/>
+        <circle class="f-ink" cx="160" cy="160" r="6"/>
+        <!-- clouds -->
+        <g class="bob d1"><path class="ink-fill" d="M36 92 a16 16 0 0 1 28 -12 a20 20 0 0 1 36 8 a14 14 0 0 1 -2 26 H44 a14 14 0 0 1 -8 -22 Z"/></g>
+        <g class="bob d2"><path class="ink-fill" d="M232 104 a13 13 0 0 1 22 -10 a16 16 0 0 1 30 6 a12 12 0 0 1 -2 22 H238 a12 12 0 0 1 -6 -18 Z"/></g>
+        <!-- sun -->
+        <g class="pulse"><circle class="f-warn" cx="262" cy="46" r="16"/></g>
+      </svg>
+    </div>
+  </section>
+
+  <ol class="steps">
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <!-- source buildings -->
+          <rect class="ink-fill" x="10" y="20" width="44" height="34" rx="6"/>
+          <rect class="ink-fill" x="10" y="68" width="44" height="34" rx="6"/>
+          <rect class="ink-fill" x="10" y="116" width="44" height="34" rx="6"/>
+          <path class="ink" d="M20 32 H44 M20 42 H36 M20 80 H44 M20 90 H36 M20 128 H44 M20 138 H36"/>
+          <!-- pipes -->
+          <path class="ink flow s-accent" d="M56 37 C 100 37, 100 85, 140 85"/>
+          <path class="ink flow s-accent" d="M56 85 H140"/>
+          <path class="ink flow s-accent" d="M56 133 C 100 133, 100 85, 140 85"/>
+          <!-- database -->
+          <ellipse class="ink-fill" cx="178" cy="58" rx="32" ry="10"/>
+          <path class="ink-fill" d="M146 58 V112 a32 10 0 0 0 64 0 V58"/>
+          <ellipse class="ink" cx="178" cy="58" rx="32" ry="10"/>
+          <path class="ink" d="M146 85 a32 10 0 0 0 64 0"/>
+        </svg>
+      </div>
+      <div>
+        <span class="num">1</span>
+        <h2>Collect the readings</h2>
+        <p>A script runs on a schedule and pulls in public data: the Federal Reserve's FRED database, the U.S. Treasury, CBOE, the CFTC, FINRA, SEC filings and a few more. It's the same kind of data economists and fund managers look at.</p>
+        <p class="aside">No guessing at this step. The numbers are stored exactly as published.</p>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <rect class="ink-fill" x="76" y="10" width="68" height="150" rx="20"/>
+          <circle class="f-muted" cx="110" cy="44" r="18"/><circle class="f-crit lr" cx="110" cy="44" r="18"/>
+          <circle class="f-muted" cx="110" cy="85" r="18"/><circle class="f-warn la" cx="110" cy="85" r="18"/>
+          <circle class="f-muted" cx="110" cy="126" r="18"/><circle class="f-good lg" cx="110" cy="126" r="18"/>
+          <!-- rulebook -->
+          <rect class="ink-fill" x="160" y="96" width="46" height="58" rx="6"/>
+          <path class="ink" d="M170 112 H196 M170 124 H196 M170 136 H188"/>
+          <rect class="ink-fill" x="14" y="96" width="46" height="58" rx="6"/>
+          <path class="ink" d="M24 112 H50 M24 124 H50 M24 136 H42"/>
+        </svg>
+      </div>
+      <div>
+        <span class="num">2</span>
+        <h2>Give each one a traffic light</h2>
+        <p>Each core reading gets a colour: <b style="color:var(--good)">green</b> (calm), <b style="color:var(--warning)">amber</b> (worth watching) or <b style="color:var(--critical)">red</b> (stressed). The cut-off points are written down in advance in a rulebook, and the same number always gets the same colour.</p>
+        <p class="aside">No AI decides the colours. It's plain arithmetic, so anyone can check it.</p>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <!-- calendar -->
+          <rect class="ink-fill" x="30" y="24" width="160" height="126" rx="14"/>
+          <path class="ink" d="M30 56 H190"/>
+          <path class="ink" d="M64 14 V34 M156 14 V34"/>
+          <rect class="f-sunk" x="44" y="72" width="38" height="56" rx="8"/>
+          <rect class="f-sunk" x="91" y="72" width="38" height="56" rx="8"/>
+          <rect class="f-sunk" x="138" y="72" width="38" height="56" rx="8"/>
+          <circle class="f-crit tick" cx="63" cy="100" r="12"/>
+          <circle class="f-crit tick d1" cx="110" cy="100" r="12"/>
+          <path class="ink s-good tick d2" d="M146 100 l8 9 l15 -18" style="stroke-width:5"/>
+        </svg>
+      </div>
+      <div>
+        <span class="num">3</span>
+        <h2>Wait to be sure</h2>
+        <p>Markets have bad days all the time. One red day doesn't count. A reading has to <b>stay red for a few days in a row</b> before it's "confirmed."</p>
+        <p class="aside">It's like a smoke alarm that ignores burnt toast but still goes off for a real fire.</p>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <!-- six lights in a row, some light up together -->
+          <rect class="ink-fill" x="10" y="54" width="200" height="62" rx="31"/>
+          <circle class="f-good" cx="38" cy="85" r="13"/>
+          <circle class="f-muted" cx="66" cy="85" r="13"/><circle class="f-crit c-on" cx="66" cy="85" r="13"/>
+          <circle class="f-good" cx="94" cy="85" r="13"/>
+          <circle class="f-muted" cx="122" cy="85" r="13"/><circle class="f-crit c-on d1" cx="122" cy="85" r="13"/>
+          <circle class="f-muted" cx="150" cy="85" r="13"/><circle class="f-crit c-on d2" cx="150" cy="85" r="13"/>
+          <circle class="f-warn" cx="178" cy="85" r="13"/>
+          <!-- alarm bell -->
+          <g class="pulse">
+            <path class="ink-fill" d="M96 40 a14 14 0 0 1 28 0 v6 l6 6 H90 l6 -6 Z"/>
+            <circle class="f-ink" cx="110" cy="56" r="3"/>
+          </g>
+          <path class="ink" d="M78 30 l-8 -6 M142 30 l8 -6"/>
+        </svg>
+      </div>
+      <div>
+        <span class="num">4</span>
+        <h2>Count the red lights</h2>
+        <p>One stressed reading by itself is common. The real warning sign in past crashes was <b>several of them going red together</b>: fear jumps, borrowing gets more expensive, stocks fall and jobs weaken all at once.</p>
+        <p>So the site counts confirmed reds. Once enough are red together, the overall stress light comes on.</p>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <!-- falling hill + jittery line -->
+          <path class="ink" d="M12 40 C 50 36, 70 44, 96 70 S 150 132, 206 140"/>
+          <path class="ink s-accent" d="M12 122 l12 -6 l10 8 l12 -14 l10 10 l12 -22 l10 18 l12 -30 l10 24 l12 -12 l10 6" style="stroke-width:2.5"/>
+          <!-- odds dial -->
+          <rect class="ink-fill" x="128" y="10" width="80" height="44" rx="10"/>
+          <rect class="f-sunk" x="138" y="26" width="60" height="12" rx="6"/>
+          <rect class="f-warn pulse" x="138" y="26" width="38" height="12" rx="6"/>
+          <text class="t" x="20" y="160">fall</text>
+          <text class="t" x="132" y="160" style="fill:var(--accent)">jumpiness</text>
+        </svg>
+      </div>
+      <div>
+        <span class="num">5</span>
+        <h2>Check how it went last time</h2>
+        <p>Next to the traffic lights is a simple <b>drawdown risk band</b>. It combines two things: how far stocks have already fallen from their peak, and how jumpy the market is (the VIX "fear gauge").</p>
+        <p>Each band comes with a plain record: <b>out of all the past days that looked like today, how often a big fall followed.</b> The band's cut-off points were fixed before any live results came in, so they can't be quietly retuned to look good afterward.</p>
+        <p class="aside">An earlier, fancier model was retired after it failed a fair test against this simple one. Being honest about that matters more than looking clever.</p>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 220 170">
+          <!-- robot -->
+          <rect class="ink-fill" x="20" y="44" width="70" height="60" rx="14"/>
+          <circle class="f-accent pulse" cx="42" cy="72" r="6"/><circle class="f-accent pulse" cx="68" cy="72" r="6"/>
+          <path class="ink" d="M44 90 H66"/>
+          <path class="ink" d="M55 44 V30"/><circle class="f-warn" cx="55" cy="26" r="5"/>
+          <rect class="ink-fill" x="30" y="108" width="50" height="40" rx="10"/>
+          <!-- odds bar on a leash -->
+          <rect class="ink-fill" x="108" y="66" width="100" height="26" rx="13"/>
+          <g class="nudge"><rect class="f-accent" x="114" y="72" width="44" height="14" rx="7"/></g>
+          <path class="ink" d="M136 106 H186" style="stroke-dasharray:3 6"/>
+          <path class="ink" d="M136 100 V112 M186 100 V112"/>
+          <text class="t" x="161" y="134" text-anchor="middle">one fixed step</text>
+        </svg>
+      </div>
+      <div>
+        <span class="num">6</span>
+        <h2>Let AI explain, but on a short leash</h2>
+        <p>An AI reads the day's data and writes the short story you see on the dashboard: what changed and why it might matter.</p>
+        <p>It doesn't get to make up crash odds. It starts from the historical odds for today's band and can only nudge them <b>one small, fixed step</b> up or down, giving its reasons. Each of those calls is later scored against what actually happened.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h2 class="section" id="readings">The six core readings</h2>
+  <p class="section-sub">These are the ones that get traffic lights. The live dashboard shows today's values, colours and history.</p>
+  <div class="gauges">
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><path class="ink" d="M4 30 l6 -4 l5 6 l6 -16 l5 12 l6 -8 l8 4"/><circle class="f-crit pulse" cx="21" cy="16" r="3"/></svg>
+      <h3>Fear gauge (VIX)</h3>
+      <p>How big a swing traders expect in the S&amp;P 500 over the next month. It spikes when people panic.</p>
+    </div>
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><rect class="ink-fill" x="6" y="12" width="32" height="22" rx="4"/><path class="ink" d="M12 20 H24 M12 26 H20"/><circle class="f-warn" cx="32" cy="24" r="4"/></svg>
+      <h3>Junk-bond spread</h3>
+      <p>The extra interest riskier companies have to pay to borrow. When lenders get nervous, it widens.</p>
+    </div>
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><path class="ink" d="M4 10 C 14 8, 18 12, 24 22 S 34 34, 40 34"/><path class="ink s-crit" d="M40 10 V30" style="stroke-dasharray:2 4"/></svg>
+      <h3>Stock market fall</h3>
+      <p>How far the S&amp;P 500 is below its all-time high. Every crash starts as a small dip.</p>
+    </div>
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><rect class="ink-fill" x="8" y="6" width="28" height="32" rx="4"/><path class="ink s-accent" d="M14 30 L20 22 L26 25 L32 14"/></svg>
+      <h3>10-year Treasury yield</h3>
+      <p>What the U.S. government pays to borrow for ten years. If it gets too high, mortgages and loans cost more for everyone.</p>
+    </div>
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="ink-fill" cx="16" cy="14" r="6"/><path class="ink" d="M6 36 a10 10 0 0 1 20 0"/><path class="ink s-crit" d="M30 14 l8 8 M38 14 l-8 8"/></svg>
+      <h3>Sahm rule</h3>
+      <p>Watches whether unemployment is rising quickly. Historically it has been a reliable early sign of a recession.</p>
+    </div>
+    <div class="g">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><path class="ink" d="M6 38 H38 M10 34 V20 M18 34 V20 M26 34 V20 M34 34 V20 M6 18 L22 6 L38 18 Z"/></svg>
+      <h3>Fed policy</h3>
+      <p>Whether the Federal Reserve is holding interest rates or starting to cut. A sudden rush to cut often means the Fed sees trouble.</p>
+    </div>
+  </div>
+  <p class="aside" style="margin-top:14px">Around these six, the dashboard also shows context that doesn't get a traffic light: how big investors are positioned, what large funds are buying in their SEC filings, the shape of the yield curve and a checklist on government debt. It also has a page comparing well-known economists' public views with the live data.</p>
+
+  <h2 class="section">What this is, and what it isn't</h2>
+  <div class="isnot">
+    <div class="box is">
+      <h3>It is</h3>
+      <ul>
+        <li>A daily, rules-based snapshot of market stress.</li>
+        <li>Built only from public data, with the rules written down ahead of time.</li>
+        <li>Honest about its track record, including the parts that didn't work.</li>
+      </ul>
+    </div>
+    <div class="box not">
+      <h3>It isn't</h3>
+      <ul>
+        <li>Investment advice or a recommendation to buy or sell anything.</li>
+        <li>A crystal ball. Calm readings don't promise calm markets.</li>
+        <li>Run by a company. It's one person's personal project.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="closing">
+    <p>Want the numbers behind today's lights?</p>
+    <a class="cta" href="/">Open the live dashboard</a>
+  </div>
+</main>
+
+<footer>
+  <p><b>For information only, not investment advice.</b> A personal project: signals apply the author's own rules, plus some AI judgment, to public data. They are not recommendations or calibrated forecasts, and data can be delayed or wrong.</p>
+  <p>Data: FRED (some series &copy; their original providers, e.g. ICE Data Indices), U.S. Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR, State Street, Caldara&ndash;Iacoviello GPR, Polymarket, Yahoo Finance, Massive. Not affiliated with or endorsed by any of them.</p>
+</footer>
+</body>
+</html>

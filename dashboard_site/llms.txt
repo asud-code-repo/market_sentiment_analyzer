@@ -4,6 +4,8 @@
 
 For the current reading as plain text (date, the six indicators with values and status, the stress gate, the drawdown risk band and the latest narrative), fetch https://marketstress.org/latest.md. It refreshes within about 10 minutes of each new report. The full page at https://marketstress.org/ loads most of its charts with JavaScript; its footer carries the same one-line latest reading.
 
+A plain-English, illustrated explainer of the method (no live values) is at https://marketstress.org/how-it-works.
+
 ## What it measures
 
 Six core indicators, each classified RED, AMBER or GREEN every weekday. A reading must hold for several days before it counts as confirmed:
