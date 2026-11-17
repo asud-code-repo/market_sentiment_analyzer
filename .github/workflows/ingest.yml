@@ -29,6 +29,10 @@ on:
     # that window. Fine for the morning run (it reads yesterday's close
     # either way); the evening run's caveat is noted beside its entries.
     #
+    # The public schedule shown to readers (STRESS_SCHEDULE in
+    # dashboard_site/index.html and the "Updates:" line in _worker.js) quotes
+    # these times; change them together.
+    #
     # Saturday 10am added 2026-11-14 so a Saturday check saw Friday's close.
     # The Friday 6pm run now already has it, but the Saturday run stays:
     # mcp_server/src/lib/freshness.ts expects an ingest dated Saturday on a

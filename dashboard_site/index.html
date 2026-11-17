@@ -468,6 +468,12 @@
   .pop p { margin:0 0 7px; } .pop p:last-child { margin:0; }
   .pop .fine { margin-top:10px; padding-top:9px; border-top:1px solid var(--hair); font-size:11px; color:var(--text-muted); }
   .pop .fine b { color:var(--text-secondary); }
+  .pop .sched { margin:10px 0 12px; padding:10px 12px; background:var(--sunk); border:1px solid var(--hair); border-radius:6px; }
+  .pop .sched .lbl { display:block; margin-bottom:7px; }
+  .pop .sched dl { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0; }
+  .pop .sched dt { color:var(--text-primary); font-weight:600; white-space:nowrap; }
+  .pop .sched dd { margin:0; color:var(--text-secondary); }
+  .pop .sched .fine2 { margin:8px 0 0; font-size:11px; color:var(--text-muted); }
   .pop .bands { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; margin:2px 0 9px; }
   .pop .bands span { padding:5px 7px; background:var(--sunk); font-size:11px; color:var(--text-muted); }
   .pop .bands span b { display:block; font-size:12px; }
@@ -3106,6 +3112,18 @@ function renderDeltaLog(deltaLog) {
 function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
+// Stress-tab stamp: always Eastern, so it lines up with the update schedule
+// in the Data freshness popover (STRESS_SCHEDULE below).
+function fmtStampET(iso) {
+  return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
+}
+// Hover tooltip with the visitor's own clock; empty for visitors already on ET.
+function localTimeTitle(iso) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (tz === "America/New_York") return "";
+  const t = new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  return ` title="Your time: ${escHtml(t)}"`;
+}
 
 /** Renders the full rich report view for one row, diffing against the prior
  * chronological row for the delta log — same visual language as
@@ -3230,6 +3248,13 @@ const STRESS_FRESH = [
   ["10Y Treasury", "Daily · FRED, Treasury fills the lag", "treasury_10y", "daily"],
   ["Sahm rule", "Monthly · BLS jobs report", "sahm_rule", "monthly"],
 ];
+// Mirrors the cron times in .github/workflows/ingest.yml and the local
+// crash-check runner (weekdays 6:30pm); change them together.
+const STRESS_SCHEDULE = `<div class="sched"><span class="lbl">When this page updates</span>
+    <dl><dt>~10am ET</dt><dd>Morning data refresh · Mon–Sat</dd>
+      <dt>~6pm ET</dt><dd>Evening data refresh · weekdays</dd>
+      <dt>~6:30pm ET</dt><dd>Daily written report · weekdays</dd></dl>
+    <p class="fine2">Times are approximate: scheduled jobs can start up to half an hour late. Monthly readings like the Sahm rule change only when the government publishes them.</p></div>`;
 function stressFreshnessPop(row) {
   let anyLate = false;
   const rows = STRESS_FRESH.map(([label, cadenceTxt, key, cadence]) => {
@@ -3241,6 +3266,7 @@ function stressFreshnessPop(row) {
   });
   rows.push(`<tr><td>Fed pivot</td><td>Manual judgment, set in full reports</td><td>${row.notes ? "this report" : "carried forward"}</td></tr>`);
   const body = `<p>“As of ${fmtMd(row.run_at)}” is when this report ran. Each reading it used is from an earlier close — markets publish with a lag, so they don't line up.</p>
+    ${STRESS_SCHEDULE}
     <table class="fresh"><thead><tr><th>Data</th><th>Updates</th><th>Latest</th></tr></thead><tbody>${rows.join("")}</tbody></table>
     <p class="fine"><b>Late</b> = older than the normal publishing lag: a daily reading more than two business days before the run, or a monthly one past 75 days. The crash check uses the same rule.</p>`;
   return { anyLate, pop: popHtml("i-fresh-stress", "Data freshness", body, true) };
@@ -3656,7 +3682,7 @@ function renderStressVerdict(row, priorFullReport) {
       <div class="fact"><span class="lbl">Drawdown risk · 10% / 21d</span><span class="v">${hazard}</span></div>
       <div class="fact"><span class="lbl">Fed regime</span><span class="v">${regime} ${ib("i-regime", "the Fed regime")}</span></div>
     </div>
-    <div class="stamp"><b>As of ${fmtDate(row.run_at)}</b><br>${row.notes ? "Full chat-triggered report" : "Automated indicator refresh"}<br><button class="info txt" popovertarget="i-fresh-stress">Data freshness${fresh.anyLate ? ' <b class="late">· late</b>' : ""} ⓘ</button></div>
+    <div class="stamp"><b${localTimeTitle(row.run_at)}>As of ${fmtStampET(row.run_at)}</b><br>${row.notes ? "Full chat-triggered report" : "Automated indicator refresh"}<br><button class="info txt" popovertarget="i-fresh-stress">Data freshness${fresh.anyLate ? ' <b class="late">· late</b>' : ""} ⓘ</button></div>
     ${regimePop}${fresh.pop}`;
 }
 
@@ -3797,7 +3823,8 @@ function renderReport(row, priorFullReport) {
 //     the confirmed red count moved, or wave authorization flipped) --
 //     red if anything got worse, green if it only improved.
 const GATE_COLOR_FIELDS = [["vix_color", "VIX"], ["hy_spread_color", "HY spread"], ["sp_drawdown_color", "S&P drawdown"], ["treasury_10y_color", "10Y Treasury"], ["sahm_rule_color", "Sahm rule"], ["fed_pivot_color", "Fed pivot"]];
-const dayKey = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+// Calendar days are Eastern-time days, matching the ET stamp and update schedule.
+const dayKey = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 let CAL_DAYS = new Map(); // dayKey -> { idx: [row indexes], changes: [text], worse: bool }
 let CAL_MONTH = null; // "YYYY-MM" being shown
 
@@ -3895,7 +3922,7 @@ function populateDateSelect() {
 function updateDatePicker() {
   const r = ALL_ROWS[CURRENT_INDEX];
   if (!r) return;
-  document.getElementById("date-trigger").innerHTML = `${escHtml(fmtDate(r.run_at))}<small>${r.notes ? "Full Report" : "Indicator Update"}</small>`;
+  document.getElementById("date-trigger").innerHTML = `${escHtml(fmtStampET(r.run_at))}<small>${r.notes ? "Full Report" : "Indicator Update"}</small>`;
   CAL_MONTH = dayKey(r.run_at).slice(0, 7);
   renderCalendar();
 }

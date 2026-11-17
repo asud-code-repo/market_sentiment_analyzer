@@ -186,6 +186,9 @@ function markdown(data) {
     "",
     `As of ${fmtDate(f.asOf, true)}. Live page: ${SITE}/`,
     "",
+    // Same schedule as STRESS_SCHEDULE in index.html; change them together.
+    "Updates: data refresh around 10am ET (Mon-Sat) and 6pm ET (weekdays); daily written report around 6:30pm ET (weekdays). Times are approximate.",
+    "",
     `**${f.confirmed} of 6 core indicators confirmed RED. Stress gate (3 of 6 confirmed) ${f.gateMet ? "met" : "not met"}.**${f.pending ? ` ${f.pending} RED reading${f.pending > 1 ? "s" : ""} pending confirmation.` : ""}`,
     "",
     "| Indicator | Value | Status | Data date |",
