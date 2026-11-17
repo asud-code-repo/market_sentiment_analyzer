@@ -389,6 +389,8 @@
   .cal .d.today::after { content:""; position:absolute; bottom:3px; left:50%; width:10px; margin-left:-5px; height:2px; border-radius:1px; background:var(--accent); }
   .cal .d i { position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:var(--critical); }
   .cal .d i.better { background:var(--good); }
+  .cal .d .rc { position:absolute; top:2px; right:12px; font:700 10px/1 var(--font-ui); color:var(--critical); }
+  .cal .leg .rc { font:700 10px/1 var(--font-ui); color:var(--critical); margin-right:3px; }
   .cal .leg { display:flex; flex-wrap:wrap; gap:5px 12px; margin-top:9px; padding-top:8px; border-top:1px solid var(--hair); font:400 10.5px/1.3 var(--font-ui); color:var(--text-muted); align-items:center; }
   .cal .leg .sw { display:inline-block; width:11px; height:9px; border-radius:2px; margin-right:4px; vertical-align:-1px; box-shadow:inset 0 0 0 1.5px var(--warning); }
   .cal .leg .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:4px; vertical-align:1px; background:var(--critical); }
@@ -3897,8 +3899,11 @@ function renderCalendar() {
     const rep = ALL_ROWS[dayPick(k)];
     const hasReport = !!rep.notes;
     const cls = ["d", hasReport ? "" : "upd", k === selKey ? "sel" : "", k === todayKey ? "today" : ""].filter(Boolean).join(" ");
-    const dot = day.changes.length ? `<i class="${day.worse ? "" : "better"}"></i>` : "";
-    const label = `${d}: ${hasReport ? "Full Report" : "indicator updates only"}${day.changes.length ? `; gate change: ${day.changes.join(", ")}` : ""}`;
+    // Red dots carry the most indicators in red at any run that day.
+    const counts = day.idx.map((i) => ALL_ROWS[i].red_count).filter((v) => v != null);
+    const reds = counts.length ? Math.max(...counts) : null;
+    const dot = day.changes.length ? `${day.worse && reds != null ? `<span class="rc">${reds}</span>` : ""}<i class="${day.worse ? "" : "better"}"></i>` : "";
+    const label = `${d}: ${hasReport ? "Full Report" : "indicator updates only"}${day.changes.length ? `; gate change: ${day.changes.join(", ")}` : ""}${day.worse && reds != null ? `; up to ${reds} in red` : ""}`;
     cells += `<button class="${cls}" data-day="${k}" aria-label="${escHtml(label)}" title="${escHtml(label)}">${dot}${d}<small>${hasReport ? "rpt" : "upd"}</small></button>`;
   }
   const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -3912,7 +3917,7 @@ function renderCalendar() {
   el.innerHTML = `
     <div class="mh"><button data-month="-1" aria-label="Previous month" ${CAL_MONTH <= firstMonth ? "disabled" : ""}>‹</button><b>${monthName}</b><button data-month="1" aria-label="Next month" ${CAL_MONTH >= lastMonth ? "disabled" : ""}>›</button></div>
     <div class="grid">${cells}</div>
-    <div class="leg"><span><span class="dot"></span>Gate worsened</span><span><span class="dot better"></span>Gate improved</span><span>rpt = full report · upd = no report</span></div>
+    <div class="leg"><span><span class="dot"></span>Gate worsened (<span class="rc">2</span>= indicators in red)</span><span><span class="dot better"></span>Gate improved</span><span>rpt = full report · upd = no report</span></div>
     <div class="runs"><div class="h"><b>${selDate}</b> · ${selDay.idx.length} run${selDay.idx.length === 1 ? "" : "s"}${selDay.changes.length ? `<span class="chg">Gate: ${escHtml(selDay.changes.join(" · "))}</span>` : ""}</div><div class="chips">${chips}</div></div>`;
 }
 
