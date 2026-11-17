@@ -705,13 +705,18 @@
   .scalekey i { width:16px; height:10px; display:inline-block; }
 
   /* ---------- Macro: fiscal ledger ---------- */
-  .grp { display:grid; grid-template-columns: 1fr auto; align-items:baseline; padding:14px 0 6px; border-bottom:1px solid var(--hair-strong); }
-  .grp h3 { margin:0; font:600 13px/1.2 var(--font-ui); }
-  .grp h3 small { font:var(--t3); color:var(--text-muted); margin-left:8px; font-weight:400; }
-  .grp .cnt { font:600 13px/1 var(--font-ui); display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  /* Fiscal checklist: one box per stage, so the four stages read as separate groups. */
+  .fbox { border:1px solid var(--hair-strong); border-radius:8px; overflow:hidden; margin-top:18px; }
+  .fbox:first-child { margin-top:8px; }
+  .grp { display:grid; grid-template-columns: 1fr auto; align-items:start; padding:12px 14px; background:var(--sunk); border-bottom:1px solid var(--hair-strong); }
+  .grp h3 { margin:0; font:600 15px/1.25 var(--font-ui); }
+  .grp h3 small { display:block; margin:4px 0 0; font:var(--t3); color:var(--text-muted); font-weight:400; }
+  .grp .cnt { font:600 13px/1 var(--font-ui); display:flex; align-items:center; gap:8px; white-space:nowrap; padding-top:2px; }
   .pips { display:inline-flex; gap:3px; } .pips i { width:8px; height:8px; border-radius:1px; background:var(--sunk); box-shadow: inset 0 0 0 1px var(--hair-strong); }
   .pips i.on { background:var(--accent); box-shadow:none; }
-  .ledger.fl { border-top:0; }
+  .ledger.fl { border-top:0; padding:0 14px; }
+  .ledger.fl .row:last-child { border-bottom:0; }
+  .ledger.fl .rule .sif { display:none; }
   .ledger.fl .row { grid-template-columns: minmax(200px,1.5fr) 150px minmax(150px,1fr) minmax(150px,1fr) 70px; }
   .ledger.fl .prior, .ledger.fl .rule { font:var(--t3); color:var(--text-muted); }
   .ledger.fl .flag { font:700 10.5px/1 var(--font-ui); letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); text-align:right; }
@@ -795,7 +800,8 @@
     .ledger.fl .row { grid-template-columns:1fr auto; grid-template-areas:"name val" "prior flag" "rule rule"; }
     .ledger.fl .row > .name { grid-area:name; } .ledger.fl .row > .val { grid-area:val; }
     .ledger.fl .row > .prior { grid-area:prior; } .ledger.fl .row > .rule { grid-area:rule; } .ledger.fl .row > .flag { grid-area:flag; }
-    .grp { grid-template-columns:1fr; row-gap:6px; } .grp h3 small { display:block; margin:3px 0 0; }
+    .grp { grid-template-columns:1fr; row-gap:8px; padding:12px; } .ledger.fl { padding:0 12px; }
+    .ledger.fl .hdr { display:none; } .ledger.fl .rule .sif { display:inline; }
     .ctx { grid-template-columns:1fr; }
   }
 
@@ -2709,11 +2715,12 @@ function renderFiscalLedger(cards) {
         <p class="fine"><b>Detail.</b> ${c.detail}</p>`, true);
       return `<div class="row" data-hit="${c.stress ? 1 : 0}"><span class="name"><b>${c.name ?? c.label}</b> ${ib(pid, c.name ?? c.label)}<small>${c.sub ?? ""}</small></span>
         <span class="val">${c.val ?? c.value}${c.valSub ? `<small style="display:block;font:var(--t3);color:var(--text-muted);font-weight:400">${c.valSub}</small>` : ""}</span>
-        <span class="prior">${c.trend ?? ""}</span><span class="rule">Stress if: ${c.rule}</span>
+        <span class="prior">${c.trend ?? ""}</span><span class="rule"><span class="sif">Stress if: </span>${c.rule}</span>
         <span class="flag">${c.stress ? "Stress" : c.stress == null ? "n/a" : "—"}</span></div>`;
     }).join("");
-    return `<div class="grp"><h3>${gi + 1}. ${stage.replace("&", "&amp;")}<small>${question}</small></h3><span class="cnt"><span class="pips">${pips}</span>${hits} of ${withData.length}</span></div>
-      <div class="ledger fl" role="table">${rows}</div>`;
+    const hdr = `<div class="row hdr" aria-hidden="true"><span>Check</span><span class="val">Reading</span><span>Context</span><span>Counts as stress if</span><span></span></div>`;
+    return `<div class="fbox"><div class="grp"><h3>${gi + 1}. ${stage.replace("&", "&amp;")}<small>${question}</small></h3><span class="cnt"><span class="pips">${pips}</span>${hits} of ${withData.length}</span></div>
+      <div class="ledger fl" role="table">${hdr}${rows}</div></div>`;
   }).join("") + `<div class="foot"><span>Blue tick = points toward stress</span><span>Read each check on its own, never as a score</span><span>ⓘ on each row = what it means, today's reading and the method</span></div>${pops}`;
 }
 
