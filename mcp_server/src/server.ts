@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, DECISION_KINDS, refreshFullReportWatchlist, getLatestDataPoint, getLatestTickerPrice, currentWaveStatus, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, DECISION_KINDS, refreshFullReportWatchlist, getLatestDataPoint, getLatestTickerPrice, currentWaveStatus, getLatestRepoStressSpread, getRecentConditionalScoring, getLatestMacroNarrative, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, loadPolicy, type Wave, type CrashType } from "./lib/waveDeployment.js";
@@ -142,7 +142,10 @@ server.registerTool(
       due: dueEvents(openPredictions, today).map((p) => ({ event: p.event, event_date: p.event_date, outcomes: p.branches.map((b) => b.outcome) })),
       recent_scoring: await getRecentConditionalScoring(),
     };
-    return json({ latest: latestWithoutRadar, delta: computeDelta(latest, priorForDelta), conditional });
+    // Macro & Fiscal narrative: the last one written (most rows don't carry
+    // one), so the run can decide whether a Macro-tab reading has changed since.
+    const last_macro_narrative = await getLatestMacroNarrative();
+    return json({ latest: latestWithoutRadar, delta: computeDelta(latest, priorForDelta), conditional, last_macro_narrative });
   }),
 );
 
@@ -527,6 +530,17 @@ server.registerTool(
       conditional_outcomes: z
         .array(z.object({ event: z.string(), event_date: z.string(), outcome: z.string(), reason: z.string().optional() }))
         .optional(),
+      macro_narrative: z
+        .string()
+        .optional()
+        .describe(
+          "Public Macro & Fiscal tab paragraph (2026-11-18): 3-5 sentences, at most 900 characters, on what the fiscal " +
+            "checklist, yield curve and context indicators from get_context_indicators add up to. Pass it only when a Macro-tab " +
+            "reading changed since get_latest_snapshot's last_macro_narrative (a check flipped, a stage count moved, a monthly/" +
+            "quarterly release landed, the curve classification changed); omit it otherwise and the page keeps the last one. " +
+            "Cite the numbers; state a check's own rule when saying it is close to stress; no forecasts, no buy/sell calls, " +
+            "no personal or account details.",
+        ),
     },
   },
   withLogging("write_snapshot", async (input) => {
@@ -539,6 +553,12 @@ server.registerTool(
     if (!state) return json({ error: "No drawdown/VIX on the latest crash_checks row, so there is no scenario prior. Nothing was written." });
     if (state !== input.prior_state) {
       return json({ error: `prior_state is ${input.prior_state} but the latest row's band is now ${state} (a newer rule-engine run landed). Re-run get_indicator_panel and redo step 7 from its scenario_prior. Nothing was written.` });
+    }
+    if (input.macro_narrative !== undefined) {
+      const mn = input.macro_narrative.trim();
+      if (!mn) return json({ error: "macro_narrative is empty: omit the field instead. Nothing was written." });
+      if (mn.length > 900) return json({ error: `macro_narrative is ${mn.length} characters; keep it to 900 (3-5 sentences). Nothing was written.` });
+      input.macro_narrative = mn;
     }
     const tilt = input.scenario_tilt as Tilt;
     const reasons = (input.tilt_reasons as string[]).map((r) => r.trim()).filter(Boolean);

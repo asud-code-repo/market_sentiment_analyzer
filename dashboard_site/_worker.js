@@ -158,16 +158,19 @@ async function loadLatest(ctx) {
   const hit = await cache.match(CACHE_KEY);
   if (hit) return hit.json();
   const since = new Date(Date.now() - CONTEXT_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
-  const [latest, full, context] = await Promise.all([
+  const [latest, full, context, macro] = await Promise.all([
     supabase(`crash_checks?select=${LATEST_FIELDS}&order=run_at.desc&limit=1`),
     supabase("crash_checks?select=run_at,notes,scenario_method,scenario_prior_state,scenario_tilt,scenario_bear_pct,scenario_crash_pct&notes=not.is.null&order=run_at.desc&limit=1"),
     // Context is optional: a failure here must not take down the reading.
     supabase(`data_points?select=series_id,observation_date,value&series_id=in.(${CONTEXT_SERIES.join(",")})&observation_date=gte.${since}&order=observation_date.desc`).catch(() => []),
+    // Macro & Fiscal narrative (index.html loadMacroNarrative): optional too,
+    // and absent before its migration.
+    supabase("crash_checks?select=run_at,macro_narrative&macro_narrative=not.is.null&order=run_at.desc&limit=1").catch(() => []),
   ]);
   if (!latest[0]) return null;
   const ctxLatest = {};
   for (const r of context) if (!(r.series_id in ctxLatest)) ctxLatest[r.series_id] = r;
-  const data = { row: latest[0], full: full[0] ?? null, context: ctxLatest };
+  const data = { row: latest[0], full: full[0] ?? null, context: ctxLatest, macro: macro[0] ?? null };
   ctx.waitUntil(cache.put(CACHE_KEY, new Response(JSON.stringify(data), {
     headers: { "content-type": "application/json", "cache-control": `public, max-age=${CACHE_SECONDS}` },
   })));
@@ -341,6 +344,9 @@ function markdown(data) {
     lines.push(`- AI view, next 3 months (${fmtDate(f.llm.run_at, false)}): ${tilt} history for this risk band. Chance of a 10%+ S&P 500 fall within 63 trading days: ${f.llm.scenario_bear_pct + f.llm.scenario_crash_pct}%${hist != null ? `, against ${hist}% for such days since 1990` : ""}. An AI judgment limited to one 5-point step from that history.`);
   }
   lines.push(...contextLines(data.context));
+  if (data.macro?.macro_narrative) {
+    lines.push("", `## Macro & Fiscal: what it adds up to (AI-written, ${fmtDate(data.macro.run_at, false)})`, "", String(data.macro.macro_narrative).replace(/\r\n/g, "\n").trim());
+  }
   const notes = data.full?.notes ? String(data.full.notes).replace(RUN_LABEL, "").trim() : "";
   if (notes) {
     lines.push("", `## Narrative (${fmtDate(data.full.run_at, false)})`, "", notes.replace(/\r\n/g, "\n"));

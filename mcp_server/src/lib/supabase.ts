@@ -135,6 +135,8 @@ export interface CrashCheckRow {
   scenario_prior_state: string | null;
   scenario_tilt: string | null;
   scenario_tilt_reasons: string[] | null;
+  // Macro & Fiscal tab narrative (2026-11-18); null on rows that didn't rewrite it.
+  macro_narrative?: string | null;
   created_at: string;
 }
 
@@ -425,7 +427,9 @@ export async function writeSnapshot(qualitative: {
   trigger_status?: unknown;
   conditional_scenarios?: OpenPrediction[];
   conditional_scoring?: ScoringEntry[];
-}): Promise<CrashCheckRow> {
+  // Only on runs where a Macro-tab reading changed; omitted otherwise.
+  macro_narrative?: string;
+}): Promise<CrashCheckRow & { warning?: string }> {
   const [latest] = await getRecentCrashChecks(1);
   if (!latest) {
     throw new Error("No prior crash_checks row found — the rule engine (Stage 3) must run at least once first.");
@@ -436,10 +440,10 @@ export async function writeSnapshot(qualitative: {
   // dollar figure. Checked against local_state/portfolio.yaml directly
   // rather than trusted to the model having followed the "no dollar
   // amounts in notes" instruction correctly.
-  const leaked = findLeakedDollarFigures(qualitative.notes, readPortfolio());
+  const leaked = findLeakedDollarFigures(`${qualitative.notes} ${qualitative.macro_narrative ?? ""}`, readPortfolio());
   if (leaked.length > 0) {
     throw new Error(
-      `Refusing to write: notes appears to contain a real personal dollar figure ` +
+      `Refusing to write: notes or macro_narrative appears to contain a real personal dollar figure ` +
         `(${leaked.map((n) => n.toLocaleString("en-US")).join(", ")}). ` +
         `Supabase is macro/market data only — rephrase without the specific figure and try again.`,
     );
@@ -516,11 +520,12 @@ export async function writeSnapshot(qualitative: {
     JSON.stringify(triggerStatus),
     JSON.stringify(qualitative.conditional_scenarios ?? []),
     ...qualitative.scenario_tilt_reasons,
+    qualitative.macro_narrative ?? "",
   ].join(" ");
   const privateHits = findPrivateTerms(publicText, loadPolicy().private_terms);
   if (privateHits.length > 0) {
     throw new Error(
-      `Refusing to write: the public crash_checks text (notes, delta_log, trigger notes, conditional scenarios or tilt reasons) ` +
+      `Refusing to write: the public crash_checks text (notes, delta_log, trigger notes, conditional scenarios, tilt reasons or macro_narrative) ` +
         `mentions private term(s): ${privateHits.join(", ")}. crash_checks is public: keep it to macro/market ` +
         `narrative. Account, watchlist and holdings details go in write_full_report's portfolio_context. ` +
         `Rephrase and try again.`,
@@ -638,13 +643,36 @@ export async function writeSnapshot(qualitative: {
     // 20261113010000 migration and an empty open set reads back as null.
     ...(qualitative.conditional_scenarios?.length ? { conditional_scenarios: qualitative.conditional_scenarios } : {}),
     ...(qualitative.conditional_scoring?.length ? { conditional_scoring: qualitative.conditional_scoring } : {}),
+    ...(qualitative.macro_narrative ? { macro_narrative: qualitative.macro_narrative } : {}),
   };
 
   const { data, error } = await supabase.from("crash_checks").insert(row).select().single();
   if (error) {
+    // Before the 20261118000000 migration is applied the column doesn't
+    // exist: keep the run's write rather than lose it, and say so.
+    if ("macro_narrative" in row && /macro_narrative/.test(error.message)) {
+      const { macro_narrative: _mn, ...withoutNarrative } = row;
+      const retry = await supabase.from("crash_checks").insert(withoutNarrative).select().single();
+      if (retry.error) throw new Error(`Failed to insert crash_checks row: ${retry.error.message}`);
+      return { ...retry.data, warning: "macro_narrative was not stored: the crash_checks.macro_narrative column is missing (apply migration 20261118000000_macro_narrative.sql). Everything else was written." };
+    }
     throw new Error(`Failed to insert crash_checks row: ${error.message}`);
   }
   return data;
+}
+
+/** The most recent stored Macro & Fiscal narrative, or null (none yet, or
+ * the column isn't there before its migration). */
+export async function getLatestMacroNarrative(): Promise<{ run_at: string; text: string } | null> {
+  const { data, error } = await supabase
+    .from("crash_checks")
+    .select("run_at,macro_narrative")
+    .not("macro_narrative", "is", null)
+    .order("run_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { run_at: data.run_at, text: data.macro_narrative };
 }
 
 export interface FullReportCriterion {

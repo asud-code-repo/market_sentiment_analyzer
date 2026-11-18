@@ -979,6 +979,7 @@
         </section>
       </main>
       <aside class="col-rail">
+        <section class="rsec" id="section-macro-nar" hidden></section>
         <section class="rsec" id="section-bondyields">
           <div class="sh"><span class="lbl">Yield curve</span><span class="note">3M · 2Y · 10Y · 30Y</span><button class="info" popovertarget="i-yc" aria-label="About the yield curve">ⓘ</button></div>
           <div id="bondyields-wrap"><p class="loading">Loading…</p></div>
@@ -2809,6 +2810,23 @@ async function loadMacroFreshness() {
 }
 const macroFreshBtnLabel = () => `Data freshness${MACRO.freshLate ? ' <b class="late">· late</b>' : ""} ⓘ`;
 
+// Macro & Fiscal narrative (2026-11-18): AI-written on runs where a Macro-tab
+// reading changed, so the newest non-null one is shown with its own date. Own
+// query, so a missing column (before its migration) just leaves it hidden.
+async function loadMacroNarrative() {
+  const el = document.getElementById("section-macro-nar");
+  try {
+    const [r] = await fetchFromSupabase("crash_checks?select=run_at,macro_narrative&macro_narrative=not.is.null&order=run_at.desc&limit=1");
+    if (!r?.macro_narrative) return;
+    const written = new Date(r.run_at).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+    el.innerHTML = `<div class="sh"><span class="lbl">What it adds up to</span>${AI_MARK}<span class="note">Written ${written} · rewritten when the data underneath changes</span></div>
+      <div class="nar">${toParagraphs(r.macro_narrative).map((para) => `<p>${escHtml(para)}</p>`).join("")}</div>`;
+    el.hidden = false;
+  } catch {
+    /* no narrative yet, or the column isn't there: leave the section hidden */
+  }
+}
+
 function renderMacroVerdict() {
   const el = document.getElementById("macro-verdict");
   const cards = MACRO.cards ?? [];
@@ -4283,6 +4301,7 @@ setupContextToggle();
 // lives in "stressmonitor").
 const SECTION_TAB = {
   "section-bondyields": "macro",
+  "section-macro-nar": "macro",
   "section-fiscaldominance": "macro",
   "section-context": "macro",
   "section-sector": "smartmoney",
@@ -4858,6 +4877,7 @@ async function main() {
 
     populateDateSelect();
     selectIndex(ALL_ROWS.length - 1);
+    loadMacroNarrative();
 
     // Isolated try/catch: a data_points fetch failure shouldn't take down
     // date navigation or the trend charts below, which depend on nothing here.
