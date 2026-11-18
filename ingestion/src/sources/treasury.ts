@@ -112,6 +112,34 @@ const AUCTION_HISTORY_START = "2015-01-01";
 
 type AuctionRow = Record<string, string | null>;
 
+/** One auction's results in source-neutral form; both sources map to this. */
+interface AuctionResult {
+  date: string;
+  securityTerm: string | null;
+  originalSecurityTerm: string | null;
+  tips: boolean;
+  frn: boolean;
+  btc: number;
+  comp: number;
+  dealer: number;
+  indirect: number;
+}
+
+function auctionPoints(a: AuctionResult, source: string, sourceSeriesCode: string, raw: Record<string, unknown>): DataPoint[] {
+  // Tenor from the original term, so a reopening ("9-Year 10-Month") is
+  // grouped with its original "10-Year" issue (E4 decision 2026-11-13).
+  const tenor = AUCTION_TENORS[a.originalSecurityTerm ?? a.securityTerm ?? ""];
+  if (!tenor || a.tips || a.frn) return [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(a.date)) return [];
+  // Announced-but-not-yet-held auctions come back with null/blank results.
+  if (!Number.isFinite(a.btc) || a.btc <= 0 || !Number.isFinite(a.comp) || a.comp <= 0) return [];
+  const base = { source, source_series_code: sourceSeriesCode, observation_date: a.date, raw_payload: raw };
+  const points: DataPoint[] = [{ ...base, series_id: `AUCTION_${tenor}_BID_TO_COVER`, value: a.btc, unit: "ratio" }];
+  if (Number.isFinite(a.dealer)) points.push({ ...base, series_id: `AUCTION_${tenor}_DEALER_PCT`, value: (a.dealer / a.comp) * 100, unit: "percent" });
+  if (Number.isFinite(a.indirect)) points.push({ ...base, series_id: `AUCTION_${tenor}_INDIRECT_PCT`, value: (a.indirect / a.comp) * 100, unit: "percent" });
+  return points;
+}
+
 export async function fetchTreasuryAuctions(): Promise<DataPoint[]> {
   const rows = await fetchFiscalData<AuctionRow>("/v1/accounting/od/auctions_query", {
     filter: `auction_date:gte:${AUCTION_HISTORY_START},security_type:in:(Note,Bond)`,
@@ -125,34 +153,88 @@ export async function fetchTreasuryAuctions(): Promise<DataPoint[]> {
 
   const points: DataPoint[] = [];
   for (const row of rows) {
-    // Tenor from original_security_term, so a reopening ("9-Year 10-Month")
-    // is grouped with its original "10-Year" issue (E4 decision 2026-11-13).
-    const tenor = AUCTION_TENORS[row.original_security_term ?? row.security_term ?? ""];
-    if (!tenor) continue;
-    if (row.inflation_index_security === "Yes" || row.floating_rate === "Yes") continue;
-    const date = row.auction_date ?? "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    const btc = Number(row.bid_to_cover_ratio);
-    const comp = Number(row.comp_accepted);
-    const dealer = Number(row.primary_dealer_accepted);
-    const indirect = Number(row.indirect_bidder_accepted);
-    // Announced-but-not-yet-held auctions come back with null results.
-    if (!Number.isFinite(btc) || btc <= 0 || !Number.isFinite(comp) || comp <= 0) continue;
-
-    const base = {
-      source: "TREASURY_FISCALDATA",
-      source_series_code: `auctions_query:${row.security_term}`,
-      observation_date: date,
-      raw_payload: { cusip: row.cusip, security_term: row.security_term, original_security_term: row.original_security_term, reopening: row.reopening, bid_to_cover_ratio: row.bid_to_cover_ratio, comp_accepted: row.comp_accepted, primary_dealer_accepted: row.primary_dealer_accepted, indirect_bidder_accepted: row.indirect_bidder_accepted },
-    };
-    points.push({ ...base, series_id: `AUCTION_${tenor}_BID_TO_COVER`, value: btc, unit: "ratio" });
-    if (Number.isFinite(dealer)) points.push({ ...base, series_id: `AUCTION_${tenor}_DEALER_PCT`, value: (dealer / comp) * 100, unit: "percent" });
-    if (Number.isFinite(indirect)) points.push({ ...base, series_id: `AUCTION_${tenor}_INDIRECT_PCT`, value: (indirect / comp) * 100, unit: "percent" });
+    points.push(...auctionPoints(
+      {
+        date: row.auction_date ?? "",
+        securityTerm: row.security_term,
+        originalSecurityTerm: row.original_security_term,
+        tips: row.inflation_index_security === "Yes",
+        frn: row.floating_rate === "Yes",
+        btc: Number(row.bid_to_cover_ratio),
+        comp: Number(row.comp_accepted),
+        dealer: Number(row.primary_dealer_accepted),
+        indirect: Number(row.indirect_bidder_accepted),
+      },
+      "TREASURY_FISCALDATA",
+      `auctions_query:${row.security_term}`,
+      { cusip: row.cusip, security_term: row.security_term, original_security_term: row.original_security_term, reopening: row.reopening, bid_to_cover_ratio: row.bid_to_cover_ratio, comp_accepted: row.comp_accepted, primary_dealer_accepted: row.primary_dealer_accepted, indirect_bidder_accepted: row.indirect_bidder_accepted },
+    ));
   }
   if (points.length === 0) {
     throw new Error("Treasury auctions_query: no benchmark original-issue coupon auctions parsed -- filter or field values changed");
   }
+
+  // Fill from TreasuryDirect: Fiscal Data's auctions_query can stall for
+  // weeks (2026-11-17: nothing after the Oct 15 results, so the Oct 26/27
+  // 2Y/5Y, Nov 10 10Y and Nov 12 30Y were all missing). Fiscal Data stays
+  // authoritative; TreasuryDirect only adds (series, date) keys it lacks, so
+  // a batch never holds the same key twice and Fiscal Data's row replaces
+  // the fill once it catches up. Best-effort: a failure here keeps the
+  // Fiscal Data points.
+  try {
+    const have = new Set(points.map((p) => `${p.series_id}|${p.observation_date}`));
+    const fill = (await fetchTreasuryDirectAuctions()).filter((p) => !have.has(`${p.series_id}|${p.observation_date}`));
+    if (fill.length > 0) console.log(`TreasuryAuctions: ${fill.length} point(s) filled from TreasuryDirect (latest ${fill.map((p) => p.observation_date).sort().at(-1)}).`);
+    points.push(...fill);
+  } catch (err) {
+    console.error(`TreasuryAuctions: TreasuryDirect fill failed, Fiscal Data only this run: ${err instanceof Error ? err.message : err}`);
+  }
   return points;
+}
+
+// TreasuryDirect's auction-results web service: same results Treasury
+// publishes on auction day (checked 2026-11-17 against Fiscal Data's Oct 7
+// 10Y reopening: bid-to-cover, dealer % and indirect % identical). It has no
+// single "competitive accepted" field; the dealer + indirect + direct
+// competitive awards sum to Fiscal Data's comp_accepted exactly (same check).
+const TREASURYDIRECT_AUCTIONED = "https://www.treasurydirect.gov/TA_WS/securities/auctioned";
+
+export async function fetchTreasuryDirectAuctions(days = 120): Promise<DataPoint[]> {
+  const out: DataPoint[] = [];
+  for (const type of ["Note", "Bond"]) {
+    const res = await fetch(`${TREASURYDIRECT_AUCTIONED}?format=json&type=${type}&days=${days}`);
+    if (!res.ok) throw new Error(`TreasuryDirect auctioned ${type}: HTTP ${res.status}`);
+    const rows = (await res.json()) as AuctionRow[];
+    if (!Array.isArray(rows)) throw new Error(`TreasuryDirect auctioned ${type}: response is not an array`);
+    if (rows.length === 0) continue;
+    requireFields(
+      rows,
+      ["competitiveAuctionCloseDate", "securityTerm", "originalSecurityTerm", "inflationProtected", "floatingRate", "bidToCoverRatio", "primaryDealersCompetitiveParAwarded", "indirectBiddersCompetitiveParAwarded", "directBiddersCompetitiveParAwarded"],
+      `TreasuryDirect auctioned ${type}`,
+    );
+    for (const row of rows) {
+      const dealer = Number(row.primaryDealersCompetitiveParAwarded || NaN);
+      const indirect = Number(row.indirectBiddersCompetitiveParAwarded || NaN);
+      const direct = Number(row.directBiddersCompetitiveParAwarded || NaN);
+      out.push(...auctionPoints(
+        {
+          date: (row.competitiveAuctionCloseDate ?? "").slice(0, 10),
+          securityTerm: row.securityTerm,
+          originalSecurityTerm: row.originalSecurityTerm || row.securityTerm,
+          tips: row.inflationProtected === "Yes",
+          frn: row.floatingRate === "Yes",
+          btc: Number(row.bidToCoverRatio || NaN),
+          comp: dealer + indirect + direct,
+          dealer,
+          indirect,
+        },
+        "TREASURYDIRECT",
+        `TA_WS/auctioned:${row.cusip}`,
+        { cusip: row.cusip, security_term: row.securityTerm, original_security_term: row.originalSecurityTerm, reopening: row.reopening, bid_to_cover_ratio: row.bidToCoverRatio, primary_dealer_awarded: row.primaryDealersCompetitiveParAwarded, indirect_bidder_awarded: row.indirectBiddersCompetitiveParAwarded, direct_bidder_awarded: row.directBiddersCompetitiveParAwarded },
+      ));
+    }
+  }
+  return out;
 }
 
 // Treasury Fiscal Data API -- Monthly Statement of the Public Debt, table 1
