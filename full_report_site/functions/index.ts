@@ -813,7 +813,10 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: Full
       const wl = watchlistBySymbol.get(t.symbol);
       return `<div class="row"${toneAttr(t.proposed_change ? "warning" : "")}>
         <div class="name"><b>${escapeHtml(t.symbol)}</b>${wl ? `<small>${pill(wl.status.replace("_", " "), watchTone(wl.status))}</small>` : ""}</div>
-        <div class="body"><div class="verd">${escapeHtml(t.thesis_verdict)}</div><div class="why">${escapeHtml(t.reasoning)}</div></div>
+        <div class="body"><div class="verd">${escapeHtml(t.thesis_verdict)}</div>
+          ${t.proposed_change ? `<div class="prop ph-only"><span class="lbl">Proposed</span>${escapeHtml(t.proposed_change)}</div>` : ""}
+          <div class="why ph-hide">${escapeHtml(t.reasoning)}</div>
+          <details class="whyd ph-only"><summary>Why</summary><div class="why">${escapeHtml(t.reasoning)}</div></details></div>
         <div class="r">${t.proposed_change ? `<span class="chip">${escapeHtml(t.proposed_change)}</span>` : `<span class="sub">No change</span>`}</div>
       </div>`;
     })
@@ -1078,6 +1081,12 @@ const PAGE_CSS = `
   /* thesis */
   .chip { display:inline-block; text-align:left; font:500 11px/1.35 var(--font-ui); padding:4px 8px; border-radius:4px; background:var(--sunk); box-shadow:inset 0 0 0 1px var(--hair-strong); }
   .verd { font:600 13px/1.35 var(--font-ui); }
+  .ph-only { display:none; }
+  /* phone thesis card: proposal as a labelled callout, reasoning behind "Why" */
+  .prop { margin-top:8px; padding:8px 10px; border-left:3px solid var(--warning); border-radius:0 4px 4px 0; background:var(--surface-1); font:500 12.5px/1.45 var(--font-ui); color:var(--text-primary); }
+  .prop .lbl { display:block; margin-bottom:3px; color:var(--warning); }
+  .whyd { margin-top:6px; }
+  .whyd summary { cursor:pointer; font:var(--t3); font-size:12px; color:var(--accent); padding:2px 0; }
   .why { font:var(--t3); font-size:12px; line-height:1.5; color:var(--text-secondary); margin-top:3px; }
 
   @media (max-width: 1180px) {
@@ -1106,12 +1115,15 @@ const PAGE_CSS = `
     .ledger.ins .row { grid-template-columns:minmax(0,1fr) auto auto auto; column-gap:12px; } .ledger.ins .row .dt { display:none; }
     .ledger .num small.ph { display:inline; }
     .ledger.dr .row { grid-template-columns:minmax(0,1fr) auto auto; row-gap:6px; } .ledger.dr .row .barc { grid-column:1 / -1; order:5; }
-    /* Proposal on its own line under the reasoning: as a right-hand column a
-       long proposal squeezed the ticker cell to nothing and overlapped it. */
-    .ledger.th .row { grid-template-columns:minmax(0,1fr); row-gap:6px; }
+    /* Phone thesis card: ticker + status, verdict, the proposal as a labelled
+       callout, reasoning behind "Why". As a right-hand column a long proposal
+       squeezed the ticker cell to nothing and overlapped it. */
+    .ledger.th .row { grid-template-columns:minmax(0,1fr); row-gap:4px; }
+    .ledger.th .row .r { display:none; } /* proposal moves into the card (.prop) */
+    .ledger.th .name small { display:inline-block; margin:0 0 0 8px; }
+    .ph-only { display:block; } .ph-hide { display:none; }
     .ledger.sc .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.sc .row .barc { grid-column:1 / -1; order:5; }
     .ledger.fd .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.fd .row .body { grid-column:1 / -1; order:5; }
     .ledger.dc .row { grid-template-columns:minmax(0,1fr); row-gap:4px; }
-    .ledger.th .row .r { text-align:left; }
   }
 `;
