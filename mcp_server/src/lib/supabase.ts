@@ -670,6 +670,9 @@ export interface FullReportSnapshotRow {
   wave_status: (WaveStatus & { wave_authorized: boolean }) | null;
   personal_triggers: unknown[] | null;
   insider_activity: unknown;
+  // fireDrillSnapshot.ts output, or { error } when it couldn't run; null
+  // before 2026-11-17.
+  fire_drill?: unknown;
   created_at: string;
 }
 
@@ -690,6 +693,7 @@ export async function writeFullReport(
     portfolio_context: string;
   },
   insiderActivity: unknown = null,
+  fireDrill: unknown = null,
 ): Promise<FullReportSnapshotRow> {
   const [latest] = await getRecentCrashChecks(1);
   if (!latest) {
@@ -719,6 +723,14 @@ export async function writeFullReport(
   const waveStatus = await currentWaveStatus();
   const rateReset = computeRateResetTriggerStatus(readPortfolio());
 
+  // The fire drill (fireDrillSnapshot.ts) is percentages only by
+  // construction; checked anyway, and dropped rather than blocking the
+  // report if a real dollar figure ever shows up in its reasons text.
+  let drill = fireDrill;
+  if (drill && findLeakedDollarFigures(JSON.stringify(drill), readPortfolio()).length > 0) {
+    drill = { error: "Fire drill withheld: its text appeared to contain a personal dollar figure." };
+  }
+
   const row = {
     watchlist,
     crash_type_diagnosis: qualitative.crash_type_diagnosis,
@@ -727,13 +739,28 @@ export async function writeFullReport(
     wave_status: { ...waveStatus, wave_authorized: latest.wave_authorized },
     personal_triggers: [{ name: "Rate-reset trigger (stable-value fund)", ...rateReset }],
     insider_activity: insiderActivity,
+    ...(drill ? { fire_drill: drill } : {}),
   };
 
-  const { data, error } = await supabase.from("full_report_snapshots").insert(row).select().single();
-  if (error) {
-    throw new Error(`Failed to insert full_report_snapshots row: ${error.message}`);
+  return insertSnapshotWithOptionalColumns("full_report_snapshots", row, ["fire_drill"]);
+}
+
+/**
+ * Inserts a snapshot row; if the database rejects one of `optional` columns
+ * as unknown (its migration not applied yet), retries once without them, so
+ * a new column can never break the nightly write. Logs when it does.
+ */
+async function insertSnapshotWithOptionalColumns<T>(table: string, row: Record<string, unknown>, optional: string[]): Promise<T> {
+  let { data, error } = await supabase.from(table).insert(row).select().single();
+  if (error && optional.some((c) => error!.message.includes(c))) {
+    console.error(`${table}: column(s) ${optional.join(", ")} missing (migration not applied?) -- writing without them: ${error.message}`);
+    const trimmed = Object.fromEntries(Object.entries(row).filter(([k]) => !optional.includes(k)));
+    ({ data, error } = await supabase.from(table).insert(trimmed).select().single());
   }
-  return data;
+  if (error) {
+    throw new Error(`Failed to insert ${table} row: ${error.message}`);
+  }
+  return data as T;
 }
 
 /**
@@ -784,6 +811,16 @@ export interface PortfolioReviewTickerEntry {
   reasoning: string;
 }
 
+// "Waiting for your decision" (2026-11-17): every proposal from this review
+// that needs the user's approval. A fresh list each run, no cross-run state.
+export const DECISION_KINDS = ["watchlist_target", "instrument_registry", "fund_filing", "rebalance", "other"] as const;
+export interface PortfolioReviewDecision {
+  title: string;
+  detail: string;
+  kind: (typeof DECISION_KINDS)[number];
+  ticker?: string | null;
+}
+
 export interface PortfolioReviewSnapshotRow {
   id: string;
   run_at: string;
@@ -792,6 +829,7 @@ export interface PortfolioReviewSnapshotRow {
   macro_cross_reference: string | null;
   drift: unknown;
   tickers: PortfolioReviewTickerEntry[];
+  decisions?: PortfolioReviewDecision[] | null; // null before 2026-11-17
   risk_radar: unknown; // retired 2026-11-13, kept for history; new rows leave it null
   source_crash_check_id: string | null;
   created_at: string;
@@ -815,6 +853,7 @@ export async function writePortfolioReview(qualitative: {
   summary: string;
   macro_cross_reference: string;
   tickers: PortfolioReviewTickerEntry[];
+  decisions?: PortfolioReviewDecision[];
 }): Promise<PortfolioReviewSnapshotRow> {
   const [latestCrashCheck] = await getRecentCrashChecks(1);
 
@@ -826,6 +865,7 @@ export async function writePortfolioReview(qualitative: {
     qualitative.summary,
     qualitative.macro_cross_reference,
     ...qualitative.tickers.map((t) => `${t.reasoning} ${t.proposed_change ?? ""}`),
+    ...(qualitative.decisions ?? []).map((d) => `${d.title} ${d.detail}`),
     ...drift.standing_flags,
   ].join(" ");
 
@@ -844,12 +884,9 @@ export async function writePortfolioReview(qualitative: {
     macro_cross_reference: qualitative.macro_cross_reference,
     drift,
     tickers: qualitative.tickers,
+    decisions: qualitative.decisions ?? [],
     source_crash_check_id: latestCrashCheck?.id ?? null,
   };
 
-  const { data, error } = await supabase.from("portfolio_review_snapshots").insert(row).select().single();
-  if (error) {
-    throw new Error(`Failed to insert portfolio_review_snapshots row: ${error.message}`);
-  }
-  return data;
+  return insertSnapshotWithOptionalColumns("portfolio_review_snapshots", row, ["decisions"]);
 }

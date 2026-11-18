@@ -1,13 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, refreshFullReportWatchlist, getLatestDataPoint, getLatestTickerPrice, currentWaveStatus, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
+import { getRecentCrashChecks, getLatestCrashCheckWithProbability, writeSnapshot, writeFullReport, writePortfolioReview, DECISION_KINDS, refreshFullReportWatchlist, getLatestDataPoint, getLatestTickerPrice, currentWaveStatus, getLatestRepoStressSpread, getRecentConditionalScoring, syncWatchlistTickers } from "./lib/supabase.js";
 import { readPortfolio, readDryPowderUsd, applyLiveFxRate, computePortfolioDrift, computeRateResetTriggerStatus } from "./lib/portfolio.js";
 import { computeDelta } from "./lib/delta.js";
 import { computeWaveDeployment, computeCrashTypeLayer, loadPolicy, type Wave, type CrashType } from "./lib/waveDeployment.js";
 import { readWaveDeploymentState, recordWaveDeployment } from "./lib/waveDeploymentState.js";
 import { loadInstrumentRegistry, compactReadiness } from "./lib/deploymentInstruments.js";
 import { runFireDrill } from "./lib/fireDrill.js";
+import { buildFireDrillSnapshot } from "./lib/fireDrillSnapshot.js";
 import { appendExchange } from "./lib/exchangeLog.js";
 import { checkFundFilings, acknowledgeFiling } from "./lib/fundFilings.js";
 import { computeRoleFit, tickersNeeded, type PriceSeries } from "./lib/roleFit.js";
@@ -1267,7 +1268,7 @@ server.registerTool(
       "current quarter, so per-quarter trading limits show up as lines rerouted to the backup. " +
       "all_plan_exchanges_count=true is the worst case (every plan exchange uses the limited day). " +
       "Use in the portfolio review and the quarterly instrument review; chat-only, never persist its " +
-      "dollar amounts.",
+      "dollar amounts. (write_full_report stores a dollar-free summary of the Wave 3 drill on its own.)",
     inputSchema: {
       through_wave: z.enum(["WAVE_1", "WAVE_2", "WAVE_3"]),
       crash_type: z.enum(["A_STAGFLATION", "B_RECESSION", "C_CREDIT", "D_AI_BUBBLE", "E_HYBRID"]).optional(),
@@ -1426,6 +1427,8 @@ server.registerTool(
       "the Full Report Cloudflare Pages Function. Watchlist status is recomputed here from live " +
       "prices, not trusted from caller input. Do not include personal dollar figures in " +
       "portfolio_context or crash_type_diagnosis — the write is rejected if one is detected anyway. " +
+      "Also stores a dollar-free Wave 3 fire drill (waves alone + each crash-type layer), computed " +
+      "here from the local registry, not from caller input. " +
       "Call alongside write_snapshot once the qualitative synthesis is produced. Omit " +
       "crash_type_diagnosis entirely if no crash type is diagnosed this run — do not pass null.",
     inputSchema: {
@@ -1454,7 +1457,20 @@ server.registerTool(
     } catch (err) {
       console.error("write_full_report: insider activity unavailable:", err);
     }
-    const row = await writeFullReport(input, insiderActivity);
+    // Deployment readiness for the private report: computed here from the
+    // local registry/policy, percentages only (fireDrillSnapshot.ts).
+    // Best-effort: a failure records the reason rather than blocking the report.
+    let fireDrill: unknown = null;
+    try {
+      const today = new Date();
+      const load = loadInstrumentRegistry(today);
+      fireDrill = load.ok
+        ? buildFireDrillSnapshot(readDryPowderUsd(), load.registry, load.health, today, load.exchangeLog, load.filingEvents)
+        : { error: `Instrument registry invalid: ${load.health.errors.join("; ")}` };
+    } catch (err) {
+      fireDrill = { error: `Fire drill unavailable: ${(err as Error).message}` };
+    }
+    const row = await writeFullReport(input, insiderActivity, fireDrill);
     return json({ written: row });
   }),
 );
@@ -1469,7 +1485,9 @@ server.registerTool(
       "full_report_snapshots. Portfolio drift is recomputed server-side, not taken from this call. Do " +
       "not include personal dollar figures anywhere here — the write is rejected if one is detected " +
       "anyway. Call at the end of every review run, whether or not the user approved ticker changes " +
-      "(that's the separate write_watchlist gate).",
+      "(that's the separate write_watchlist gate). decisions = every proposal from this review that " +
+      "needs the user's approval (target changes, registry edits, filing acknowledgements, " +
+      "rebalances); pass [] if none.",
     inputSchema: {
       verdict: z.string().describe("One short headline sentence (under ~10 words). Put the reasoning in summary."),
       summary: z.string().describe(PARAGRAPHS),
@@ -1482,6 +1500,16 @@ server.registerTool(
           reasoning: z.string(),
         }),
       ),
+      decisions: z
+        .array(
+          z.object({
+            title: z.string().describe("Short action, e.g. 'Rebase EOG wave targets'"),
+            detail: z.string().describe("One or two sentences: what changes and why"),
+            kind: z.enum(DECISION_KINDS),
+            ticker: z.string().nullable().optional(),
+          }),
+        )
+        .optional(),
     },
   },
   withLogging("write_portfolio_review", async (input) => {
