@@ -18,15 +18,28 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
+// The newest crash_checks row: mechanical fields only. Every ingest (10am,
+// 6pm, manual) writes one, so it's usually NOT the row with the LLM view.
 interface CrashCheckRow {
   run_at: string;
-  crash_probability_pct: number | null;
-  scenario_method: string | null;
-  scenario_tilt: string | null;
   confirmed_red_count: number | null;
   red_count: number;
   wave_authorized: boolean | null;
   warsh_classification: string | null;
+  dd_vix_band: string | null;
+  dd_vix_score: number | null;
+  sp_drawdown_pct: number | null;
+  sp500_as_of: string | null;
+}
+
+// The newest row a crash check actually wrote an LLM view on. Read
+// separately: taking the LLM fields from the newest row (as before
+// 2026-11-17) hid the LLM view after every bare ingest row.
+interface LlmViewRow {
+  run_at: string;
+  crash_probability_pct: number;
+  scenario_method: string | null;
+  scenario_tilt: string | null;
 }
 
 interface WatchlistEntry {
@@ -146,13 +159,18 @@ async function supabaseGet<T>(env: Env, path: string): Promise<T> {
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   let fullReport: FullReportRow | undefined;
   let crashCheck: CrashCheckRow | undefined;
+  let llmView: LlmViewRow | undefined;
   let portfolioReviews: PortfolioReviewRow[];
   try {
-    [[fullReport], [crashCheck], portfolioReviews] = await Promise.all([
+    [[fullReport], [crashCheck], [llmView], portfolioReviews] = await Promise.all([
       supabaseGet<FullReportRow[]>(env, "full_report_snapshots?select=*&order=run_at.desc&limit=1"),
       supabaseGet<CrashCheckRow[]>(
         env,
-        "crash_checks?select=run_at,crash_probability_pct,scenario_method,scenario_tilt,confirmed_red_count,red_count,wave_authorized,warsh_classification&order=run_at.desc&limit=1",
+        "crash_checks?select=run_at,confirmed_red_count,red_count,wave_authorized,warsh_classification,dd_vix_band,dd_vix_score,sp_drawdown_pct,sp500_as_of&order=run_at.desc&limit=1",
+      ),
+      supabaseGet<LlmViewRow[]>(
+        env,
+        "crash_checks?select=run_at,crash_probability_pct,scenario_method,scenario_tilt&crash_probability_pct=not.is.null&order=run_at.desc&limit=1",
       ),
       supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=run_at,verdict,summary,macro_cross_reference,drift,tickers&order=run_at.desc&limit=1"),
     ]);
@@ -175,7 +193,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 
   const [latestReview] = portfolioReviews;
 
-  return new Response(renderPage(fullReport, crashCheck, latestReview), {
+  return new Response(renderPage(fullReport, crashCheck, llmView, latestReview, new Date()), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 };
@@ -222,6 +240,10 @@ function toParagraphs(text: string | null | undefined): string[] {
   return out;
 }
 
+function formatTimeEt(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(d) + " ET";
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -259,6 +281,88 @@ function formatShortDate(isoDate: string | null | undefined): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(d);
 }
 
+// ---------------------------------------------------------------------------
+// Data freshness. "Late" = older than the job's schedule allows, i.e. a job
+// (or its source) has stalled -- not just that the data is a day old.
+// Schedules mirror .github/workflows/ingest.yml (10am Mon-Sat, 6pm Mon-Fri
+// ET) and the local Task Scheduler jobs (crash check weekdays 6:30pm, review
+// Fridays 7pm); change them together.
+// ---------------------------------------------------------------------------
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const ET_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+/** US Eastern wall-clock time as a UTC epoch, so schedule maths can ignore DST. */
+function etWall(d: Date | string): number {
+  const p = Object.fromEntries(ET_PARTS.formatToParts(new Date(d)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+}
+interface Slot { minute: number; days: number[] } // minutes after midnight ET; 0 = Sunday
+/** The latest scheduled slot that should have finished by now (start + grace <= now), in ET wall-clock ms. */
+function lastDueSlot(nowEt: number, slots: Slot[], graceMs: number): number {
+  const cutoff = nowEt - graceMs;
+  const midnight = Math.floor(cutoff / DAY) * DAY;
+  for (let back = 0; back < 8; back++) {
+    const day = midnight - back * DAY;
+    const dow = new Date(day).getUTCDay();
+    const due = slots.filter((s) => s.days.includes(dow)).map((s) => day + s.minute * 60_000).filter((t) => t <= cutoff);
+    if (due.length) return Math.max(...due);
+  }
+  return -Infinity;
+}
+const WEEKDAYS = [1, 2, 3, 4, 5];
+// Crash check: weekdays 6:30pm. The runner waits up to 90 min for the 6pm
+// ingest, then takes ~5 min, so allow 2.5 h.
+const CRASH_CHECK_SLOTS: Slot[] = [{ minute: 18 * 60 + 30, days: WEEKDAYS }];
+const CRASH_CHECK_GRACE = 2.5 * HOUR;
+// Ingest: 10am Mon-Sat and 6pm Mon-Fri. GitHub's cron has started up to
+// 62 min late, so allow 1.5 h.
+const INGEST_SLOTS: Slot[] = [{ minute: 10 * 60, days: [1, 2, 3, 4, 5, 6] }, { minute: 18 * 60, days: WEEKDAYS }];
+const INGEST_GRACE = 1.5 * HOUR;
+const REVIEW_MAX_AGE = 8 * DAY; // weekly, Fridays
+const PRICE_MAX_AGE = 4 * DAY; // a long weekend, against the report's own date
+
+interface FreshRow { label: string; cadence: string; latest: string; late: boolean }
+
+function freshnessPopover(id: string, intro: string, rows: FreshRow[], note: string): { button: string; popover: string } {
+  const anyLate = rows.some((r) => r.late);
+  const button = `<button class="fbtn" popovertarget="${id}">Data freshness${anyLate ? ' <b class="late">· late</b>' : ""} ⓘ</button>`;
+  const popover = `<div popover id="${id}" class="pop">
+    <div class="poph"><span class="lbl">Data freshness</span><button class="popx" popovertarget="${id}" popovertargetaction="hide" aria-label="Close">×</button></div>
+    <p>${intro}</p>
+    <table class="fresh"><thead><tr><th>Data</th><th>Updates</th><th>Latest</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${r.label}</td><td>${r.cadence}</td><td>${r.latest}${r.late ? ' <b class="late">late</b>' : ""}</td></tr>`).join("")}
+    </tbody></table>
+    <p class="fine">${note}</p>
+  </div>`;
+  return { button, popover };
+}
+
+// Drawdown risk band: score = S&P drawdown % + VIX / 5, stored by the rule
+// engine (rule_engine/src/hazardScorecard.ts). Labels and hit rates copied
+// from dashboard_site/index.html (DD_VIX_BAND_LABELS / DD_VIX_HIT_RATE),
+// _worker.js and mcp_server/src/server.ts; keep all four in sync. Context
+// only, not in the stress gate, so never shown in red/amber/green.
+const DD_VIX_BAND_LABELS: Record<string, string> = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "High" };
+const DD_VIX_HIT_RATE: Record<string, string> = { LOW: "5%", TRANSITIONING: "17%", HIGH: "44%" };
+
+function riskBandFact(cc: CrashCheckRow | undefined): string {
+  if (!cc) return "";
+  const dd = cc.sp_drawdown_pct == null ? null : Number(cc.sp_drawdown_pct);
+  let v: string;
+  let title = "";
+  if (dd != null && dd >= 10) v = `Not scored <small>S&amp;P already 10%+ down</small>`;
+  else if (cc.dd_vix_band && DD_VIX_BAND_LABELS[cc.dd_vix_band]) {
+    const name = DD_VIX_BAND_LABELS[cc.dd_vix_band];
+    const rate = DD_VIX_HIT_RATE[cc.dd_vix_band];
+    v = `${name} <small>${rate} of past cases</small>`;
+    title = ` title="Score ${cc.dd_vix_score != null ? Number(cc.dd_vix_score).toFixed(1) : "—"} = S&amp;P drawdown % + VIX / 5 (High at 10+, Elevated at 8.5+). Since 1994, ${rate} of ${name} days saw the S&amp;P close 10%+ below its high within a month; on a typical day, 12%. Context only, not in the stress gate."`;
+  } else v = "Unavailable";
+  return `<div class="fact"${title}><span class="lbl">Drawdown risk band</span><span class="v">${v}</span></div>`;
+}
+
 // "WAVE_2" -> "Wave 2"
 const waveName = (w: string) => w.replace(/^WAVE_(\d)$/, "Wave $1");
 // WaveActive is "NONE" | "WAVE_1".."WAVE_3"; anything else counts as no wave.
@@ -287,7 +391,7 @@ function confirmationCell(e: ConfirmationEntry | null | undefined): { reading: s
     : { reading: `Red, ${e.days_confirmed} date${e.days_confirmed === 1 ? "" : "s"} so far`, status: "Pending", tone: "warning" };
 }
 
-function renderTopbar(activeTab: string, runAt: string | null, withTabs: boolean): string {
+function renderTopbar(activeTab: string, runAt: string | null, withTabs: boolean, loadedAt: Date = new Date()): string {
   const tabs = withTabs
     ? `<nav class="tab-bar" id="tab-bar" aria-label="Sections">
         <button class="tab-btn${activeTab === "deploy" ? " active" : ""}" data-tab="deploy">Deployment</button>
@@ -298,14 +402,14 @@ function renderTopbar(activeTab: string, runAt: string | null, withTabs: boolean
     <div class="brand">Stress Monitor <i>· private report</i></div>
     ${tabs}
     <div class="topright">
-      ${runAt ? `<span class="when">Run ${escapeHtml(formatRunAt(runAt))}</span>` : ""}
+      <span class="when">${runAt ? `Run ${escapeHtml(formatRunAt(runAt))} · ` : ""}<span id="loaded" data-ts="${loadedAt.getTime()}">Loaded ${escapeHtml(formatTimeEt(loadedAt))}</span></span>
       <a class="ext" href="${PUBLIC_DASHBOARD_URL}">Public dashboard ↗</a>
       <button class="dn-btn" id="refresh-btn" title="Refresh">&#8635;</button>
     </div>
   </header>`;
 }
 
-function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | undefined): string {
+function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | undefined, llmView: LlmViewRow | undefined, now: Date): string {
   const ws = report.wave_status;
   const confirmed = crashCheck?.confirmed_red_count ?? null;
 
@@ -329,16 +433,67 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
     ? [isWave(ws.fast_panic_wave), ws.slow_bear?.w2?.color === "RED", ws.slow_bear?.w3?.color === "RED"].filter(Boolean).length
     : null;
   const buyZone = report.watchlist.filter((t) => t.status === "BUY_ZONE").length;
+
+  // ---- data freshness ----
+  const nowEt = etWall(now);
+  const priceDates = report.watchlist.map((t) => t.price_as_of).filter((d): d is string => !!d).sort();
+  const newestPrice = priceDates[priceDates.length - 1];
+  const oldestPrice = priceDates[0];
+  const fresh = freshnessPopover(
+    "fresh-deploy",
+    "Each part of this tab comes from a different job, so the times don't line up.",
+    [
+      {
+        label: "This report",
+        cadence: "Crash check · weekdays ~6:30pm ET",
+        latest: escapeHtml(formatRunAt(report.run_at)),
+        late: etWall(report.run_at) < lastDueSlot(nowEt, CRASH_CHECK_SLOTS, CRASH_CHECK_GRACE),
+      },
+      {
+        label: "LLM view",
+        cadence: "Written by each crash check",
+        latest: llmView ? escapeHtml(formatRunAt(llmView.run_at)) : "—",
+        late: false,
+      },
+      {
+        label: "Indicators · stress gate · risk band",
+        cadence: "Data refresh · ~10am Mon–Sat, ~6pm weekdays",
+        latest: crashCheck ? escapeHtml(formatRunAt(crashCheck.run_at)) : "—",
+        late: !crashCheck || etWall(crashCheck.run_at) < lastDueSlot(nowEt, INGEST_SLOTS, INGEST_GRACE),
+      },
+      {
+        label: "S&amp;P close used",
+        cadence: "Previous or same-day close",
+        latest: escapeHtml(formatShortDate(crashCheck?.sp500_as_of ?? ws?.as_of_observation_date)),
+        late: false,
+      },
+      {
+        label: "Watchlist prices",
+        cadence: "Daily close, taken when the report ran",
+        latest: newestPrice ? escapeHtml(oldestPrice !== newestPrice ? `${formatShortDate(oldestPrice)} – ${formatShortDate(newestPrice)}` : formatShortDate(newestPrice)) : "—",
+        late: !!newestPrice && Date.parse(`${newestPrice}T00:00:00Z`) < etWall(report.run_at) - PRICE_MAX_AGE,
+      },
+      {
+        label: "Insider filings",
+        cadence: "SEC Form 4, taken when the report ran",
+        latest: escapeHtml(formatShortDate(report.run_at)),
+        late: false,
+      },
+    ],
+    "<b>Late</b> = older than the job's schedule allows, so a job has likely failed or stalled: the report after the last weekday 6:30pm run plus 2½ hours, the data refresh after its last run plus 1½ hours, watchlist prices more than 4 days before the report.",
+  );
+
   const verdict = `<div class="verdict">
     <div class="headline"><span class="big">${escapeHtml(big)}</span><span class="sub"><b class="${subTone}">${escapeHtml(subLead)}</b>${confirmed != null ? ` · ${confirmed} of 6 confirmed red` : ""}${firing != null ? ` · ${firing} of 3 pathways firing` : ""}</span></div>
     <div class="facts">
       ${crashCheck ? `<div class="fact"><span class="lbl">Fed regime</span><span class="v">${escapeHtml(titleCase(crashCheck.warsh_classification ?? "Pending"))}</span></div>` : ""}
-      ${crashCheck?.scenario_method === "tilt_v1" && crashCheck.crash_probability_pct != null ? `<div class="fact"><span class="lbl">LLM view · 3 mo</span><span class="v">${escapeHtml(({ lower: "Lower", in_line: "In line", higher: "Higher" } as Record<string, string>)[crashCheck.scenario_tilt ?? ""] ?? "—")} <small>${crashCheck.crash_probability_pct}% chance of a 10%+ fall</small></span></div>` : ""}
+      ${llmView?.scenario_method === "tilt_v1" ? `<div class="fact"><span class="lbl">LLM view · 3 mo</span><span class="v">${escapeHtml(({ lower: "Lower", in_line: "In line", higher: "Higher" } as Record<string, string>)[llmView.scenario_tilt ?? ""] ?? "—")} <small>${llmView.crash_probability_pct}% chance of a 10%+ fall</small></span></div>` : ""}
+      ${riskBandFact(crashCheck)}
       <div class="fact"><span class="lbl">Crash type</span><span class="v">${report.crash_type_diagnosis ? "Diagnosed <small>see right</small>" : "None <small>this run</small>"}</span></div>
       <div class="fact"><span class="lbl">Watchlist</span><span class="v">${buyZone} in buy zone <small>of ${report.watchlist.length}</small></span></div>
     </div>
-    <div class="stamp"><b>As of ${escapeHtml(formatRunAt(report.run_at))}</b>${ws?.as_of_observation_date ? `<br>S&amp;P reading ${escapeHtml(formatShortDate(ws.as_of_observation_date))}` : ""}</div>
-  </div>`;
+    <div class="stamp"><b>As of ${escapeHtml(formatRunAt(report.run_at))}</b>${ws?.as_of_observation_date ? `<br>S&amp;P reading ${escapeHtml(formatShortDate(ws.as_of_observation_date))}` : ""}<br>${fresh.button}</div>
+  </div>${fresh.popover}`;
 
   // ---- wave pathways ----
   let pathways = "";
@@ -431,7 +586,7 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
     </div>`;
 }
 
-function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistBySymbol: Map<string, WatchlistEntry>): string {
+function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: FullReportRow, watchlistBySymbol: Map<string, WatchlistEntry>, now: Date): string {
   if (!review) {
     return `<div class="verdict"><div class="headline"><span class="big">No review yet</span><span class="sub">Run a Portfolio Opportunity Review in Claude to fill this tab.</span></div></div>`;
   }
@@ -439,6 +594,31 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
   const funds = accounts.reduce((n, a) => n + a.entries.length, 0);
   const drifted = accounts.reduce((n, a) => n + a.entries.filter((e) => e.status === "DRIFTED").length, 0);
   const proposed = review.tickers.filter((t) => t.proposed_change).length;
+  const fresh = freshnessPopover(
+    "fresh-portfolio",
+    "The review runs weekly; the watchlist status beside each ticker comes from the latest daily report instead.",
+    [
+      {
+        label: "Portfolio review",
+        cadence: "Weekly · Fridays ~7pm ET",
+        latest: escapeHtml(formatRunAt(review.run_at)),
+        late: now.getTime() - Date.parse(review.run_at) > REVIEW_MAX_AGE,
+      },
+      {
+        label: "Allocation drift",
+        cadence: "Computed when the review ran",
+        latest: escapeHtml(formatShortDate(review.run_at)),
+        late: false,
+      },
+      {
+        label: "Watchlist status pills",
+        cadence: "Latest daily report",
+        latest: escapeHtml(formatRunAt(report.run_at)),
+        late: false,
+      },
+    ],
+    "<b>Late</b> = no review for more than 8 days, so a weekly run was missed.",
+  );
   // The verdict is often several sentences. Lead with the first one as the
   // headline and show the rest as a smaller line underneath.
   const [headline, ...rest] = splitSentences((review.verdict ?? "").trim() || "Review");
@@ -452,8 +632,8 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
       <div class="fact"><span class="lbl">Drifted</span><span class="v"${drifted ? ' style="color:var(--warning)"' : ""}>${drifted} <small>of ${funds}</small></span></div>
       <div class="fact"><span class="lbl">Theses reviewed</span><span class="v">${review.tickers.length}</span></div>
     </div>
-    <div class="stamp"><b>Reviewed ${escapeHtml(formatRunAt(review.run_at))}</b><br>Portfolio Opportunity Review</div>
-  </div>`;
+    <div class="stamp"><b>Reviewed ${escapeHtml(formatRunAt(review.run_at))}</b><br>Portfolio Opportunity Review<br>${fresh.button}</div>
+  </div>${fresh.popover}`;
 
   const summary = review.summary
     ? `<div class="sh"><span class="lbl">Summary</span></div><div class="nars">${toParagraphs(review.summary).map((para) => `<p class="nar">${escapeHtml(para)}</p>`).join("")}</div>`
@@ -518,12 +698,14 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, watchlistByS
 function renderPage(
   report: FullReportRow,
   crashCheck: CrashCheckRow | undefined,
+  llmView: LlmViewRow | undefined,
   portfolioReview: PortfolioReviewRow | undefined,
+  now: Date,
 ): string {
   const watchlistBySymbol = new Map(report.watchlist.map((t) => [t.symbol, t]));
-  const body = `${renderTopbar("deploy", report.run_at, true)}
-    <div class="tab-panel" id="tab-deploy">${renderDeploymentTab(report, crashCheck)}</div>
-    <div class="tab-panel" id="tab-portfolio" hidden>${renderPortfolioTab(portfolioReview, watchlistBySymbol)}</div>
+  const body = `${renderTopbar("deploy", report.run_at, true, now)}
+    <div class="tab-panel" id="tab-deploy">${renderDeploymentTab(report, crashCheck, llmView, now)}</div>
+    <div class="tab-panel" id="tab-portfolio" hidden>${renderPortfolioTab(portfolioReview, report, watchlistBySymbol, now)}</div>
     <p class="foot">Stress-monitoring dashboard with discretionary LLM judgment, not a calibrated forecast.</p>`;
   return renderShell("Private Portfolio Report", body, true);
 }
@@ -558,6 +740,23 @@ ${content}
     refreshBtn.style.display = "inline-block";
     refreshBtn.addEventListener("click", function () { location.reload(); });
   }
+  // "Loaded 10:05 PM ET · 3 min ago": the page is rendered on request and
+  // never updates itself, so show how long it has been open (installed app
+  // pages can sit open for days).
+  (function () {
+    var el = document.getElementById("loaded");
+    if (!el) return;
+    var ts = Number(el.getAttribute("data-ts")), base = el.textContent;
+    function tick() {
+      var m = Math.floor((Date.now() - ts) / 60000);
+      var ago = m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.floor(m / 60) + " h ago" : Math.floor(m / 1440) + " d ago";
+      el.textContent = base + " · " + ago;
+      el.classList.toggle("old", m >= 60);
+    }
+    tick();
+    setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) tick(); });
+  })();
   // Tabs: remembered per browser; the page renders fine without storage.
   (function () {
     var bar = document.getElementById("tab-bar");
@@ -638,6 +837,24 @@ const PAGE_CSS = `
   .fact .v small { font:var(--t3); color:var(--text-muted); font-weight:400; }
   .stamp { text-align:right; font:var(--t3); color:var(--text-muted); line-height:1.5; }
   .stamp b { color:var(--text-secondary); font-weight:500; }
+  #loaded.old { color:var(--warning); }
+
+  /* data freshness popover */
+  .fbtn { all:unset; cursor:pointer; font:var(--t3); color:var(--accent); }
+  .fbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  b.late, .stamp b.late { color:var(--warning); font-weight:600; }
+  .pop { margin:auto; width:min(560px, calc(100vw - 28px)); max-height:calc(100vh - 40px); overflow:auto; padding:14px 18px 16px;
+    border:1px solid var(--hair-strong); border-radius:8px; background:var(--surface-1); color:var(--text-primary); box-shadow:0 10px 30px rgba(0,0,0,.28); }
+  .pop::backdrop { background:rgba(0,0,0,.3); }
+  .poph { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .popx { all:unset; cursor:pointer; font:500 18px/1 var(--font-ui); color:var(--text-muted); padding:2px 6px; }
+  .pop p { margin:0 0 10px; font:var(--t3); font-size:12px; line-height:1.5; color:var(--text-secondary); }
+  .pop p.fine { margin:10px 0 0; color:var(--text-muted); }
+  table.fresh { width:100%; border-collapse:collapse; font:var(--t3); font-size:12px; }
+  table.fresh th { text-align:left; font:var(--label); letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 6px 0; border-bottom:1px solid var(--hair-strong); }
+  table.fresh td { padding:7px 10px 7px 0; border-bottom:1px solid var(--hair); vertical-align:top; color:var(--text-secondary); }
+  table.fresh td:first-child { color:var(--text-primary); font-weight:600; }
+  table.fresh td:last-child { white-space:nowrap; }
 
   /* layout + sections */
   .cols { display:grid; grid-template-columns:minmax(0,1fr) 340px; column-gap:36px; }

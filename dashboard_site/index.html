@@ -3108,8 +3108,9 @@ function positioningSummaryHtml(measures) {
 const DD_VIX_BAND_LABELS = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "High" };
 // Share of days in each band followed by a >=10% drawdown within 21 trading
 // days, 1994-02..2026-10 (5,058 scorable days, base rate 12%). HIGH was 38%
-// in 1994-2009 and 50% in 2010-2026. Duplicated in mcp_server/src/server.ts
-// and dashboard_site/_worker.js; keep the three in sync.
+// in 1994-2009 and 50% in 2010-2026. Duplicated in mcp_server/src/server.ts,
+// dashboard_site/_worker.js and full_report_site/functions/index.ts; keep
+// all four in sync.
 const DD_VIX_HIT_RATE = { LOW: "5%", TRANSITIONING: "17%", HIGH: "44%" };
 // The rule engine stores the band on each row (dd_vix_band). Rows written
 // before 2026-11-17 don't have it, so fall back to the same formula from the
