@@ -2753,24 +2753,30 @@ function renderFiscalLedger(cards) {
   }).join("") + `<div class="foot"><span>Blue tick = points toward stress</span><span>Read each check on its own, never as a score</span><span>ⓘ on each row = what it means, today's reading and the method</span></div>${pops}`;
 }
 
+// 5th field = late after this many calendar days since the observation date:
+// the source's normal publishing lag plus one full cycle and some slack, so
+// "late" means the source (or our fetch) has stalled, not that it's slow.
+// Monthly/quarterly series are dated to the period START (Q3 GDP = Jul 1),
+// TIC/MTS/avg-rate to the month END. Added 2026-11-17 after Fiscal Data's
+// auction feed stalled for 5 weeks unnoticed.
 const MACRO_FRESH = [
-  ["Treasury yields, TIPS, term premium", "Daily · FRED, Treasury fills the yields' lag", ["DGS10", "THREEFYTP10"], "day"],
-  ["Dollar index", "Daily · Federal Reserve", ["DTWEXBGS"], "day"],
-  ["Fed balance sheet · reverse repo", "Weekly · daily", ["WALCL", "RRPONTSYD"], "day"],
-  ["OFR stress index", "Daily · US Treasury OFR", ["OFR_FSI"], "day"],
-  ["Financial conditions (NFCI, stress index)", "Weekly", ["NFCI", "STLFSI4"], "day"],
-  ["Jobless claims", "Weekly", ["ICSA"], "day"],
-  ["Treasury auctions", "After each auction · TreasuryDirect", ["AUCTION_10Y_BID_TO_COVER"], "day"],
-  ["Avg debt rate · Fed share of Treasuries", "Monthly · Treasury", ["TREASURY_AVG_RATE_MARKETABLE", "MSPD_TOTAL_MARKETABLE"], "day"],
-  ["Copper", "Daily · COMEX futures close", ["COPPER_FUT"], "day"],
-  ["Hires, retail sales, M2", "Monthly", ["JTSHIR", "RSAFS", "M2SL"], "month"],
-  ["Bank lending standards", "Quarterly Fed survey", ["DRTSCILM"], "quarter"],
-  ["Foreign Treasury holdings (TIC)", "Monthly, ~2½ months behind", ["TIC_FOREIGN_HOLDINGS_TOTAL"], "day"],
-  ["GDP · M2 / GDP", "Quarterly", ["GDP"], "quarter"],
-  ["Federal debt", "Daily · Treasury", ["DEBT_TOTAL_PUBLIC"], "day"],
-  ["Card delinquency", "Quarterly, lagged", ["DRCCLACBS"], "quarter"],
-  ["Geopolitical risk index", "Monthly", ["GPR_INDEX"], "month"],
-  ["Budget figures (Monthly Treasury Statement)", "Monthly, ~2 weeks after month end", ["MTS_NET_INTEREST"], "month"],
+  ["Treasury yields, TIPS, term premium", "Daily · FRED, Treasury fills the yields' lag", ["DGS10", "THREEFYTP10"], "day", 7],
+  ["Dollar index", "Weekly release of daily values · Federal Reserve", ["DTWEXBGS"], "day", 12],
+  ["Fed balance sheet · reverse repo", "Weekly · daily", ["WALCL", "RRPONTSYD"], "day", 10],
+  ["OFR stress index", "Daily · US Treasury OFR", ["OFR_FSI"], "day", 7],
+  ["Financial conditions (NFCI, stress index)", "Weekly", ["NFCI", "STLFSI4"], "day", 14],
+  ["Jobless claims", "Weekly", ["ICSA"], "day", 14],
+  ["Treasury auctions", "After each auction · Treasury", ["AUCTION_10Y_BID_TO_COVER"], "day", 40],
+  ["Avg debt rate · Fed share of Treasuries", "Monthly · Treasury", ["TREASURY_AVG_RATE_MARKETABLE", "MSPD_TOTAL_MARKETABLE"], "day", 45],
+  ["Copper", "Daily · COMEX futures close", ["COPPER_FUT"], "day", 7],
+  ["Hires, retail sales, M2", "Monthly", ["JTSHIR", "RSAFS", "M2SL"], "month", 105],
+  ["Bank lending standards", "Quarterly Fed survey", ["DRTSCILM"], "quarter", 150],
+  ["Foreign Treasury holdings (TIC)", "Monthly, ~2½ months behind", ["TIC_FOREIGN_HOLDINGS_TOTAL"], "day", 90],
+  ["GDP · M2 / GDP", "Quarterly", ["GDP"], "quarter", 220],
+  ["Federal debt", "Daily · Treasury", ["DEBT_TOTAL_PUBLIC"], "day", 7],
+  ["Card delinquency", "Quarterly, lagged", ["DRCCLACBS"], "quarter", 270],
+  ["Geopolitical risk index", "Monthly", ["GPR_INDEX"], "month", 70],
+  ["Budget figures (Monthly Treasury Statement)", "Monthly, ~2 weeks after month end", ["MTS_NET_INTEREST"], "month", 50],
 ];
 let macroFreshLoaded = false;
 async function loadMacroFreshness() {
@@ -2784,12 +2790,24 @@ async function loadMacroFreshness() {
       return [id, rows[0]?.observation_date ?? null];
     })));
     const fmt = (d, kind) => (!d ? "—" : kind === "month" ? fmtMonth(d) : kind === "quarter" ? fmtQuarter(d) : kind === "fy" ? `FY${d.slice(0, 4)}` : fmtMd(d));
-    body.innerHTML = MACRO_FRESH.map(([a, b, ids2, kind]) => `<tr><td>${a}</td><td>${b}</td><td>${[...new Set(ids2.map((id) => fmt(latest[id], kind)))].join(" · ")}</td></tr>`).join("");
+    const today = Date.parse(`${easternDay(Date.now())}T00:00:00Z`);
+    const isLate = (d, maxDays) => !!d && (today - Date.parse(`${d}T00:00:00Z`)) / 86400000 > maxDays;
+    let anyLate = false;
+    body.innerHTML = MACRO_FRESH.map(([a, b, ids2, kind, maxDays]) => {
+      const dates = ids2.map((id) => latest[id]);
+      const late = dates.some((d) => isLate(d, maxDays));
+      anyLate ||= late;
+      return `<tr><td>${a}</td><td>${b}</td><td>${[...new Set(dates.map((d) => fmt(d, kind)))].join(" · ")}${late ? ' <b class="late">late</b>' : ""}</td></tr>`;
+    }).join("");
+    MACRO.freshLate = anyLate;
+    const btn = document.getElementById("macro-fresh-btn");
+    if (btn) btn.innerHTML = macroFreshBtnLabel();
   } catch (err) {
     body.innerHTML = `<tr><td colspan="3">Couldn't load dates: ${escHtml(err.message)}</td></tr>`;
     macroFreshLoaded = false;
   }
 }
+const macroFreshBtnLabel = () => `Data freshness${MACRO.freshLate ? ' <b class="late">· late</b>' : ""} ⓘ`;
 
 function renderMacroVerdict() {
   const el = document.getElementById("macro-verdict");
@@ -2806,14 +2824,17 @@ function renderMacroVerdict() {
     <div class="headline"><div class="big">${MACRO.cards ? `${hits}<em>/${withData.length}</em>` : "—"} fiscal checks</div>
       <div class="sub">point toward stress · <b style="color:var(--accent)">read each on its own</b>, never as a score ${ib("i-fd", "the fiscal checklist")}</div></div>
     <div class="facts">${facts}</div>
-    <div class="stamp"><b>Structural · reassess quarterly</b><br><button class="info txt" popovertarget="i-fresh-macro">Data freshness ⓘ</button></div>`;
-  // Keep one popover element across re-renders so a lazily loaded table isn't thrown away.
+    <div class="stamp"><b>Structural · reassess quarterly</b><br><button class="info txt" id="macro-fresh-btn" popovertarget="i-fresh-macro">${macroFreshBtnLabel()}</button></div>`;
+  // Keep one popover element across re-renders so a loaded table isn't thrown away.
   if (keep) el.appendChild(keep);
   else {
     el.insertAdjacentHTML("beforeend", popHtml("i-fresh-macro", "Data freshness", `<p>This tab mixes daily market prices with quarterly and annual government data, so readings come from different dates.</p>
-      <table class="fresh"><thead><tr><th>Data</th><th>Updates</th><th>Latest</th></tr></thead><tbody id="macro-fresh-body"><tr><td colspan="3">Loading…</td></tr></tbody></table>`, true));
+      <table class="fresh"><thead><tr><th>Data</th><th>Updates</th><th>Latest</th></tr></thead><tbody id="macro-fresh-body"><tr><td colspan="3">Loading…</td></tr></tbody></table>
+      <p class="fine"><b>Late</b> = older than that source's normal publishing lag plus a full update cycle, so the source or our fetch has likely stalled.</p>`, true));
     document.getElementById("i-fresh-macro").addEventListener("toggle", (e) => { if (e.newState === "open") loadMacroFreshness(); });
   }
+  // Loaded with the tab (not only on open) so the button can show "· late".
+  loadMacroFreshness();
 }
 
 // Contextual indicators: short label, sub-label and plain-language copy per CONTEXT_INFO key.
