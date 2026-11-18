@@ -307,6 +307,9 @@
     --sunk:#f1f0ec; --hair:rgba(11,11,11,.09); --hair-strong:rgba(11,11,11,.16);
     --text-muted:#6f6d67; --good:#0a8a0a; --warning:#a86e08; --warning-bg:#fbf1dc; --critical:#c73434;
     --accent:#2a78d6; --accent-bg:#e7f0fc;
+    /* drawdown risk band: one violet hue, stronger per band. Deliberately not
+       green/amber/red, so the band can't be read as a gate status. */
+    --band-hue:#6d4fc2;
     /* direction (price/flow up vs down) -- softer than the gate's status colours */
     --up:#1f7a3d; --dn:#b8403f; --up-rgb:31,140,70; --dn-rgb:200,64,63;
     /* positioning percentile zones */
@@ -321,7 +324,7 @@
   @media (prefers-color-scheme: dark) { :root {
     --surface-1:#161615; --sunk:#121211; --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.15);
     --text-primary:#f4f4f1; --text-muted:#9a988f; --good:#2fb52f; --warning-bg:#251c08;
-    --accent:#5a9cec; --accent-bg:#132537;
+    --accent:#5a9cec; --accent-bg:#132537; --band-hue:#a58cf0;
     --up:#5cc27a; --dn:#ee8582; --up-rgb:76,190,110; --dn-rgb:236,110,106;
     --z-typ:rgba(255,255,255,.26); --z-lean:rgba(255,255,255,.10); --z-x:#fab219;
   } }
@@ -529,6 +532,15 @@
   .scale div b { display:block; font:600 12px/1.2 var(--font-ui); color:var(--text-secondary); }
   .scale div.on { background:var(--surface-1); box-shadow: inset 0 2px 0 var(--text-primary), inset 0 0 0 1px var(--hair-strong); }
   .scale div.on b { color:var(--text-primary); }
+  /* band colour: --bc per band (LOW faint, TRANSITIONING medium, HIGH full) */
+  .bc-LOW { --bc:color-mix(in srgb, var(--band-hue) 45%, var(--text-muted)); --bt:8%; --be:2px; }
+  .bc-TRANSITIONING { --bc:color-mix(in srgb, var(--band-hue) 75%, var(--text-muted)); --bt:12%; --be:2px; }
+  .bc-HIGH { --bc:var(--band-hue); --bt:22%; --be:3px; }
+  .scale div.on[class*="bc-"], .pop .bands span.on[class*="bc-"] { background:color-mix(in srgb, var(--bc) var(--bt), var(--surface-1));
+    box-shadow: inset 0 var(--be) 0 var(--bc), inset 0 0 0 1px color-mix(in srgb, var(--bc) 45%, transparent); }
+  .scale div.on[class*="bc-"] b, .pop .bands span.on[class*="bc-"] b, .hz-read b.bandword { color:var(--bc); }
+  .sh .ai-mark { display:inline-flex; align-self:center; color:var(--text-muted); cursor:help; }
+  .sh .ai-mark svg { width:15px; height:15px; display:block; }
 
   /* ---------- distance to red (E7): zone rails ---------- */
   .dtr-lead { font:var(--t2); color:var(--text-secondary); margin:-2px 0 14px; }
@@ -3501,6 +3513,9 @@ function renderDistanceToRed(row) {
   return `<section class="rsec" id="section-distance">${head}${lead ? `<p class="dtr-lead">${lead}</p>` : ""}<div class="dtr">${cells}${fedCell}</div>${pop}</section>`;
 }
 
+// Small robot mark beside headings whose content an AI (Claude) wrote.
+const AI_MARK = `<span class="ai-mark" title="Written by AI (Claude)" role="img" aria-label="AI-generated"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.6v2"/><circle cx="8" cy="1.4" r=".6" fill="currentColor" stroke="none"/><rect x="2.6" y="3.8" width="10.8" height="8.6" rx="2.4"/><circle cx="6" cy="7.7" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="7.7" r="1" fill="currentColor" stroke="none"/><path d="M6.3 10.3h3.4"/><path d="M1.2 7v2.4M14.8 7v2.4"/></svg></span>`;
+
 function renderRiskBandSection(row) {
   const { status, band } = ddVixReading(row);
   const name = band ? DD_VIX_BAND_LABELS[band] : null;
@@ -3511,8 +3526,8 @@ function renderRiskBandSection(row) {
     body = '<p class="hz-read">Unavailable this run (drawdown or VIX was missing). Not a reading of zero.</p>';
   } else {
     body = `<div class="hazard">
-      <div class="hz-read">Band is <b>${name}</b>. Since 1994, <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days saw the S&amp;P close 10% or more below its all-time high within the next month. On a typical day: <b>12%</b>. Context only, not in the stress gate.</div>
-      <div class="scale">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<div class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]}${b === "LOW" ? " hit rate" : ""}</div>`).join("")}</div>
+      <div class="hz-read bc-${band}">Band is <b class="bandword">${name}</b>. Since 1994, <b>${DD_VIX_HIT_RATE[band]}</b> of ${name} days saw the S&amp;P close 10% or more below its all-time high within the next month. On a typical day: <b>12%</b>. Context only, not in the stress gate.</div>
+      <div class="scale">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<div class="${b === band ? `on bc-${b}` : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]}${b === "LOW" ? " hit rate" : ""}</div>`).join("")}</div>
     </div>`;
   }
   const today = name
@@ -3522,7 +3537,7 @@ function renderRiskBandSection(row) {
     <p><b>The question it answers.</b> Could the S&amp;P 500 fall 10% or more below its all-time high within the next month (21 trading days)?</p>
     ${today}
     <p><b>What the three bands mean.</b> Each band is labelled with how often past days in it were followed by a 10% drop within a month (1994–2026):</p>
-    <div class="bands">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<span class="${b === band ? "on" : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]} of the time</span>`).join("")}</div>
+    <div class="bands">${["LOW", "TRANSITIONING", "HIGH"].map((b) => `<span class="${b === band ? `on bc-${b}` : ""}"><b>${DD_VIX_BAND_LABELS[b]}</b>~${DD_VIX_HIT_RATE[b]} of the time</span>`).join("")}</div>
     <p><b>How it's calculated.</b> Two numbers, added together: how far the S&amp;P is below its high (in %), plus the VIX divided by 5. Under 8.5 is Low, 8.5 to 10 is Elevated, 10 or more is High. For example, the S&amp;P 5% off its high with the VIX at 25 scores exactly 10: High. It only runs while the S&amp;P is less than 10% off its high.</p>
     <p><b>How to use it.</b> As context, not a trigger: it doesn't count toward the 3-of-6 stress gate. It mostly picks up a market that is already sliding or nervous. High came before 20 of the 21 such drops since 1994, typically about three weeks ahead, but only 1–3 days ahead of sudden ones (2015, early 2018, 2020). More than half of High days were not followed by a 10% drop, and the band says nothing about how deep a fall would go.</p>
     <p><b>The AI view builds on it.</b> Each full report starts from how days in this band have played out over the next 3 months, and the AI can move that one step if it sees something drawdown and VIX don't.</p>`, true);
@@ -3562,7 +3577,7 @@ function renderProbabilitySection(row) {
   const reasons = Array.isArray(row.scenario_tilt_reasons) && row.scenario_tilt_reasons.length
     ? `<ul class="tilt-reasons">${row.scenario_tilt_reasons.map((r) => `<li>${escHtml(r)}</li>`).join("")}</ul>` : "";
   return `<section class="rsec" id="section-probability">
-    <div class="sh"><span class="lbl">Next 3 months · AI view</span><span class="note">Could the S&amp;P fall another 10% from today's level?</span>${ib("i-llm", "the AI view")}</div>
+    <div class="sh"><span class="lbl">Next 3 months · AI view</span>${AI_MARK}<span class="note">Could the S&amp;P fall another 10% from today's level?</span>${ib("i-llm", "the AI view")}</div>
     <div class="hz-read">Since 1990, <b>${hist}%</b> of ${escHtml(stateName)} days were followed by the S&amp;P falling 10% or more from that day's close within the next 3 months. ${verdict}</div>
     ${reasons}
   </section>`;
@@ -3631,7 +3646,7 @@ function renderRail(row) {
     ? `<div class="nar${row.notes.length > 700 ? " long" : ""}" id="nar-text">${toParagraphs(stripRunLabel(row.notes)).map((para) => `<p>${escHtml(para)}</p>`).join("")}</div>${row.notes.length > 700 ? '<button class="nar-more" type="button" id="nar-more">Read the full narrative</button>' : ""}`
     : '<p class="nar auto">None for this entry: an automated indicator refresh, not a chat-triggered report.</p>';
   return `${triggerHtml}${renderDivergenceRail(row)}
-    <section class="rsec" id="section-notes"><div class="sh"><span class="lbl">Narrative</span></div>${notes}</section>`;
+    <section class="rsec" id="section-notes"><div class="sh"><span class="lbl">Narrative</span>${row.notes ? AI_MARK : ""}</div>${notes}</section>`;
 }
 
 const DIVERGENCE_SHORT = {
@@ -3687,9 +3702,10 @@ function renderStressVerdict(row, priorFullReport) {
   // Report); this page shows only the public stress gate.
   const waveTxt = row.wave_authorized ? '<b class="bad">Stress gate met</b>' : '<b class="ok">Stress gate not met</b>';
   const { status: bandStatus, band } = ddVixReading(row);
-  // Dot: green for Low, amber for Elevated/High -- never red, so a High band can't be mistaken for a gating RED.
+  // Dot: the band's violet (same as the Drawdown risk band section) -- never the
+  // gate's green/amber/red, so a High band can't be mistaken for a gate status.
   const hazard = bandStatus === "ALREADY_BREACHED" ? "Not scored <small>past 10%</small>"
-    : band ? `<span class="dot" style="background:var(--${band === "LOW" ? "good" : "warning"})"></span>${DD_VIX_BAND_LABELS[band] ?? band} <small>${DD_VIX_HIT_RATE[band] ?? ""} of past cases</small>` : "Unavailable";
+    : band ? `<span class="dot bc-${band}" style="background:var(--bc)"></span>${DD_VIX_BAND_LABELS[band] ?? band} <small>${DD_VIX_HIT_RATE[band] ?? ""} of past cases</small>` : "Unavailable";
   const regime = row.warsh_classification
     ? `${escHtml(row.warsh_classification.charAt(0) + row.warsh_classification.slice(1).toLowerCase())} <small>${row.warsh_hard_rules_active ? "hard rules on" : "hard rules off"}</small>` : "—";
   const fresh = stressFreshnessPop(row);
