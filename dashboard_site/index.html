@@ -901,7 +901,7 @@
 <div class="wrap">
   <header class="topbar">
     <div class="topleft">
-      <h1 class="brand">Stress Monitor <i>· macro/market</i></h1>
+      <h1 class="brand">Stress Monitor <i id="brand-tab">· Crash Risk</i></h1>
       <a class="howlink" href="/how-it-works">How it works</a>
     </div>
     <nav class="tab-bar" id="tab-bar" aria-label="Sections">
@@ -4337,6 +4337,14 @@ const TAB_TITLES = {
   macro: "Macro & Fiscal: fiscal dominance, yield curve, financial stress · Market Stress Monitor",
   analysts: "Notable Views: macro investors' views vs live data · Market Stress Monitor",
 };
+// The header's grey subtitle (#brand-tab) names the tab you're on; _worker.js
+// copies these (TAB_PAGES[...].brand) so the served HTML matches.
+const TAB_BRANDS = {
+  stressmonitor: "· Crash Risk",
+  smartmoney: "· Smart Money",
+  macro: "· Macro & Fiscal",
+  analysts: "· Notable Views",
+};
 const tabFromPath = (path) => Object.keys(TAB_PATHS).find((id) => TAB_PATHS[id] === path.replace(/\/+$/, "") || (id === "stressmonitor" && path === "/"));
 
 // url: "push" adds a history entry (a click), "replace" rewrites the current
@@ -4348,6 +4356,7 @@ function activateTab(tabId, url = "push") {
     try { history[url === "replace" ? "replaceState" : "pushState"](null, "", next); } catch (err) { /* file:// preview */ }
   }
   document.title = TAB_TITLES[tabId];
+  document.getElementById("brand-tab").textContent = TAB_BRANDS[tabId];
   for (const id of TAB_IDS) {
     document.getElementById(`tab-${id}`).hidden = id !== tabId;
   }

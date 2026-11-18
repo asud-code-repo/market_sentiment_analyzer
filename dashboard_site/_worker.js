@@ -54,20 +54,23 @@ const DISCLAIMER = "For information only, not investment advice. A personal proj
 // Tab pages (2026-11-17): the same index.html served at its own URL per tab,
 // with its own title/description/canonical and that tab's panel unhidden, so
 // each tab can be linked and indexed. TAB_PATHS / TAB_TITLES in index.html
-// mirror this; change them together. "/" keeps the static page's own tags.
+// (and TAB_BRANDS, the header subtitle) mirror this; change them together. "/" keeps the static page's own tags.
 const TAB_PAGES = {
   "/smart-money": {
     tab: "smartmoney",
+    brand: "· Smart Money",
     title: "Smart Money: market positioning and 13F flows · Market Stress Monitor",
     description: "Where the money is leaning: CFTC futures positioning, CBOE put/call and FINRA margin debt as historical percentiles, sector ETF capital rotation, and institutional 13F net buying by sector. Built from public data; not investment advice.",
   },
   "/macro": {
     tab: "macro",
+    brand: "· Macro &amp; Fiscal",
     title: "Macro & Fiscal: fiscal dominance, yield curve, financial stress · Market Stress Monitor",
     description: "The slower US macro backdrop: a real-data fiscal dominance checklist, the Treasury yield curve with term premium, and financial-stress and funding indicators (OFR FSI, St. Louis Fed FSI, NFCI, SOFR, net liquidity). Built from public data; not investment advice.",
   },
   "/views": {
     tab: "analysts",
+    brand: "· Notable Views",
     title: "Notable Views: macro investors' views vs live data · Market Stress Monitor",
     // Names are filled in from analyst_views.json (viewsDescription) when it loads.
     description: "Public views of well-known macro investors and economists on debt, rates, the Fed, inflation, recession and markets, each linked and dated and checked against live data.",
@@ -123,6 +126,7 @@ export default {
       const canonical = `${SITE}${url.pathname}`;
       rw = rw
         .on("title", { element(el) { el.setInnerContent(page.title); } })
+        .on("#brand-tab", { element(el) { el.setInnerContent(page.brand, { html: true }); } })
         .on('meta[name="description"]', { element(el) { el.setAttribute("content", description); } })
         .on('link[rel="canonical"]', { element(el) { el.setAttribute("href", canonical); } })
         .on('meta[property="og:url"]', { element(el) { el.setAttribute("content", canonical); } })
