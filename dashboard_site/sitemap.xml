@@ -5,10 +5,6 @@
     <changefreq>daily</changefreq>
   </url>
   <url>
-    <loc>https://marketstress.org/latest.md</loc>
-    <changefreq>daily</changefreq>
-  </url>
-  <url>
     <loc>https://marketstress.org/smart-money</loc>
     <changefreq>daily</changefreq>
   </url>
