@@ -95,6 +95,38 @@ interface InsiderSignal {
   latest_transaction_date: string | null;
 }
 
+// Written by write_full_report from the local registry and policy
+// (mcp_server/src/lib/fireDrillSnapshot.ts): percentages only, never
+// dollars. { error } when it couldn't run; absent before 2026-11-17.
+type DrillGrade = "GREEN" | "AMBER" | "RED";
+interface DrillScenario {
+  crash_type: string | null;
+  pct_executable_via_primary: number;
+  pct_executable_via_backup_only: number;
+  pct_blocked: number;
+  blocked_slots: string[];
+  rerouted_by_trading_limit: string[];
+}
+interface DrillLine {
+  source: string;
+  fund: string;
+  slot: string;
+  pct_of_dry_powder: number;
+  grade: DrillGrade;
+  would_buy: { name: string; id: string | null; route: string; via: "primary" | "backup" } | null;
+  reasons: string[];
+}
+interface FireDrillSnapshot {
+  through_wave: string;
+  computed_at: string;
+  scenarios: DrillScenario[];
+  attention_lines: DrillLine[];
+  green_line_count: number;
+  registry_review: { status: string; next_review_due: string | null };
+  unreviewed_filing_events: number;
+}
+type FireDrillField = FireDrillSnapshot | { error: string } | null | undefined;
+
 interface FullReportRow {
   run_at: string;
   watchlist: WatchlistEntry[];
@@ -103,6 +135,7 @@ interface FullReportRow {
   wave_status?: WaveStatus | null;
   personal_triggers?: PersonalTrigger[] | null;
   insider_activity?: InsiderSignal[] | null;
+  fire_drill?: FireDrillField;
 }
 
 interface DriftEntry {
@@ -134,6 +167,14 @@ interface PortfolioReviewTicker {
   reasoning: string;
 }
 
+// The review's "Waiting for your decision" list (2026-11-17); null before.
+interface ReviewDecision {
+  title: string;
+  detail: string;
+  kind: string;
+  ticker?: string | null;
+}
+
 interface PortfolioReviewRow {
   run_at: string;
   verdict: string | null;
@@ -141,6 +182,7 @@ interface PortfolioReviewRow {
   macro_cross_reference: string | null;
   drift: PortfolioDrift | null;
   tickers: PortfolioReviewTicker[];
+  decisions?: ReviewDecision[] | null;
 }
 
 async function supabaseGet<T>(env: Env, path: string): Promise<T> {
@@ -172,7 +214,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
         env,
         "crash_checks?select=run_at,crash_probability_pct,scenario_method,scenario_tilt&crash_probability_pct=not.is.null&order=run_at.desc&limit=1",
       ),
-      supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=run_at,verdict,summary,macro_cross_reference,drift,tickers&order=run_at.desc&limit=1"),
+      supabaseGet<PortfolioReviewRow[]>(env, "portfolio_review_snapshots?select=*&order=run_at.desc&limit=1"),
     ]);
   } catch (err) {
     return new Response(renderShell("Private Portfolio Report unavailable", `<p>${escapeHtml(String(err))}</p>`), {
@@ -409,7 +451,85 @@ function renderTopbar(activeTab: string, runAt: string | null, withTabs: boolean
   </header>`;
 }
 
+// ---- deployment readiness (fire drill) ----
+const CRASH_TYPE_LABELS: Record<string, string> = {
+  A_STAGFLATION: "Type A · stagflation",
+  B_RECESSION: "Type B · recession",
+  C_CREDIT: "Type C · credit",
+  D_AI_BUBBLE: "Type D · AI bubble",
+  E_HYBRID: "Type E · hybrid",
+};
+const drillSourceLabel = (s: string) => (/^WAVE_\d$/.test(s) ? waveName(s) : CRASH_TYPE_LABELS[s] ?? s);
+const SLOT_WORDS: Record<string, string> = { etf: "ETF", tips: "TIPS", ai: "AI", lng: "LNG" };
+const slotLabel = (slot: string) => {
+  const t = slot.split("_").map((w) => SLOT_WORDS[w] ?? w).join(" ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const isDrill = (d: FireDrillField): d is FireDrillSnapshot => !!d && "scenarios" in d;
+
+function drillLineRow(l: DrillLine): string {
+  const tone: Tone = l.grade === "RED" ? "critical" : "warning";
+  const status = l.grade === "RED" ? "Blocked" : l.would_buy?.via === "backup" ? "Backup" : "Limited";
+  const buys = l.would_buy
+    ? `${escapeHtml(l.would_buy.name)}${l.would_buy.id ? ` <span class="sub">${escapeHtml(l.would_buy.id)}</span>` : ""}${l.would_buy.via === "backup" ? ` <span class="sub">· backup</span>` : ""}`
+    : `<span class="sub">Nothing buyable today</span>`;
+  return `<div class="row"${toneAttr(tone)}>
+    <div class="name"><b>${escapeHtml(slotLabel(l.slot))}</b><small>${escapeHtml(drillSourceLabel(l.source))} · ${l.pct_of_dry_powder}% of dry powder</small></div>
+    <div class="body"><div class="verd">${buys}</div>${l.reasons.length ? `<div class="why">${escapeHtml(l.reasons.join(" · "))}</div>` : ""}</div>
+    <div class="r">${pill(status, tone)}</div>
+  </div>`;
+}
+
+/** Header fact, section and freshness row for the fire drill stored on the report. */
+function renderFireDrill(report: FullReportRow): { fact: string; section: string; freshLatest: string } {
+  const fd = report.fire_drill;
+  if (!fd) return { fact: "", section: "", freshLatest: "—" };
+  if (!isDrill(fd)) {
+    return {
+      fact: `<div class="fact"><span class="lbl">Fire drill · W3</span><span class="v">Unavailable</span></div>`,
+      section: `<section class="rsec"><div class="sh"><span class="lbl">Deployment readiness</span></div><p class="nar auto">${escapeHtml(fd.error)}</p></section>`,
+      freshLatest: "error",
+    };
+  }
+  const [base, ...layers] = fd.scenarios;
+  const worst = layers.reduce<DrillScenario | null>((w, s) => (!w || s.pct_blocked > w.pct_blocked ? s : w), null);
+  const fact = base
+    ? `<div class="fact" title="If Waves 1–3 fired today, the share of their money that couldn't be bought through either the main or the backup route."><span class="lbl">Fire drill · W3</span><span class="v"${base.pct_blocked > 0 ? ' style="color:var(--warning)"' : ""}>${base.pct_blocked}% blocked${worst ? ` <small>worst ${escapeHtml(CRASH_TYPE_LABELS[worst.crash_type ?? ""]?.split(" · ")[0] ?? "")} ${worst.pct_blocked}%</small>` : ""}</span></div>`
+    : "";
+
+  const bar = (s: DrillScenario) => `<div class="sbar" role="img" aria-label="${s.pct_executable_via_primary}% via main route, ${s.pct_executable_via_backup_only}% via backup only, ${s.pct_blocked}% blocked">
+      <span class="p" style="width:${s.pct_executable_via_primary}%"></span><span class="b" style="width:${s.pct_executable_via_backup_only}%"></span><span class="x" style="width:${s.pct_blocked}%"></span></div>`;
+  const scenarioRows = fd.scenarios
+    .map((s) => `<div class="row"${toneAttr(s.pct_blocked > 0 ? "warning" : "good")}>
+      <div class="name"><b>${s.crash_type ? `+ ${escapeHtml(CRASH_TYPE_LABELS[s.crash_type] ?? s.crash_type)}` : "Waves 1–3"}</b>${s.blocked_slots.length ? `<small>Blocked: ${escapeHtml(s.blocked_slots.map(slotLabel).join(", "))}</small>` : ""}</div>
+      <div class="barc">${bar(s)}</div>
+      <div class="num">${s.pct_executable_via_primary}<small>% · ${s.pct_executable_via_backup_only}% · </small>${s.pct_blocked}<small>%</small></div>
+    </div>`)
+    .join("");
+
+  const waveLines = fd.attention_lines.filter((l) => /^WAVE_/.test(l.source));
+  const layerLines = fd.attention_lines.filter((l) => !/^WAVE_/.test(l.source));
+  const lines = `${waveLines.length ? `<div class="grp">Waves 1–3<small>${waveLines.length} need attention</small></div><div class="ledger fd">${waveLines.map(drillLineRow).join("")}</div>` : ""}
+    ${layerLines.length ? `<details class="more"><summary>Crash-type layers · ${layerLines.length} more line${layerLines.length === 1 ? "" : "s"}</summary><div class="ledger fd">${layerLines.map(drillLineRow).join("")}</div></details>` : ""}`;
+
+  const review = fd.registry_review;
+  const footBits = [
+    `${fd.green_line_count} line${fd.green_line_count === 1 ? "" : "s"} ready on the main route`,
+    `instrument review ${escapeHtml(review.status.toLowerCase().replace("_", " "))}${review.next_review_due ? `, next due ${escapeHtml(formatShortDate(review.next_review_due))}` : ""}`,
+    fd.unreviewed_filing_events ? `${fd.unreviewed_filing_events} unreviewed fund filing${fd.unreviewed_filing_events === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+
+  const section = `<section class="rsec">
+    <div class="sh"><span class="lbl">Deployment readiness</span><span class="note">Fire drill: Waves 1–3 as if they fired today · bar = main route · backup only · blocked</span></div>
+    <div class="ledger sc">${scenarioRows}</div>
+    ${lines}
+    <p class="nar auto" style="margin-top:10px">${footBits.join(" · ")}. A simulation: nothing is recorded or traded.</p>
+  </section>`;
+  return { fact, section, freshLatest: escapeHtml(formatRunAt(fd.computed_at)) };
+}
+
 function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | undefined, llmView: LlmViewRow | undefined, now: Date): string {
+  const drill = renderFireDrill(report);
   const ws = report.wave_status;
   const confirmed = crashCheck?.confirmed_red_count ?? null;
 
@@ -479,6 +599,12 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
         latest: escapeHtml(formatShortDate(report.run_at)),
         late: false,
       },
+      {
+        label: "Deployment readiness",
+        cadence: "Fire drill, computed with each report",
+        latest: drill.freshLatest,
+        late: false,
+      },
     ],
     "<b>Late</b> = older than the job's schedule allows, so a job has likely failed or stalled: the report after the last weekday 6:30pm run plus 2½ hours, the data refresh after its last run plus 1½ hours, watchlist prices more than 4 days before the report.",
   );
@@ -489,6 +615,7 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
       ${crashCheck ? `<div class="fact"><span class="lbl">Fed regime</span><span class="v">${escapeHtml(titleCase(crashCheck.warsh_classification ?? "Pending"))}</span></div>` : ""}
       ${llmView?.scenario_method === "tilt_v1" ? `<div class="fact"><span class="lbl">LLM view · 3 mo</span><span class="v">${escapeHtml(({ lower: "Lower", in_line: "In line", higher: "Higher" } as Record<string, string>)[llmView.scenario_tilt ?? ""] ?? "—")} <small>${llmView.crash_probability_pct}% chance of a 10%+ fall</small></span></div>` : ""}
       ${riskBandFact(crashCheck)}
+      ${drill.fact}
       <div class="fact"><span class="lbl">Crash type</span><span class="v">${report.crash_type_diagnosis ? "Diagnosed <small>see right</small>" : "None <small>this run</small>"}</span></div>
       <div class="fact"><span class="lbl">Watchlist</span><span class="v">${buyZone} in buy zone <small>of ${report.watchlist.length}</small></span></div>
     </div>
@@ -581,10 +708,18 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
 
   return `${verdict}
     <div class="cols">
-      <div class="col-main">${pathways}${watchlist}${insider}</div>
+      <div class="col-main">${pathways}${drill.section}${watchlist}${insider}</div>
       <aside class="col-rail">${diagnosis}${triggers}${context}</aside>
     </div>`;
 }
+
+const DECISION_KIND_LABELS: Record<string, string> = {
+  watchlist_target: "Watchlist target",
+  instrument_registry: "Instrument registry",
+  fund_filing: "Fund filing",
+  rebalance: "Rebalance",
+  other: "Other",
+};
 
 function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: FullReportRow, watchlistBySymbol: Map<string, WatchlistEntry>, now: Date): string {
   if (!review) {
@@ -619,6 +754,15 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: Full
     ],
     "<b>Late</b> = no review for more than 8 days, so a weekly run was missed.",
   );
+  // "Waiting for your decision": proposals that need the user's approval.
+  const decisions = review.decisions ?? [];
+  const decisionList = decisions.length
+    ? `<section class="rsec"><div class="sh"><span class="lbl">Waiting for your decision</span><span class="note">${decisions.length} from this review · nothing is changed until you approve it</span></div>
+        <div class="ledger dc">${decisions.map((d) => `<div class="row" data-status="warning">
+          <div class="name"><b>${escapeHtml(d.title)}</b><small>${escapeHtml(DECISION_KIND_LABELS[d.kind] ?? d.kind)}${d.ticker ? ` · ${escapeHtml(d.ticker)}` : ""}</small></div>
+          <div class="why">${escapeHtml(d.detail)}</div>
+        </div>`).join("")}</div></section>`
+    : "";
   // The verdict is often several sentences. Lead with the first one as the
   // headline and show the rest as a smaller line underneath.
   const [headline, ...rest] = splitSentences((review.verdict ?? "").trim() || "Review");
@@ -626,7 +770,7 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: Full
   const verdict = `<div class="verdict">
     <div class="headline stack"><span class="big${headline.length > 18 ? " long" : ""}">${escapeHtml(headline)}</span>
       ${lede ? `<span class="lede">${escapeHtml(lede)}</span>` : ""}
-      <span class="sub">${drifted ? `<b class="warn">${drifted} fund${drifted === 1 ? "" : "s"} drifted</b>` : `<b class="ok">On target</b>`} · ${proposed} proposed change${proposed === 1 ? "" : "s"}</span></div>
+      <span class="sub">${decisions.length ? `<b class="warn">${decisions.length} decision${decisions.length === 1 ? "" : "s"} waiting</b> · ` : ""}${drifted ? `<b class="warn">${drifted} fund${drifted === 1 ? "" : "s"} drifted</b>` : `<b class="ok">On target</b>`} · ${proposed} proposed change${proposed === 1 ? "" : "s"}</span></div>
     <div class="facts">
       <div class="fact"><span class="lbl">Accounts</span><span class="v">${accounts.length} <small>${funds} funds</small></span></div>
       <div class="fact"><span class="lbl">Drifted</span><span class="v"${drifted ? ' style="color:var(--warning)"' : ""}>${drifted} <small>of ${funds}</small></span></div>
@@ -687,7 +831,7 @@ function renderPortfolioTab(review: PortfolioReviewRow | undefined, report: Full
   // the rail on wide ones -- rendered twice, one copy hidden per layout.
   return `${verdict}
     <div class="cols">
-      <div class="col-main">${summary ? `<section class="rsec narrow-only">${summary}</section>` : ""}${drift}${thesis}</div>
+      <div class="col-main">${decisionList}${summary ? `<section class="rsec narrow-only">${summary}</section>` : ""}${drift}${thesis}</div>
       <aside class="col-rail">
         ${summary ? `<section class="rsec wide-only">${summary}</section>` : ""}
         ${crossRef ? `<section class="rsec"><div class="sh"><span class="lbl">Macro cross-reference</span></div><div class="nars">${crossRef}</div></section>` : ""}
@@ -892,6 +1036,17 @@ const PAGE_CSS = `
   .ledger.dr .row { grid-template-columns:minmax(150px,1fr) minmax(160px,1.5fr) 130px 76px; }
   .ledger.dr .row[data-status=warning], .ledger.th .row[data-status=warning] { background:var(--warning-bg); }
   .ledger.th .row { grid-template-columns:110px minmax(0,1fr) 170px; align-items:start; }
+  .ledger.sc .row { grid-template-columns:minmax(150px,1fr) minmax(160px,1.6fr) 150px; }
+  .ledger.fd .row { grid-template-columns:minmax(150px,1fr) minmax(0,1.8fr) 90px; align-items:start; }
+  .ledger.dc .row { grid-template-columns:minmax(180px,1fr) minmax(0,2fr); align-items:start; background:var(--warning-bg); }
+
+  /* fire drill scenario bar: main route · backup only · blocked */
+  .sbar { display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--sunk); }
+  .sbar .p { background:color-mix(in srgb, var(--text-primary) 45%, transparent); }
+  .sbar .b { background:var(--warning); }
+  .sbar .x { background:var(--critical); }
+  details.more { margin-top:10px; }
+  details.more summary { cursor:pointer; font:var(--t3); font-size:12px; color:var(--accent); padding:6px 0; }
 
   /* watchlist rail: price against the wave targets */
   .wrail { position:relative; height:26px; }
@@ -938,7 +1093,8 @@ const PAGE_CSS = `
     .topbar { display:flex; flex-wrap:wrap; height:auto; gap:0; padding-top:10px; }
     .brand { order:1; padding-bottom:8px; }
     .tab-bar { order:2; width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); margin:0 0 10px; }
-    .topright { order:3; margin-left:auto; padding-bottom:8px; }
+    .topright { order:3; margin-left:0; padding-bottom:8px; flex-wrap:wrap; row-gap:4px; width:100%; }
+    .topright .when { white-space:normal; flex:1 1 200px; } /* run + loaded time wraps instead of widening the page */
     .verdict { padding:16px 0 14px; gap:12px; }
     .headline { flex-direction:column; align-items:flex-start; gap:6px; }
     .headline .big { font-size:30px; } .headline .big.long { font-size:20px; }
@@ -950,6 +1106,12 @@ const PAGE_CSS = `
     .ledger.ins .row { grid-template-columns:minmax(0,1fr) auto auto auto; column-gap:12px; } .ledger.ins .row .dt { display:none; }
     .ledger .num small.ph { display:inline; }
     .ledger.dr .row { grid-template-columns:minmax(0,1fr) auto auto; row-gap:6px; } .ledger.dr .row .barc { grid-column:1 / -1; order:5; }
-    .ledger.th .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.th .row .body { grid-column:1 / -1; order:5; }
+    /* Proposal on its own line under the reasoning: as a right-hand column a
+       long proposal squeezed the ticker cell to nothing and overlapped it. */
+    .ledger.th .row { grid-template-columns:minmax(0,1fr); row-gap:6px; }
+    .ledger.sc .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.sc .row .barc { grid-column:1 / -1; order:5; }
+    .ledger.fd .row { grid-template-columns:minmax(0,1fr) auto; row-gap:6px; } .ledger.fd .row .body { grid-column:1 / -1; order:5; }
+    .ledger.dc .row { grid-template-columns:minmax(0,1fr); row-gap:4px; }
+    .ledger.th .row .r { text-align:left; }
   }
 `;
