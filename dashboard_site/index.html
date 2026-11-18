@@ -543,6 +543,7 @@
      then nudged down so the icon's middle sits on the label's cap-height middle */
   .sh .ai-mark { display:inline-flex; align-self:baseline; position:relative; top:3.5px; color:var(--text-muted); cursor:help; }
   .sh .ai-mark svg { width:15px; height:15px; display:block; }
+  .ai-from { margin:-2px 0 8px; font:var(--t3); color:var(--text-muted); }
 
   /* ---------- distance to red (E7): zone rails ---------- */
   .dtr-lead { font:var(--t2); color:var(--text-secondary); margin:-2px 0 14px; }
@@ -3605,9 +3606,24 @@ const SCENARIO_STATE_LABEL = { LOW: "Low", TRANSITIONING: "Elevated", HIGH: "Hig
 // Public wording (2026-11-17): one plain sentence in the band section's
 // style, no bars or legend; the change log is not shown publicly. Reports
 // before the tilt (no scenario_method) show nothing here.
-function renderProbabilitySection(row) {
-  const prior = row.scenario_method === "tilt_v1" ? SCENARIO_PRIOR[row.scenario_prior_state] : null;
-  if (!prior || row.scenario_bear_pct == null) return "";
+// Automated refreshes (10am / 6pm) carry no AI view or narrative, so on those
+// rows both come from the latest full report at or before them, labelled with
+// that report's time, and are dropped once it is more than a week old.
+const CARRY_MAX_AGE_DAYS = 7;
+function fromLatestReport(selected, idx, has) {
+  if (has(selected)) return selected;
+  for (let j = idx - 1; j >= 0; j--) {
+    if (!has(ALL_ROWS[j])) continue;
+    return (Date.parse(selected.run_at) - Date.parse(ALL_ROWS[j].run_at)) / 86400000 > CARRY_MAX_AGE_DAYS ? null : ALL_ROWS[j];
+  }
+  return null;
+}
+const fromReportNote = (row) => `<p class="ai-from">From the ${escHtml(fmtStampET(row.run_at))} full report.</p>`;
+const hasAiView = (r) => r?.scenario_method === "tilt_v1" && r.scenario_bear_pct != null && SCENARIO_PRIOR[r.scenario_prior_state];
+function renderProbabilitySection(selected, idx) {
+  const row = fromLatestReport(selected, idx, hasAiView);
+  if (!row) return "";
+  const prior = SCENARIO_PRIOR[row.scenario_prior_state];
   const now = row.scenario_bear_pct + row.scenario_crash_pct;
   const hist = prior.bear + prior.crash;
   const stateName = SCENARIO_STATE_LABEL[row.scenario_prior_state] ?? row.scenario_prior_state;
@@ -3616,11 +3632,12 @@ function renderProbabilitySection(row) {
     lower: `The AI puts today at <b>${now}%</b>, lower than usual, because:`,
     in_line: `The AI sees nothing that changes this, so today stays at <b>${now}%</b>.`,
   }[row.scenario_tilt] ?? `The AI puts today at <b>${now}%</b>.`;
+  const from = row !== selected ? fromReportNote(row) : "";
   const reasons = Array.isArray(row.scenario_tilt_reasons) && row.scenario_tilt_reasons.length
     ? `<ul class="tilt-reasons">${row.scenario_tilt_reasons.map((r) => `<li>${escHtml(r)}</li>`).join("")}</ul>` : "";
   return `<section class="rsec" id="section-probability">
     <div class="sh"><span class="lbl">Next 3 months · AI view</span>${AI_MARK}<span class="note">Could the S&amp;P fall another 10% from today's level?</span>${ib("i-llm", "the AI view")}</div>
-    <div class="hz-read">Since 1990, <b>${hist}%</b> of ${escHtml(stateName)} days were followed by the S&amp;P falling 10% or more from that day's close within the next 3 months. ${verdict}</div>
+    ${from}<div class="hz-read">Since 1990, <b>${hist}%</b> of ${escHtml(stateName)} days were followed by the S&amp;P falling 10% or more from that day's close within the next 3 months. ${verdict}</div>
     ${reasons}
   </section>`;
 }
@@ -3668,7 +3685,7 @@ function toParagraphs(text) {
   if (cur) { if (out.length && cur.length < 120) out[out.length - 1] += " " + cur; else out.push(cur); }
   return out;
 }
-function renderRail(row) {
+function renderRail(row, idx) {
   let triggers = [];
   try { triggers = Array.isArray(row.trigger_status) ? row.trigger_status : JSON.parse(row.trigger_status || "[]"); } catch (e) { triggers = []; }
   const parsed = [...triggers].sort(compareTriggers).map(parseTrigger);
@@ -3684,11 +3701,12 @@ function renderRail(row) {
     ? `${upcoming.length ? `<section class="rsec" id="section-triggers"><div class="sh"><span class="lbl">Catalysts</span><span class="note">upcoming</span></div><ul class="tl">${upcoming.map((p) => item(p, true)).join("")}</ul></section>` : ""}
        ${fired.length ? `<section class="rsec"${upcoming.length ? "" : ' id="section-triggers"'}><div class="sh"><span class="lbl">Recently fired</span></div><ul class="tl">${fired.slice(0, 6).map((p) => item(p, false)).join("")}</ul></section>` : ""}`
     : "";
-  const notes = row.notes
-    ? `<div class="nar${row.notes.length > 700 ? " long" : ""}" id="nar-text">${toParagraphs(stripRunLabel(row.notes)).map((para) => `<p>${escHtml(para)}</p>`).join("")}</div>${row.notes.length > 700 ? '<button class="nar-more" type="button" id="nar-more">Read the full narrative</button>' : ""}`
+  const narRow = fromLatestReport(row, idx, (r) => !!r?.notes);
+  const notes = narRow
+    ? `${narRow !== row ? fromReportNote(narRow) : ""}<div class="nar${narRow.notes.length > 700 ? " long" : ""}" id="nar-text">${toParagraphs(stripRunLabel(narRow.notes)).map((para) => `<p>${escHtml(para)}</p>`).join("")}</div>${narRow.notes.length > 700 ? '<button class="nar-more" type="button" id="nar-more">Read the full narrative</button>' : ""}`
     : '<p class="nar auto">None for this entry: an automated indicator refresh, not a chat-triggered report.</p>';
   return `${triggerHtml}${renderDivergenceRail(row)}
-    <section class="rsec" id="section-notes"><div class="sh"><span class="lbl">Narrative</span>${row.notes ? AI_MARK : ""}</div>${notes}</section>`;
+    <section class="rsec" id="section-notes"><div class="sh"><span class="lbl">Narrative</span>${narRow ? AI_MARK : ""}</div>${notes}</section>`;
 }
 
 const DIVERGENCE_SHORT = {
@@ -3886,8 +3904,8 @@ function renderReport(row, priorFullReport) {
     return;
   }
   renderStressVerdict(row, priorFullReport);
-  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderDistanceToRed(row) + renderRiskBandSection(row) + renderProbabilitySection(row);
-  rail.innerHTML = renderRail(row);
+  el.innerHTML = renderGateLedger(row, CURRENT_INDEX) + renderDistanceToRed(row) + renderRiskBandSection(row) + renderProbabilitySection(row, CURRENT_INDEX);
+  rail.innerHTML = renderRail(row, CURRENT_INDEX);
   const more = document.getElementById("nar-more");
   if (more) more.addEventListener("click", () => { document.getElementById("nar-text").classList.add("open"); more.remove(); });
 }
