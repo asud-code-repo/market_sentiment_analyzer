@@ -1185,6 +1185,86 @@ as the Fiscal Dominance Regime Checklist above.
 
 ---
 
+## Regime → Instrument Fit (reasoned, untested — Friday review only)
+
+Added 2026-11-19. **Every line below is reasoned, not tested.** It turns
+signals this system already computes into "conditions favour instrument
+type X over Y" statements for the Portfolio Opportunity Review. It is
+there to make the review's macro reasoning explicit and checkable, not to
+make decisions.
+
+**Scope and limits:**
+- **Used only in the Portfolio Opportunity Review** (step 3b). It never
+  feeds wave evaluation, `policy.yaml`, crash-type layers, the stress gate
+  or the crash check.
+- **Instrument types and broad sectors only.** No individual stocks, no
+  fund names, no percentages. Mapping a lean onto actual holdings happens
+  in chat only.
+- **No decisions from this table alone.** A lean can shape the review's
+  verdict and macro cross-reference. It is never by itself a `decisions`
+  entry: a rebalance proposal still needs drift or the allocation analysis.
+- **Being tested.** A separate regime-tilt study tests the inflation ×
+  growth regime and the bond-hedge and fiscal-pressure overlays against
+  history (results pending). When it reports, each row's "Tested?" column
+  changes to the result, and a row the results contradict is removed.
+
+### Fiscal and rates conditions
+
+Read each condition from `get_context_indicators` exactly as the tool
+returns it. Rows don't add up: if two rows point opposite ways, say so.
+
+| # | Condition (field) | Conditions favour | Why | What would make it wrong | Tested? |
+|---|---|---|---|---|---|
+| F1 | Stock-bond correlation ≥ −0.1 (`macro_regime_signals.stock_bond_correlation`) | T-bills / short Treasuries over long Treasuries **as the crash hedge**. Long bonds still earn their yield; they just can't be counted on to offset an equity fall | When inflation or fiscal news drives yields, stocks and bonds fall together (2022). The 60/40 hedge assumes the opposite | The sign alone doesn't say both are falling; it can be both rallying. In a demand-shock recession (crash Type B) bonds have usually rallied again even after a positive-correlation spell | Pending (study overlay O1) |
+| F2 | 5y5y inflation and term premium both rising (`fiscal_dominance_checklist.inflation_expectations_term_premium.both_rising`) | Shorter over longer duration; inflation-linked (TIPS) over nominal Treasuries | Investors are demanding more pay for both inflation and duration risk, so long nominal bonds reprice down | The 10bp rule is uncalibrated. The term premium is a model estimate (Kim-Wright), and a high one can mean-revert, rewarding long bonds | No (history too short to test) |
+| F3 | Bear steepening led by term premium (`rates_decomposition`) | Same as F2: shorter duration | Long yields rising for risk compensation rather than growth or policy is the fiscal-risk pattern | 3-month window; one data release can flip it | No |
+| F4 | 10y move led by breakevens (`rates_decomposition`) | TIPS and real assets (commodities) over nominal bonds | An inflation story, not a fiscal-risk or growth story | Breakevens also move with oil and liquidity | Partly (commodities via the study's core regime; TIPS too short) |
+| F5 | Bull steepening led by the 2y (`rates_decomposition`) | Intermediate duration (2–7y) over T-bills | Markets pricing Fed easing: short and intermediate yields fall the most | Easing that comes from tolerating inflation (F10 active) undermines nominal bonds anyway | No |
+| F6 | Fiscal pressure only: stage 1 points to stress, stages 2–4 don't (`fiscal_dominance_checklist.stages`) | **No lean.** Say so explicitly | Pressure that markets aren't pricing is not fiscal dominance (see the checklist's transmission stages); it can last for years | — | Pending (study overlay O2, a stage-1 stand-in) |
+| F7 | Gold ↔ real-yield correlation ≥ −0.1 (`fiscal_dominance_checklist.gold_real_yield_correlation`) | Gold as a diversifier against currency debasement, not only as a real-rate trade | Gold rising despite higher real yields is hard to explain except as a hedge against the currency or the policy regime | Central-bank buying for sanctions reasons gives the same pattern for a non-fiscal reason. Gold is also prone to momentum and crowding | No (gold can't be tested: its price was fixed before 1971) |
+| F8 | Auction demand weaker in 2+ tenors (`fiscal_dominance_checklist.treasury_auction_demand`) | Don't extend long-end duration into the weakness | Price-insensitive buyers stepping back means the market needs a higher yield to clear supply | Single auctions are noisy; check the `stale` flag first | No |
+| F9 | Fed absorption rising: stage 3 points to stress (`fiscal_dominance_checklist.stages`) | Real assets (TIPS, commodities, gold) and equities, as claims on real output, over long nominal bonds and cash | The monetary-financing pattern: debt is inflated away. In 1942–51 the Fed capped yields while inflation ran far above them | Purchases can be for market functioning (March 2020) or reserve management, not fiscal support | No |
+| F10 | Policy constraint: Taylor gap below zero on core PCE (`fiscal_dominance_checklist.taylor_rule_gap`) | TIPS and real assets over T-bills for the inflation-protection share: cash loses real value if rates stay below inflation | Financial repression: savers earn less than inflation | An ordinarily dovish Fed looks identical; the rule's constants are assumptions | No |
+
+### Inflation × growth regime
+
+The study's core regime: inflation rising or falling (CPI year over year vs
+6 months earlier) × growth rising or falling (3-month unemployment average
+vs 6 months earlier). Until the study reports, use it only to frame the
+review, citing the published direction of evidence, for example Neville et
+al. (2021), "The Best Strategies for Inflationary Times": across US
+inflation surges since 1926, nominal bonds and equities did poorly in real
+terms and commodities did well; the TIPS sample is short. Don't quote
+figures from memory.
+
+### Sector leans (weakest tier)
+
+Textbook links. The study's sector test is expected to fail (macro sector
+rotation has a weak out-of-sample record). Mention one only when a row
+above is active, and say it is the weakest tier.
+
+| Active condition | Conditions favour | Conditions weigh on | Why |
+|---|---|---|---|
+| Inflation rising (F4, F9, F10) | Energy, materials | Long-duration growth (much of tech), bond proxies (utilities, REITs) | Pricing power tied to commodities; higher discount rates hit far-off earnings hardest |
+| Curve steepening on growth, not term premium | Financials (banks) | Utilities | Banks earn the spread between short and long rates |
+| Growth falling and inflation falling | Health care, consumer staples | Cyclicals (industrials, discretionary, materials) | Demand for staples and health care holds up in slowdowns |
+
+Use the 13F sector tilt and sector flows only as **crowding warnings**
+against a lean, never as support for one: flow and positioning signals
+showed no forward edge in this system's own backtests.
+
+### How to report it
+
+- List only the rows whose conditions are active, each with the tool's
+  value and the row's "what would make it wrong", labelled "reasoned, not
+  tested". If none are active, say "no instrument-type lean this week".
+- State leans as "conditions favour X over Y", never as buy/sell or an
+  allocation.
+- Note any conflict between active rows rather than netting them.
+- Compare with the last review: which rows turned on or off.
+
+---
+
 ## Cross-Indicator Divergence Detection (informational only — never gates)
 
 Computed once daily by the rule engine (`rule_engine/src/divergence.ts`, not
