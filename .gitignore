@@ -30,3 +30,6 @@ build/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Private research review bundles (unpacked by external reviewers); never commit
+review_bundle/
