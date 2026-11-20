@@ -2645,7 +2645,24 @@ function rotationCell(d, view, w, bench, isSpy) {
 // points (the curve passes through every frame; only the in-between shape is
 // smoothed). Same return/flow math as the loader below, from ROT_HIST, at each
 // frame's end date. No autoplay for prefers-reduced-motion.
-const ROT_HIST = new Map(); // symbol -> { nav: [{date,value}], sh: [{date,value}] }, split-adjusted, ascending
+const ROT_HIST = new Map(); // symbol -> { nav, sh, cum: [{date,value}] }, split-adjusted, ascending
+// Cumulative creation/redemption dollar flow: each day's share change valued at
+// THAT day's NAV (2026-11-20; was the window's share change at the latest NAV,
+// which overstated flow into funds that rallied). Flow between two dates =
+// cum(on or before end) - cum(on or before start). Mirrors
+// mcp_server/src/lib/etfFlow.ts flowUsdBetween; change both together.
+function rotCumFlow(points) {
+  const out = [];
+  let prev = null, total = 0;
+  for (const p of points) {
+    if (Number.isFinite(p.shares) && Number.isFinite(p.nav)) {
+      if (prev != null) total += (p.shares - prev) * p.nav;
+      prev = p.shares;
+    }
+    out.push({ date: p.date, value: total });
+  }
+  return out;
+}
 const ROT_REPLAY = { stepMs: 170, trail: 4, played: false, raf: 0, observer: null, frames: new Map() };
 function rotOnOrBefore(series, date) {
   let lo = 0, hi = series.length - 1, v = null;
@@ -2669,9 +2686,9 @@ function rotationFrames(w) {
     for (const s of syms) {
       const h = ROT_HIST.get(s);
       if (!h || !h.nav.length || h.nav[0].date > P) continue;
-      const n1 = rotOnOrBefore(h.nav, E), s1 = rotOnOrBefore(h.sh, E), n0 = rotOnOrBefore(h.nav, P), s0 = rotOnOrBefore(h.sh, P);
-      if (n1 == null || s1 == null || !n0 || !s0) continue;
-      pts[s] = { ret: ((n1 - n0) / n0) * 100, fl: (((s1 - s0) * n1) / (s0 * n0)) * 100 };
+      const n1 = rotOnOrBefore(h.nav, E), n0 = rotOnOrBefore(h.nav, P), s0 = rotOnOrBefore(h.sh, P);
+      if (n1 == null || !n0 || !s0) continue;
+      pts[s] = { ret: ((n1 - n0) / n0) * 100, fl: ((rotOnOrBefore(h.cum, E) - rotOnOrBefore(h.cum, P)) / (s0 * n0)) * 100 };
     }
     frames.push({ E, pts });
   }
@@ -4623,7 +4640,7 @@ document.getElementById("pop-layer").innerHTML = [
     + "<dt>Buying the dip</dt><dd>Price down, but money still arriving (\"accumulation\").</dd><dt>Rally without buyers</dt><dd>Price up while money leaves (\"distribution\"): the move isn't backed by new money.</dd></dl>"
     + "<p style='margin-top:8px'>Filled = price and flow agree. Hollow = they disagree; worth a look, often noise. <b>Compare to market</b> swaps SPY's diamond for dashed lines at the S&amp;P 500's own return and flow.</p>"
     + "<div class='sect'>Table views</div><dl><dt>NAV return</dt><dd>% change in the fund's per-share value over the window. Price only: dividends aren't included.</dd>"
-    + "<dt>Est. flow</dt><dd>Dollars that moved into (+) or out of (−) the fund: change in shares outstanding × today's NAV. Counts this fund only, not all money in the sector.</dd>"
+    + "<dt>Est. flow</dt><dd>Dollars that moved into (+) or out of (−) the fund: each day's change in shares outstanding × that day's price, added up over the window. Counts this fund only, not all money in the sector.</dd>"
     + "<dt>vs SPY</dt><dd>Sector return minus the S&amp;P 500's over the same window. Positive = beat the market.</dd>"
     + "<dt>Flow % of assets</dt><dd>Flow divided by the fund's size at the start of the window, so sectors of different sizes compare fairly. The chart uses this.</dd></dl>"
     + "<div class='sect'>Columns</div><dl><dt>5d → 365d</dt><dd>Lookback windows. 5d shows returns only: a single week's flow direction held into the next week only about half the time.</dd>"
@@ -5335,7 +5352,8 @@ async function main() {
         const splitAdjusted = adjustForSplits(paired);
         const navSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.nav }));
         const sharesSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.shares }));
-        ROT_HIST.set(symbol, { nav: navSeries, sh: sharesSeries.filter((p) => p.value != null) });
+        const cumFlow = rotCumFlow(splitAdjusted);
+        ROT_HIST.set(symbol, { nav: navSeries, sh: sharesSeries.filter((p) => p.value != null), cum: cumFlow });
         const latestNav = navSeries[navSeries.length - 1];
         const latestShares = sharesSeries[sharesSeries.length - 1];
         const navReturn = {};
@@ -5350,7 +5368,8 @@ async function main() {
               navReturn[windowDays] = ((latestNav.value - pastNav) / pastNav) * 100;
             }
             if (pastShares != null) {
-              const windowFlow = (latestShares.value - pastShares) * latestNav.value;
+              // Each day's share change at that day's NAV (rotCumFlow).
+              const windowFlow = valueOnOrBefore(cumFlow, latestNav.date) - valueOnOrBefore(cumFlow, pastDate);
               flow[windowDays] = windowFlow;
               // Flow as % of assets at the START of the window -- same data
               // already fetched above, no new ingestion. Distinguishes a

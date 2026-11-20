@@ -1,5 +1,6 @@
 import { supabase } from "./supabase.js";
 import { institutionalTilt, type InstitutionalRead } from "./institutionalTilt.js";
+import { flowUsdBetween } from "./etfFlow.js";
 
 // Sector-rotation panel: 11 Select Sector SPDRs + SPY + GLD, sourced from
 // State Street's own free NAV-history files (ingestion/src/sources/ssga.ts)
@@ -250,10 +251,11 @@ async function computeSectorRotationRaw(): Promise<TickerRotation[]> {
           navReturn[key] = windowReturn;
         }
         if (pastShares !== null) {
-          // Approximate creation/redemption dollar flow -- share-count
-          // delta (price-independent) x latest NAV. Not reinvestment-
-          // adjusted, not a complete sector-flow picture (see module doc).
-          windowFlow = Math.round((latestShares.value - pastShares) * latestNav.value);
+          // Creation/redemption dollar flow: each day's share change at
+          // that day's NAV (etfFlow.ts; was the whole window's change at the
+          // latest NAV until 2026-11-20, which overstated flow into funds
+          // that rallied). Not a complete sector-flow picture (module doc).
+          windowFlow = Math.round(flowUsdBetween(splitAdjusted, pastDate, latestNav.date) ?? 0);
           flowEstimate[key] = windowFlow;
 
           // Flow as % of assets at the START of the window (pastShares x
