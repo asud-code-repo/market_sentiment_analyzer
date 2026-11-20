@@ -63,7 +63,8 @@ install/build steps.
 1. Threshold **values** live in config files, not code:
    - `config/monitoring.yaml` (public): panel bands, confirmation days,
      the stress gate (3 of 6), whether deployment requires it
-     (`stress_gate_required`, false since 2026-11-19) and the push-alert count. Read by both
+     (`stress_gate_required`, false since 2026-11-19). Phone alerts are
+     the local wave-trigger alert (`mcp_server/src/scripts/waveAlert.ts`). Read by both
      `rule_engine/src/rules.ts` and `mcp_server/src/lib/monitoring.ts`,
      each with its own validating loader; the file is the single source.
    - `local_state/policy.yaml` (gitignored, local-only; shape in

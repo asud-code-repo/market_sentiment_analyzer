@@ -30,7 +30,6 @@ export interface MonitoringConfig {
   stress_gate_confirmed_reds: number;
   /** Whether deployment requires the gate (read by mcp_server get_deployment_plan; validated here too). */
   stress_gate_required: boolean;
-  push_alert_confirmed_reds: number;
 }
 
 export const MONITORING_CONFIG_PATH = fileURLToPath(new URL("../../config/monitoring.yaml", import.meta.url));
@@ -52,7 +51,6 @@ export function parseMonitoringConfig(raw: unknown, source = "monitoring config"
   for (const k of Object.keys(bands)) if (!NUMERIC_INDICATORS.includes(k as NumericIndicator)) problems.push(`panel_bands.${k} is not a known indicator`);
   if (!isInt(r.confirmation_required_days, 1, 30)) problems.push("confirmation_required_days must be an integer from 1 to 30");
   if (!isInt(r.stress_gate_confirmed_reds, 1, 6)) problems.push("stress_gate_confirmed_reds must be an integer from 1 to 6");
-  if (!isInt(r.push_alert_confirmed_reds, 1, 6)) problems.push("push_alert_confirmed_reds must be an integer from 1 to 6");
   if (typeof r.stress_gate_required !== "boolean") problems.push("stress_gate_required must be true or false");
   if (problems.length) throw new Error(`${source} is invalid — ${problems.join("; ")}`);
   return {
@@ -62,7 +60,6 @@ export function parseMonitoringConfig(raw: unknown, source = "monitoring config"
     confirmation_required_days: r.confirmation_required_days as number,
     stress_gate_confirmed_reds: r.stress_gate_confirmed_reds as number,
     stress_gate_required: r.stress_gate_required as boolean,
-    push_alert_confirmed_reds: r.push_alert_confirmed_reds as number,
   };
 }
 

@@ -1,5 +1,4 @@
 import { getLatestDataPoint, getLatestCrashCheck, insertCrashCheck } from "./lib/supabase.js";
-import { notifyIfRedCountCrossedThreshold } from "./lib/notify.js";
 import { computeDivergences } from "./divergence.js";
 import { gatherHazardFeatures, computeHazardProbability, type HazardResult } from "./hazardModel.js";
 import { updateHazardScorecard } from "./hazardScorecardStore.js";
@@ -321,5 +320,6 @@ export async function classify(): Promise<void> {
     console.error("scenarioScorecard: update failed (non-gating):", err);
   }
 
-  await notifyIfRedCountCrossedThreshold(prior?.confirmed_red_count, confirmedRedCount);
+  // The "2 confirmed RED" push alert was retired 2026-11-19 (a backtest found it never warned
+  // before the 10% point); the wave-trigger alert runs locally (mcp_server/src/scripts/waveAlert.ts).
 }

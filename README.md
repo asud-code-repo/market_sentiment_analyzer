@@ -97,7 +97,7 @@ flowchart LR
     SRC["Public data<br/>FRED · Treasury · Yahoo · EIA · CBOE<br/>CFTC · FINRA · SEC EDGAR · State Street<br/>GPR index · Polymarket · Massive"]
     ING["ingestion/<br/>fetch · normalise ·<br/>plausibility guard"]
     DB[("Supabase<br/>public: market data, rule output<br/>private: report snapshots<br/>no dollar figures")]
-    RE["rule_engine/<br/>panel · stress gate ·<br/>risk band · push alert"]
+    RE["rule_engine/<br/>panel · stress gate ·<br/>risk band"]
     DASH["dashboard_site/<br/>public · marketstress.org"]
     FULL["full_report_site/<br/>private · Cloudflare Access"]
     MCP["mcp_server/<br/>21 MCP tools · runs locally"]
@@ -309,7 +309,7 @@ Found a problem with any of this? See [`SECURITY.md`](SECURITY.md).
 | Public site | Static HTML/JS on Cloudflare Pages, plus a small worker for server-rendered metadata |
 | Private site | Cloudflare Pages Function behind Cloudflare Access |
 | AI layer | Model Context Protocol server (stdio), Claude for research and narrative |
-| Alerts | ntfy.sh push notifications |
+| Alerts | ntfy.sh push notifications when a wave trigger fires (run locally) |
 | Tests | Vitest (`rule_engine`), `node:test` (`mcp_server`), `tsc --noEmit` everywhere |
 
 ## Run it yourself
@@ -351,7 +351,7 @@ Code. Requires Node 22+. Each of `ingestion/`, `rule_engine/` and
 | `MASSIVE_API_KEY` | For watchlist prices | Free tier at massive.com |
 | `SEC_EDGAR_CONTACT_EMAIL` | For SEC data | SEC requires a contact address in automated requests |
 | `POLYMARKET_SLUGS` | Optional | Polymarket markets to track |
-| `NTFY_TOPIC` | Optional | A random, unguessable ntfy.sh topic for push alerts |
+| `NTFY_TOPIC` | Optional | A random, unguessable ntfy.sh topic for the local wave-trigger alert (`mcp_server`, not GitHub Actions) |
 
 Then:
 
@@ -384,8 +384,8 @@ Then:
 
 ```
 ingestion/            data sources → Supabase, plausibility-guarded
-rule_engine/          deterministic panel, stress gate, risk band, push alert
-mcp_server/           local MCP tools (21), wave evaluation
+rule_engine/          deterministic panel, stress gate, risk band
+mcp_server/           local MCP tools (21), wave evaluation, wave-trigger alert
 dashboard_site/       public dashboard (static, Cloudflare Pages)
 full_report_site/     private Full Report page (Cloudflare Pages Function)
 config/               public monitoring thresholds

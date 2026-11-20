@@ -86,7 +86,7 @@ flowchart TB
   WT --> ING
   GHA --> RULES
   DP --> RULES --> CC
-  RULES -. threshold crossing .-> NTFY
+  MCP -. wave trigger, local .-> NTFY
 
   DP & CC & WT & FRS & PRS <--> MCP
   PORT & WATCH & WAVESTATE --> MCP
@@ -336,12 +336,14 @@ observed firing up to ~60 minutes late in this project's real run history, so na
 fixed-offset scheduling (e.g. "run analysis 30 min after ingestion") isn't reliable
 on its own.
 
-## Threshold-crossing push notifications
+## Wave-trigger push notifications
 
-A free ntfy.sh push notification fires the moment `confirmed_red_count` crosses
-*up* into 2+ (not on every day it remains there) — runs inside the same daily
-ingestion job, comparing today's row against the prior row to detect the
-transition rather than just checking the current level.
+A free ntfy.sh push notification fires when the wave level rises (none to
+Wave 1, Wave 1 to 2, 2 to 3), computed locally by
+`mcp_server/src/scripts/waveAlert.ts` after each ingest, since the wave
+triggers are personal policy. It replaced (2026-11-19) the earlier alert on
+`confirmed_red_count` crossing up into 2+, which a backtest found never
+warned before the 10% point in the four bear markets since 1990.
 
 ---
 

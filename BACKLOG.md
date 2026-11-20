@@ -28,21 +28,13 @@ full history of what was built and how lives in project memory, not here.
   everything else here, not a quick sign-off. Belongs with the hazard-model
   work below, not a standalone tweak.
 
-- **Same-day push alerts for wave-trigger crossings (alert speed, not
-  data speed).** Raised 2026-11-03 after the user asked how to react
-  faster to a sudden crash given the positioning panel's lag. A
-  2026-10-30 backtest showed faster *data* doesn't help (daily VIX-curve
-  inversion never fired before a top — see project memory), so the gap
-  worth closing is *alerting*: today `rule_engine/src/lib/notify.ts` only
-  pushes (ntfy.sh) on the transition into confirmed_red_count >= 2, which
-  builds slowly. In a fast crash (Feb 2020) the user would only learn a
-  wave trigger fired on next opening the dashboard or running a Claude
-  check. Proposal: add transition-only pushes when the S&P crosses a wave
-  drawdown threshold (personal policy) and when VIX crosses 35. The
-  post-close run this needed so the alert lands the same day now exists
-  (6pm ET `ingest.yml` run, added 2026-11-16). Uses data already ingested, no new sources. Confirm
-  exact thresholds with the user before wiring; informational alert only,
-  doesn't change the 3-of-6 wave gate.
+- **Same-day push alerts for wave-trigger crossings — shipped 2026-11-19.**
+  `mcp_server/src/scripts/waveAlert.ts`, run locally by Task Scheduler
+  after each ingest (wave triggers are personal policy, so it can't run in
+  GitHub Actions). Pushes when the wave level rises; re-arms after 10 quiet
+  observation dates. Replaced the "2 confirmed RED" alert, which a backtest
+  (research repo `experiments/a1_push_alert`) found never warned before the
+  10% point in the four bear markets since 1990.
 
 - **Cross-indicator divergence detection — still open**: rolling-
   correlation infrastructure, and a regime-dependent 10yr-vs-equities pair

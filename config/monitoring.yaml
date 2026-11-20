@@ -35,5 +35,8 @@ stress_gate_confirmed_reds: 3
 # information. See crash-check-rules.md "Wave Deployment Thresholds".
 stress_gate_required: false
 
-# Early-warning push (ntfy.sh) when the confirmed RED count rises to this.
-push_alert_confirmed_reds: 2
+# The "2 confirmed RED" push alert (push_alert_confirmed_reds) was retired on
+# 2026-11-19: replayed over 1990-2026 it fired before the 10% point in none of
+# the four bear markets, and a 10% fall followed it less often than an
+# ordinary day. Phone alerts now fire when a wave trigger fires, computed
+# locally (mcp_server/src/scripts/waveAlert.ts).
