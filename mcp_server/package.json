@@ -2,7 +2,7 @@
   "name": "crash-check-mcp-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Stage 4 — local MCP server (stdio) for Claude Desktop. Merges Supabase macro/rule state with local_state/portfolio.yaml personal data at read-time only; never writes portfolio data anywhere.",
+  "description": "Local Model Context Protocol (MCP) server for the Macro Market Stress Monitor: exposes market state, rules and deployment planning to Claude, merging personal data from local files at read time only and never writing it anywhere.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",

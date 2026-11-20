@@ -2,7 +2,7 @@
   "name": "crash-check-ingestion",
   "version": "1.0.0",
   "private": true,
-  "description": "Stage 2 — pulls macro data from FRED, EIA, CBOE, and Polymarket into Supabase data_points. No LLM involved; pure fetch + normalize + write.",
+  "description": "Daily ingestion for the Macro Market Stress Monitor: pulls FRED, Treasury, EIA, CBOE, CFTC, FINRA, SEC EDGAR and other public market data into Supabase, with a plausibility guard. No LLM, no classification.",
   "type": "module",
   "scripts": {
     "ingest": "tsx src/ingest.ts",

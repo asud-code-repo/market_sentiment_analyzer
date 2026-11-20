@@ -1,0 +1,36 @@
+name: Bug report
+description: Something on the site or in the code doesn't work.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where?
+      options:
+        - Public dashboard (marketstress.org)
+        - ingestion/
+        - rule_engine/
+        - mcp_server/
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser and device, or Node version and OS
+      placeholder: e.g. Safari on iPhone, or Node 22.11 on Windows 11
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output or screenshots
+      description: Please remove any keys, tokens or personal figures first.
+      render: text

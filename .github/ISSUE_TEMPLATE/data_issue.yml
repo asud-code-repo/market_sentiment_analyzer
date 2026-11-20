@@ -1,0 +1,47 @@
+name: A number looks wrong
+description: A value on the dashboard is stale, wrong, or doesn't match its source.
+title: "[Data] "
+labels: ["data"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Data problems (a stale series, a revised print, a unit mix-up) are the bugs that matter most here. Thanks for flagging one.
+  - type: dropdown
+    id: tab
+    attributes:
+      label: Which tab?
+      options:
+        - Stress
+        - Smart Money
+        - Macro & Fiscal
+        - Notable Views
+        - Not on the dashboard (repo or MCP output)
+    validations:
+      required: true
+  - type: input
+    id: indicator
+    attributes:
+      label: Indicator or card
+      placeholder: e.g. HY spread, Fiscal checklist > Net interest
+    validations:
+      required: true
+  - type: input
+    id: shown
+    attributes:
+      label: Value shown, and the "as of" date on the page
+      placeholder: e.g. 347bp as of Nov 19, 9:06 PM ET
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and your source
+      description: A link to the original source (FRED, Treasury, CBOE...) helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Screenshots welcome.

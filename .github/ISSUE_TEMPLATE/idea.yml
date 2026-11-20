@@ -1,0 +1,32 @@
+name: Idea for a signal or feature
+description: Suggest a new indicator, flag, chart or improvement.
+title: "[Idea] "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every signal has to earn its place: a decision it informs, and a base rate and forward edge on real history. Please check "Investigated and rejected" in `reference_docs/rules/crash-check-rules.md` first, so we don't re-test something that already failed.
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Which reading or decision would it change?
+      description: '"Interesting to track" isn''t enough on its own.'
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A paper, backtest, chart or data source showing it leads or adds information. Rough is fine.
+  - type: input
+    id: data
+    attributes:
+      label: Free data source
+      placeholder: e.g. FRED series ID, Treasury dataset, CFTC report
