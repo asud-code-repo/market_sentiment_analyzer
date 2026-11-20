@@ -212,12 +212,27 @@ dates), not a single day's snapshot.
 | 5 | Sahm Rule reading | <0.3 | 0.3–0.5 | >0.5 |
 | 6 | Fed pivot signal | None | Pause language | Cut signal |
 
-**Wave deployment is authorized when 3 or more of the 6 indicators are
+**The stress gate is met when 3 or more of the 6 indicators are
 simultaneously RED, each independently confirmed** per the Signal Tiering
 rule (true across 2+ distinct ingestion dates). A RED reading that hasn't
 cleared confirmation counts toward the "pending" tally shown in the
-dashboard, not the authorizing tally — e.g. "1 of 6 RED confirmed, 1 pending
+dashboard, not the confirmed tally — e.g. "1 of 6 RED confirmed, 1 pending
 (confirmed on 1 of 2 required days)."
+
+**Since 2026-11-19 the stress gate is information, not a requirement for
+deployment** (`stress_gate_required: false` in `config/monitoring.yaml`;
+the stored column keeps its old name, `wave_authorized`). It's still
+computed, confirmed and shown everywhere as a read on how broad the stress
+is. Why, in brief, from two pre-registered backtests run on 1962–2026 data
+and reproduced exactly by an independent reviewer:
+- As a requirement, the gate blocked six deployments since 1990 (1990,
+  1998, Dec 2018, two in 2022, Apr 2025). All six were up a year later,
+  and it never blocked one that went on to lose. In 2022 it could never be
+  met: only the drawdown was ever RED.
+- Its one benefit was delaying an early Wave 1 in 2000 and 2008 that lost
+  money. A narrower brake on Wave 1 only, or a 10-day hold, kept that
+  benefit but blocked the same good buys, because a shallow correction and
+  the start of a deep bear look identical at Wave 1 depth.
 
 **Distance to RED (added 2026-11-13, build spec E7).** The rule engine also
 writes `crash_checks.distance_to_red`, returned by `get_indicator_panel` and
@@ -231,8 +246,8 @@ distance of 0 is still AMBER. For S&P drawdown the % move is the S&P 500
 level change, not a % of a %. Fed pivot signal is reported as a state, not a
 distance. It's deterministic and judgment-free, carries no probability or
 narrative (safe in step 1), and never feeds `red_count` or wave logic. One
-indicator near or at RED does not authorize a wave; that still needs 3 of 6
-confirmed.
+indicator near or at RED doesn't meet the stress gate; that needs 3 of 6
+confirmed (and the gate itself is information only; see above).
 
 Additional bond-market bands (Tier 1, elevated priority, informational):
 - 30yr Treasury: above 5.0% = bond vigilante signal
@@ -267,12 +282,13 @@ The drawdown/VIX check is same-day, not run through the 2-distinct-date
 confirmation the 6 core indicators use; the **slow-bear pathway** below
 does use real 2-day confirmation.
 
-A wave's trigger being met is **not, by itself, authorization to deploy**:
-`get_deployment_plan` also requires `wave_authorized` (the stress gate:
-`stress_gate_confirmed_reds` of the 6 indicators confirmed RED, set in
-`config/monitoring.yaml`). A wave whose trigger has fired while
-`wave_authorized` is still false is shown as observed-but-not-yet-authorized,
-not as a deployable plan.
+**A wave's trigger being met is what makes it deployable.** `get_deployment_plan`
+returns the plan once a trigger holds; it reports the stress gate
+(`stress_gate_confirmed_reds` of the 6 indicators confirmed RED) alongside
+as information. Only if `config/monitoring.yaml` sets `stress_gate_required:
+true` does it withhold the plan until the gate is met (the rule before
+2026-11-19; see the 6-Indicator Panel section for why it changed). The
+hard rules below are unchanged.
 
 ### Slow-bear pathway (Wave 2/3 only, added 2026-09-19)
 
@@ -1836,7 +1852,7 @@ of the dashboard's Stress tab:
 3. 6-indicator grid — each row shows current value, RED/AMBER/GREEN pill,
    3-day Δ, 7-day Δ, and confirmation status (`Confirmed` / `Pending
    confirmation (day 1 of 2)`), with RED count displayed prominently (e.g.
-   "1 of 6 RED confirmed, 1 pending — wave deployment not yet authorized")
+   "1 of 6 RED confirmed, 1 pending — stress gate not met")
 4. Crash-type diagnosis (only rendered when drawdown ≥15%)
 5. Wave status + brokerage-window watchlist: ticker | current price | Wave 1
    target | % distance | 3-day Δ | 7-day Δ | status pill (WAIT >20% above

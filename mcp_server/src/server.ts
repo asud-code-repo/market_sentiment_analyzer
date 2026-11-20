@@ -30,6 +30,7 @@ import { priorStateOf, scenarioPriorFor, validateTiltReasons, SCENARIO_METHOD, t
 import { classifyMoveLevel, MOVE_ELEVATED_ABOVE, MOVE_STRESS_ABOVE } from "./lib/bondVolatility.js";
 import { loadRulesDoc, parseSections, findSection, tableOfContents } from "./lib/rulesDoc.js";
 import { readInstructionDoc } from "./lib/instructionsDoc.js";
+import { loadMonitoringConfig } from "./lib/monitoring.js";
 
 // Shown to the model on every long free-text field the report pages render.
 // The pages also split unbroken text into paragraphs, but author breaks read better.
@@ -154,8 +155,9 @@ server.registerTool(
   {
     description:
       "Returns the 6-indicator RED/AMBER/GREEN panel, red_count/confirmed_red_count, and wave status. " +
-      "wave_authorized already reflects confirmed_red_count (see crash-check-rules.md's Signal Tiering " +
-      "rule) — report that as the authorizing number, not raw red_count. Check data_freshness.is_fresh " +
+      "wave_authorized is the stress gate (3 of 6 confirmed RED, per crash-check-rules.md's Signal Tiering " +
+      "rule) — report confirmed_red_count, not raw red_count. Since 2026-11-19 the gate is information " +
+      "only and does not block deployment (config/monitoring.yaml stress_gate_required). Check data_freshness.is_fresh " +
       "before proceeding (project-instructions.md step 1). drawdown_risk_band is a rule-engine-computed " +
       "band from S&P drawdown + VIX — report its band and historical hit rate, not a re-derived " +
       "percentage. scenario_prior is the frozen historical bull/base/bear/crash split for that band over " +
@@ -1177,14 +1179,16 @@ server.registerTool(
   {
     description:
       "Computes the exact dry-powder deployment breakdown for the tactical account, given the current " +
-      "wave/authorization status, diagnosed crash type, and which waves are already executed (local " +
+      "wave trigger status, diagnosed crash type, and which waves are already executed (local " +
       "wave_deployment_state, set only via record_wave_deployment). Deployment is cumulative across " +
       "not-yet-executed waves (see crash-check-rules.md's Wave Deployment section) — read this " +
       "tool's output directly rather than computing dollar amounts by hand. Fund descriptions are " +
       "generic; each line's `instruments` gives the pre-named primary/backup from the local " +
       "instrument registry with route and verification status — surface its warnings (UNVERIFIED, " +
       "blocked/pending route) before any trade, and never substitute an instrument the registry " +
-      "doesn't name. instrument_registry reports registry health on every call. Never persist " +
+      "doesn't name. instrument_registry reports registry health on every call. stress_gate (3 of 6 " +
+      "confirmed RED) is reported on every call; it blocks the plan only if config/monitoring.yaml " +
+      "stress_gate_required is true (false since 2026-11-19: information only). Never persist " +
       "dollar figures via write_snapshot. Call record_wave_deployment only after trades are placed.",
   },
   withLogging("get_deployment_plan", async () => {
@@ -1211,15 +1215,29 @@ server.registerTool(
       });
     }
 
-    if (!latest.wave_authorized) {
+    // The stress gate (3 of 6 confirmed RED) is reported on every response. It blocks the
+    // plan only when config/monitoring.yaml says so: false since 2026-11-19, after backtests
+    // found the gate, as a requirement, blocked deployments that all gained (see
+    // crash-check-rules.md "Wave Deployment Thresholds").
+    const gateRequired = loadMonitoringConfig().stress_gate_required;
+    const stressGate = {
+      met: !!latest.wave_authorized,
+      confirmed_red_count: latest.confirmed_red_count ?? null,
+      required: gateRequired,
+      note: gateRequired
+        ? "The stress gate is required: no plan until it is met."
+        : "Information only: the plan does not depend on the stress gate (since 2026-11-19).",
+    };
+    if (gateRequired && !latest.wave_authorized) {
       return json({
         wave_active: waveActive,
         wave_active_reason: waveActiveReason,
         wave_authorized: false,
+        stress_gate: stressGate,
         message:
-          `${waveActive}'s S&P drawdown/VIX threshold has been observed but is not yet authorized — ` +
-          "fewer than 3 of 6 indicators are confirmed RED (see get_indicator_panel's confirmed_red_count). " +
-          "No deployment plan until wave_authorized is true.",
+          `${waveActive}'s trigger has been observed, but stress_gate_required is true and fewer than ` +
+          "3 of 6 indicators are confirmed RED (see get_indicator_panel's confirmed_red_count). " +
+          "No deployment plan until the stress gate is met.",
         instrument_registry: instrumentRegistry,
       });
     }
@@ -1234,7 +1252,8 @@ server.registerTool(
       return json({
         wave_active: waveActive,
         wave_active_reason: waveActiveReason,
-        wave_authorized: true,
+        wave_authorized: !!latest.wave_authorized,
+        stress_gate: stressGate,
         message: `All waves through ${waveActive} have already been executed (see wave_deployment_state) — nothing new to deploy.`,
         deployment_state: deploymentState,
       });
@@ -1257,7 +1276,8 @@ server.registerTool(
     return json({
       wave_active: waveActive,
       wave_active_reason: waveActiveReason,
-      wave_authorized: true,
+      wave_authorized: !!latest.wave_authorized,
+      stress_gate: stressGate,
       dry_powder_usd: dryPowderUsd,
       pending_waves: pendingWaves,
       wave_deployment: wavePlans,

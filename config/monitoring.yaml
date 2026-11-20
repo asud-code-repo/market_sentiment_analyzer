@@ -24,8 +24,16 @@ panel_bands:
 confirmation_required_days: 2
 
 # Stress gate: this many of the 6 indicators confirmed RED at once
-# authorizes deployment (stored as crash_checks.wave_authorized).
+# (stored as crash_checks.wave_authorized; the column keeps its old name).
 stress_gate_confirmed_reds: 3
+
+# Whether get_deployment_plan requires the stress gate before returning a
+# plan. false since 2026-11-19: backtests (1962-2026, independently
+# reproduced) found that as a requirement the gate blocked six deployments
+# that all gained and prevented none that lost; a narrower Wave-1-only
+# brake failed the same way. The gate is still computed and shown, as
+# information. See crash-check-rules.md "Wave Deployment Thresholds".
+stress_gate_required: false
 
 # Early-warning push (ntfy.sh) when the confirmed RED count rises to this.
 push_alert_confirmed_reds: 2

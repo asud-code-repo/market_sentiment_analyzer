@@ -228,12 +228,14 @@ describe("monitoring config (config/monitoring.yaml)", () => {
     panel_bands: structuredClone(MONITORING.panel_bands),
     confirmation_required_days: 2,
     stress_gate_confirmed_reds: 3,
+    stress_gate_required: false,
     push_alert_confirmed_reds: 2,
   });
 
   it("the committed file loads and the gate matches the documented 3-of-6", () => {
     expect(MONITORING.stress_gate_confirmed_reds).toBe(3);
     expect(MONITORING.push_alert_confirmed_reds).toBe(2);
+    expect(MONITORING.stress_gate_required).toBe(false); // information only since 2026-11-19
     expect(parseMonitoringConfig(valid())).toEqual(MONITORING);
   });
 
@@ -246,5 +248,8 @@ describe("monitoring config (config/monitoring.yaml)", () => {
     expect(() => parseMonitoringConfig(unknown)).toThrow(/not a known indicator/);
     expect(() => parseMonitoringConfig({ ...valid(), stress_gate_confirmed_reds: 7 })).toThrow(/stress_gate_confirmed_reds/);
     expect(() => parseMonitoringConfig(null)).toThrow(/schema_version/);
+    const { stress_gate_required: _drop, ...noSwitch } = valid();
+    expect(() => parseMonitoringConfig(noSwitch)).toThrow(/stress_gate_required/);
+    expect(() => parseMonitoringConfig({ ...valid(), stress_gate_required: "no" })).toThrow(/stress_gate_required/);
   });
 });

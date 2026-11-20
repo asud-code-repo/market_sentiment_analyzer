@@ -539,8 +539,10 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
   let subLead = "Stress gate not met";
   if (ws && isWave(ws.wave_active)) {
     big = waveName(ws.wave_active);
-    subTone = ws.wave_authorized ? "bad" : "warn";
-    subLead = `${ws.wave_active_reason === "SLOW_BEAR" ? "Slow bear · " : ws.wave_active_reason === "FAST_PANIC" ? "Fast panic · " : ""}${ws.wave_authorized ? "authorized" : "observed, not authorized"}`;
+    // Since 2026-11-19 a triggered wave is deployable; the stress gate is information only
+    // (config/monitoring.yaml stress_gate_required: false). This page can't read that file.
+    subTone = "bad";
+    subLead = `${ws.wave_active_reason === "SLOW_BEAR" ? "Slow bear · " : ws.wave_active_reason === "FAST_PANIC" ? "Fast panic · " : ""}deployable · stress gate ${ws.wave_authorized ? "met" : "not met"}`;
   } else if (ws?.wave_authorized) {
     subTone = "warn";
     subLead = "Stress gate met";
@@ -629,7 +631,7 @@ function renderDeploymentTab(report: FullReportRow, crashCheck: CrashCheckRow | 
     const w2 = confirmationCell(ws.slow_bear?.w2);
     const w3 = confirmationCell(ws.slow_bear?.w3);
     const rows: [string, string, string, string, Tone][] = [
-      ["Stress gate", "3 of 6 indicators at confirmed red", confirmed != null ? `${confirmed} of 6 confirmed` : "—", ws.wave_authorized ? "Met" : "Not met", ws.wave_authorized ? "critical" : "good"],
+      ["Stress gate", "3 of 6 at confirmed red (information only)", confirmed != null ? `${confirmed} of 6 confirmed` : "—", ws.wave_authorized ? "Met" : "Not met", ws.wave_authorized ? "critical" : "good"],
       ["Fast panic", "S&amp;P drawdown + VIX, same day", fast ? waveName(ws.fast_panic_wave) : "None", fast ? "Triggered" : "Not triggered", fast ? "critical" : "good"],
       ["Slow bear · Wave 2", "Drawdown held at a fresh low", escapeHtml(w2.reading), w2.status, w2.tone],
       ["Slow bear · Wave 3", "Deeper drawdown, held", escapeHtml(w3.reading), w3.status, w3.tone],

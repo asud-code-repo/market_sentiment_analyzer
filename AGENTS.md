@@ -20,7 +20,7 @@ diagram. Four independent Node packages, each with its own
 | Package | Role | Run from |
 |---|---|---|
 | `ingestion/` | Pulls FRED/EIA/CBOE/Massive/Polymarket/SEC data into Supabase `data_points`. No LLM, no classification logic. | `ingestion/` |
-| `rule_engine/` | Deterministic RED/AMBER/GREEN classification, wave-authorization gate, hazard model. Reads `data_points`, writes `crash_checks`. | `rule_engine/` |
+| `rule_engine/` | Deterministic RED/AMBER/GREEN classification, the 3-of-6 stress gate (information only since 2026-11-19), hazard model. Reads `data_points`, writes `crash_checks`. | `rule_engine/` |
 | `mcp_server/` | Local stdio MCP server for Claude Desktop. Merges Supabase state with `local_state/portfolio.yaml` at read-time only — never writes portfolio data anywhere. Run via `npx tsx src/server.ts` from this working tree (not published/installed). | `mcp_server/` |
 | `dashboard_site/` + `full_report_site/` | Static Cloudflare Pages sites (no build step, no `package.json`). `full_report_site` has a Pages Function (`functions/index.ts`) behind Cloudflare Access. `dashboard_site/_worker.js` (scoped by `_routes.json` to `/`, the tab URLs `/smart-money`, `/macro`, `/views` and `/latest.md`) puts the latest reading into the HTML for crawlers and AI tools, sets each tab URL's title/description/canonical (`TAB_PAGES`, mirrored by `TAB_PATHS`/`TAB_TITLES` in `index.html`) and renders `analyst_views.json` as HTML at `/views`; it copies the indicator formats and the drawdown-risk-band labels, rates and fallback formula (`ddVixReading`) from `index.html` and targets `#stress-verdict` / `#site-summary`, so change them together. | n/a |
 | `supabase/migrations/` | SQL migrations, applied via the Supabase dashboard/CLI. Not run by CI. | n/a |
@@ -62,7 +62,8 @@ install/build steps.
 
 1. Threshold **values** live in config files, not code:
    - `config/monitoring.yaml` (public): panel bands, confirmation days,
-     the stress gate (3 of 6) and the push-alert count. Read by both
+     the stress gate (3 of 6), whether deployment requires it
+     (`stress_gate_required`, false since 2026-11-19) and the push-alert count. Read by both
      `rule_engine/src/rules.ts` and `mcp_server/src/lib/monitoring.ts`,
      each with its own validating loader; the file is the single source.
    - `local_state/policy.yaml` (gitignored, local-only; shape in

@@ -22,6 +22,7 @@ const MonitoringSchema = z
       .strict(),
     confirmation_required_days: z.number().int().min(1),
     stress_gate_confirmed_reds: z.number().int().min(1).max(6),
+    stress_gate_required: z.boolean(),
     push_alert_confirmed_reds: z.number().int().min(1).max(6),
   })
   .strict();
