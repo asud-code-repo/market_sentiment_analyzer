@@ -684,6 +684,16 @@
   .tgl input:checked + span::before { background:var(--text-primary); box-shadow:none; }
   .tgl input:checked + span::after { content:""; position:absolute; left:11px; top:50%; width:3px; height:6px; margin-top:-4.5px; border:solid var(--page); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
   .cmp-note { margin:2px 0 6px; font:var(--t3); color:var(--text-muted); }
+  /* rotation replay (startRotationReplay) */
+  .rot-chart .qm { cursor:pointer; }
+  .rq-hint { margin:6px 0 0; font:var(--t3); color:var(--text-muted); }
+  .quad.rq { cursor:pointer; }
+  .quad.rq .rq-date { font:600 46px var(--font-ui); fill:var(--text-primary); opacity:.07; }
+  .quad.rq .tseg, .quad.rq .ftrail path { fill:none; stroke:var(--text-secondary); stroke-width:2; stroke-linecap:round; }
+  .quad.rq .dot.faded { opacity:.22; } .quad.rq .tr.faded { display:none; }
+  .quad.rq .dot.focus .pl2 { font-size:12.5px; }
+  .quad.rq .offa { fill:var(--text-secondary); }
+  .quad.rq .fticks circle { fill:var(--text-secondary); } .quad.rq .fticks text { font:600 9.5px var(--font-ui); fill:var(--text-muted); }
   .rot-top { display:grid; grid-template-columns:minmax(0,640px) minmax(0,1fr); gap:36px; align-items:start; margin-top:4px; }
   .quad { width:100%; height:auto; display:block; }
   .quad .ax { stroke:var(--hair-strong); } .quad .gl { stroke:var(--hair); }
@@ -2532,7 +2542,7 @@ function institutionalTilt(netBuyingPct) {
 // flow into a $10B sector isn't drowned out by SPY's $600B+). SPY and GLD
 // are benchmarks (diamonds); "Compare to market" swaps SPY's diamond for
 // dashed reference lines at its return and flow.
-let rotationScatterWindow = 180;
+let rotationScatterWindow = 90;
 let rotationCompare = false;
 let rotationView = "return";
 let rotationSort = { col: 4, dir: "desc" }; // col: 1 = 5d ... 5 = 365d, 6 = institutional tilt
@@ -2586,7 +2596,7 @@ function rotationQuadrantSvg(bySymbol, w, compare) {
       ? `<rect class="pt ${cls}" x="${(x - 5).toFixed(1)}" y="${(y - 5).toFixed(1)}" width="10" height="10" transform="rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})"/>`
       : `<circle class="pt ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5"/>`;
     const lead = off > 11 ? `<line class="lead" x1="${x.toFixed(1)}" y1="${(y - 6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(ly + 3).toFixed(1)}"/>` : "";
-    return `<g><title>${rotLabel(p.s)}: ${pct1(p.ret)}% price, ${pct1(p.fl)}% flow (${usdFlow(p.usd)})</title>${lead}${shape}<text class="pl2${bench ? " b" : ""}" x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle">${p.s}</text></g>`;
+    return `<g class="qm" data-s="${p.s}"><title>${rotLabel(p.s)}: ${pct1(p.ret)}% price, ${pct1(p.fl)}% flow (${usdFlow(p.usd)})</title>${lead}${shape}<text class="pl2${bench ? " b" : ""}" x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle">${p.s}</text></g>`;
   }).join("");
   return `<svg class="quad" viewBox="0 0 ${W} ${H}" role="img" aria-label="Sector price return vs money flow, ${w} days">${g}${ax}${ref}${ql}${marks}</svg>`;
 }
@@ -2623,6 +2633,176 @@ function rotationCell(d, view, w, bench, isSpy) {
   if (v == null) return '<td class="na">—</td>';
   return `<td class="${tone(v).trim()}" data-v="${v}"${heat(v, cap)}>${txt ?? pct1(v)}</td>`;
 }
+
+// ---- Rotation replay (2026-11-20) ----
+// On first view the quadrant replays the last 12 months once (weekly frames,
+// fixed axes, short fading tails), then settles on today's chart. Clicking a
+// sector replays just that one (others move faintly) with its full path and
+// axes zoomed to fit it; clicking anywhere else on the chart stops and returns
+// to the static view. Paths are Catmull-Rom curves through the real weekly
+// points (the curve passes through every week; only the in-between shape is
+// smoothed). Same return/flow math as the loader below, from ROT_HIST, at each
+// week's end date. No autoplay for prefers-reduced-motion.
+const ROT_HIST = new Map(); // symbol -> { nav: [{date,value}], sh: [{date,value}] }, split-adjusted, ascending
+const ROT_REPLAY = { weeks: 52, stepMs: 480, trail: 4, played: false, raf: 0, observer: null, frames: new Map() };
+function rotOnOrBefore(series, date) {
+  let lo = 0, hi = series.length - 1, v = null;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (series[m].date <= date) { v = series[m].value; lo = m + 1; } else hi = m - 1; }
+  return v;
+}
+function rotationFrames(w) {
+  if (ROT_REPLAY.frames.has(w)) return ROT_REPLAY.frames.get(w);
+  const minus = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() - n); return x.toISOString().slice(0, 10); };
+  const syms = [...ROT_SECTORS().map((t) => t.symbol), ...ROT_BENCH];
+  const lastDate = syms.map((s) => ROT_HIST.get(s)?.nav.at(-1)?.date ?? "").sort().at(-1);
+  const frames = [];
+  for (let k = ROT_REPLAY.weeks - 1; k >= 0 && lastDate; k--) {
+    const E = minus(lastDate, 7 * k), P = minus(E, w), pts = {};
+    for (const s of syms) {
+      const h = ROT_HIST.get(s);
+      if (!h || !h.nav.length || h.nav[0].date > P) continue;
+      const n1 = rotOnOrBefore(h.nav, E), s1 = rotOnOrBefore(h.sh, E), n0 = rotOnOrBefore(h.nav, P), s0 = rotOnOrBefore(h.sh, P);
+      if (n1 == null || s1 == null || !n0 || !s0) continue;
+      pts[s] = { ret: ((n1 - n0) / n0) * 100, fl: (((s1 - s0) * n1) / (s0 * n0)) * 100 };
+    }
+    frames.push({ E, pts });
+  }
+  const out = { syms, frames: frames.filter((f) => Object.keys(f.pts).length >= 3) };
+  ROT_REPLAY.frames.set(w, out);
+  return out;
+}
+function stopRotationReplay(rerender = true) {
+  cancelAnimationFrame(ROT_REPLAY.raf);
+  ROT_REPLAY.raf = 0;
+  if (rerender && SMART.bySymbol) renderSectorRotation(SMART.bySymbol);
+}
+function startRotationReplay(focus) {
+  const host = document.querySelector("#sector-rotation-wrap .rot-chart");
+  if (!host) return;
+  const w = rotationScatterWindow, { syms, frames } = rotationFrames(w);
+  if (frames.length < 2) return;
+  cancelAnimationFrame(ROT_REPLAY.raf);
+  const last = frames.length - 1, TR = ROT_REPLAY.trail;
+  // Fixed axes: 98th percentile of all frames (one wild week can't flatten the rest); focus zooms to that sector's whole path.
+  const q98 = (a) => { const s = a.map(Math.abs).sort((x, y) => x - y); return s[Math.floor(s.length * 0.98)] ?? 1; };
+  const scope = focus ? frames.map((f) => f.pts[focus]).filter(Boolean) : frames.flatMap((f) => Object.values(f.pts));
+  const rm = Math.max(focus ? Math.max(...scope.map((p) => Math.abs(p.ret))) : q98(scope.map((p) => p.ret)), 1) * 1.12;
+  const fm = Math.max(focus ? Math.max(...scope.map((p) => Math.abs(p.fl))) : q98(scope.map((p) => p.fl)), 1) * 1.15;
+  const W = 560, H = 400, L = 44, R = 18, T = 26, B = 34;
+  const cl = (v, m) => Math.max(-m, Math.min(m, v));
+  const cx = (v) => L + ((cl(v, rm) + rm) / (2 * rm)) * (W - L - R), cy = (v) => T + ((fm - cl(v, fm)) / (2 * fm)) * (H - T - B);
+  const ticks = (m) => { const st = [1, 2, 5, 10, 20, 25, 50].find((s) => m / s <= 4) ?? 100; const o = []; for (let k = -Math.floor(m / st); k <= Math.floor(m / st); k++) if (k) o.push(k * st); return o; };
+  const grid = ticks(rm).map((v) => `<line class="gl" x1="${cx(v).toFixed(1)}" x2="${cx(v).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${cx(v).toFixed(1)}" y="${H - B + 14}" text-anchor="middle">${v > 0 ? "+" : ""}${v}%</text>`).join("")
+    + ticks(fm).map((v) => `<line class="gl" x1="${L}" x2="${W - R}" y1="${cy(v).toFixed(1)}" y2="${cy(v).toFixed(1)}"/><text x="${L - 6}" y="${(cy(v) + 3).toFixed(1)}" text-anchor="end">${v > 0 ? "+" : ""}${v}%</text>`).join("")
+    + `<line class="ax" x1="${L}" x2="${W - R}" y1="${cy(0).toFixed(1)}" y2="${cy(0).toFixed(1)}"/><line class="ax" x1="${cx(0).toFixed(1)}" x2="${cx(0).toFixed(1)}" y1="${T}" y2="${H - B}"/>
+      <text x="${W - R}" y="${H - 4}" text-anchor="end">Price return over ${w}d →</text><text x="${L}" y="${T - 12}">↑ Money in (flow, % of fund size)</text>
+      <text class="ql" x="${W - R - 4}" y="${T + 12}" text-anchor="end">Confirmed in</text><text class="ql" x="${L + 6}" y="${T + 12}">Buying the dip</text>
+      <text class="ql" x="${L + 6}" y="${H - B - 8}">Confirmed out</text><text class="ql" x="${W - R - 4}" y="${H - B - 8}" text-anchor="end">Rally without buyers</text>`;
+  const dots = syms.map((s) => {
+    const bench = ROT_BENCH.includes(s);
+    const shape = bench ? '<rect class="pt" x="-5" y="-5" width="10" height="10" transform="rotate(45)"/>' : '<circle class="pt" r="5.5"/>';
+    return `<g class="tr${focus ? " faded" : ""}" data-s="${s}">${Array.from({ length: TR }, (_, i) => `<path class="tseg" style="opacity:${(0.55 * (i + 1) / TR).toFixed(2)}"/>`).join("")}</g>
+      <g class="dot${focus && s !== focus ? " faded" : ""}${s === focus ? " focus" : ""}" data-s="${s}"><title>${escHtml(rotLabel(s))}</title><path class="offa" d="M8,-3.5 L13,0 L8,3.5Z"/>${shape}<text class="pl2${bench ? " b" : ""}" y="-10" text-anchor="middle">${s}</text></g>`;
+  }).join("");
+  const fmtE = (E) => new Date(`${E}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  host.innerHTML = `<svg class="quad rq" viewBox="0 0 ${W} ${H}" role="img" aria-label="${focus ? `${focus}: ` : "Sectors: "}${w}-day price return vs money flow, replayed week by week over the last 12 months">
+      <text class="rq-date" x="${(L + W - R) / 2}" y="${(T + H - B) / 2 + 14}" text-anchor="middle"></text>${grid}<g class="ftrail"></g><g class="fticks"></g>${dots}</svg>
+    <p class="rq-hint"></p>`;
+  const svg = host.querySelector("svg"), hint = host.querySelector(".rq-hint"), dateEl = svg.querySelector(".rq-date");
+  const ftrail = svg.querySelector(".ftrail"), fticks = svg.querySelector(".fticks");
+  const dotEl = Object.fromEntries(syms.map((s) => [s, svg.querySelector(`.dot[data-s="${s}"]`)]));
+  const trEl = Object.fromEntries(syms.map((s) => [s, [...svg.querySelectorAll(`.tr[data-s="${s}"] .tseg`)]]));
+  const P = (s, k) => { const q = frames[k]?.pts[s]; return q ? [cx(q.ret), cy(q.fl)] : null; };
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const bez = (s, i) => {
+    const p1 = P(s, i), p2 = P(s, i + 1) ?? p1;
+    if (!p1) return null;
+    const p0 = P(s, i - 1) ?? p1, p3 = P(s, i + 2) ?? p2, k = 1 / 6;
+    return [p1, [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k], [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k], p2];
+  };
+  const bsplit = (b, t) => { const q0 = lerp(b[0], b[1], t), q1 = lerp(b[1], b[2], t), q2 = lerp(b[2], b[3], t), r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t); return [b[0], q0, r0, lerp(r0, r1, t)]; };
+  const dpath = (b) => `M${b[0][0].toFixed(1)},${b[0][1].toFixed(1)}C${b[1][0].toFixed(1)},${b[1][1].toFixed(1)} ${b[2][0].toFixed(1)},${b[2][1].toFixed(1)} ${b[3][0].toFixed(1)},${b[3][1].toFixed(1)}`;
+  function draw(fi, t) {
+    const next = Math.min(fi + 1, last);
+    for (const s of syms) {
+      const el = dotEl[s], a = frames[fi].pts[s];
+      if (!a) { el.style.display = "none"; trEl[s].forEach((l) => (l.style.display = "none")); continue; }
+      el.style.display = "";
+      const b = bez(s, fi), cur = fi < last && t > 0 && b ? bsplit(b, t) : null;
+      const [x, y] = cur ? cur[3] : P(s, fi);
+      el.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+      const n = frames[next].pts[s] ?? a, ret = a.ret + (n.ret - a.ret) * t, fl = a.fl + (n.fl - a.fl) * t, rd = quadRead(ret, fl);
+      el.querySelector(".pt").setAttribute("class", `pt ${rd === "in" ? "in" : rd === "out" ? "out" : "mix"}`);
+      // Off the fixed scale: pinned to the edge with a small arrow pointing where it really is.
+      const ox = ret > rm ? 1 : ret < -rm ? -1 : 0, oy = fl > fm ? -1 : fl < -fm ? 1 : 0, arrow = el.querySelector(".offa");
+      arrow.style.display = ox || oy ? "" : "none";
+      if (ox || oy) arrow.setAttribute("transform", `rotate(${(Math.atan2(oy, ox) * 180) / Math.PI})`);
+      if (!focus) {
+        const pieces = [];
+        for (let k = fi - (TR - 1); k < fi; k++) if (k >= 0) { const q = bez(s, k); if (q) pieces.push(q); }
+        if (cur) pieces.push(cur);
+        const tail = pieces.slice(-TR);
+        trEl[s].forEach((l, i) => { const q = tail[i - (TR - tail.length)]; if (!q) { l.style.display = "none"; return; } l.style.display = ""; l.setAttribute("d", dpath(q)); });
+      }
+    }
+    if (focus) {
+      const pieces = [];
+      for (let k = 0; k < fi; k++) { const q = bez(focus, k); if (q) pieces.push(q); }
+      const b = bez(focus, fi);
+      if (fi < last && t > 0 && b) pieces.push(bsplit(b, t));
+      ftrail.innerHTML = pieces.map((q, k) => `<path d="${dpath(q)}" style="opacity:${(0.9 - 0.75 * (pieces.length - 1 - k) / Math.max(pieces.length - 1, 1)).toFixed(2)}"/>`).join("");
+      const tk = [];
+      for (let k = 0; k <= fi; k++) {
+        const p = P(focus, k);
+        if (!p) continue;
+        const m = frames[k].E.slice(5, 7), pm = k > 0 ? frames[k - 1].E.slice(5, 7) : null;
+        const prev = tk.at(-1), clear = !prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 34; // skip a marker that would sit on the last one
+        if (clear && (k === 0 || (m !== pm && ["01", "04", "07", "10"].includes(m)))) tk.push([p[0], p[1], new Date(`${frames[k].E}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) + (k === 0 || m === "01" ? ` ’${frames[k].E.slice(2, 4)}` : "")]);
+      }
+      fticks.innerHTML = tk.map(([x, y, l]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6"/><text x="${(x + 5).toFixed(1)}" y="${(y + 12).toFixed(1)}">${l}</text>`).join("");
+    }
+    const shown = frames[t > 0.5 ? next : fi].E;
+    dateEl.textContent = fmtE(shown);
+    hint.textContent = `${focus ? `${focus} · ${rotLabel(focus)} · ` : ""}${w}d window, week ending ${fmtE(shown)} · click the chart to ${fi === last ? "go back" : "stop"}`;
+  }
+  // Clicks: a sector dot replays that sector; anywhere else stops and restores today's chart.
+  svg.addEventListener("click", (e) => {
+    const d = e.target.closest(".dot");
+    if (d && d.dataset.s !== focus) startRotationReplay(d.dataset.s);
+    else stopRotationReplay();
+  });
+  let fi = 0, t0 = performance.now();
+  const tick = (now) => {
+    if (!svg.isConnected) return;
+    const t = Math.min((now - t0) / ROT_REPLAY.stepMs, 1);
+    draw(fi, t);
+    if (t >= 1) { fi++; t0 = now; }
+    if (fi >= last) {
+      draw(last, 0);
+      ROT_REPLAY.raf = 0;
+      // All-sector autoplay ends on today's chart; a focused sector holds its full path until clicked.
+      if (!focus) setTimeout(() => { if (svg.isConnected) stopRotationReplay(); }, 900);
+      return;
+    }
+    ROT_REPLAY.raf = requestAnimationFrame(tick);
+  };
+  draw(0, 0);
+  ROT_REPLAY.raf = requestAnimationFrame(tick);
+}
+// Autoplay once, the first time the chart is mostly on screen (tab visible, not reduced-motion).
+function armRotationAutoplay() {
+  const host = document.querySelector("#sector-rotation-wrap .rot-chart");
+  if (!host || ROT_REPLAY.played || !ROT_HIST.size || !("IntersectionObserver" in window) || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  ROT_REPLAY.observer?.disconnect();
+  ROT_REPLAY.observer = new IntersectionObserver((entries) => {
+    if (!entries.some((en) => en.isIntersecting) || document.hidden || ROT_REPLAY.played) return;
+    ROT_REPLAY.played = true;
+    ROT_REPLAY.observer.disconnect();
+    startRotationReplay(null);
+  }, { threshold: 0.6 });
+  ROT_REPLAY.observer.observe(host);
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden && ROT_REPLAY.raf) stopRotationReplay(); });
 
 function renderSectorRotation(bySymbol) {
   SMART.bySymbol = bySymbol;
@@ -2675,13 +2855,15 @@ function renderSectorRotation(bySymbol) {
     <div class="sh"><span class="lbl">Sector capital rotation</span><span class="note">Is real money backing each sector's price move?</span>${ib("i-rot", "sector rotation")}
       <span class="right ctrls"><label class="tgl"><input type="checkbox" id="rot-cmp"${rotationCompare ? " checked" : ""}><span>Compare to market</span></label><span class="wseg" role="radiogroup" aria-label="Chart window">${wseg}</span></span></div>
     ${rotationCompare ? '<p class="cmp-note">Dashed lines = the S&amp;P 500\'s own return and flow. Right of the vertical line = beat the market. Above the horizontal line = drew more money than the market, relative to size.</p>' : ""}
-    <div class="rot-top"><div>${rotationQuadrantSvg(bySymbol, w, rotationCompare)}</div><div class="mem">${rotationMembership(bySymbol, w)}</div></div>
+    <div class="rot-top"><div class="rot-chart">${rotationQuadrantSvg(bySymbol, w, rotationCompare)}${ROT_HIST.size ? '<p class="rq-hint">Click a sector to replay its last 12 months</p>' : ""}</div><div class="mem">${rotationMembership(bySymbol, w)}</div></div>
     <div class="rot-sub"><span class="lbl">All windows</span><span class="note">sorted by ${colName(col)}, ${rotationSort.dir === "desc" ? "highest" : "lowest"} first${col !== rotationSort.col ? ` (no ${colName(rotationSort.col)} values in this view)` : ""} · click a column to sort</span>
       <span class="right wseg" role="radiogroup" aria-label="Table view">${vseg}</span></div>
     <div class="ht-wrap"><table class="ht"><thead><tr><th>Sector</th>${head}</tr></thead>
       <tbody>${sectors.map((s) => tableRow(s, false)).join("")}${ROT_BENCH.map((s, i) => tableRow(s, true, i === 0)).join("")}</tbody></table></div>
     <div class="foot"><span class="scalekey">${key[0]}down / out ${key[1]}${key[2]}${key[3]}up / in</span><span>5d shows returns only: one week of flows is mostly noise</span></div>`;
 
+  wrap.querySelectorAll(".rot-chart .qm").forEach((g) => g.addEventListener("click", () => startRotationReplay(g.dataset.s)));
+  armRotationAutoplay();
   wrap.querySelector("#rot-cmp").addEventListener("change", (e) => { rotationCompare = e.target.checked; renderSectorRotation(bySymbol); });
   wrap.querySelectorAll('input[name="rot-w"]').forEach((r) => r.addEventListener("change", () => { rotationScatterWindow = Number(r.value); renderSectorRotation(bySymbol); }));
   wrap.querySelectorAll('input[name="rot-v"]').forEach((r) => r.addEventListener("change", () => { rotationView = r.value; renderSectorRotation(bySymbol); }));
@@ -5072,10 +5254,12 @@ async function main() {
     try {
       const rotationSeriesIds = SECTOR_ROTATION_TICKERS.flatMap(({ symbol }) => [`${symbol}_NAV`, `${symbol}_SHARES_OUT`, `${symbol}_13F_NET_BUYING_PCT`]);
       const cutoff = new Date();
-      // 730d (not 370d) -- the latest 13F quarter end can be ~4.5 months
-      // old by the time it's published, and the 365d NAV lookback needs its
-      // own margin. Mirrors mcp_server/src/lib/sectorRotation.ts's cutoff.
-      cutoff.setUTCDate(cutoff.getUTCDate() - 730);
+      // 760d (not 370d) -- the latest 13F quarter end can be ~4.5 months
+      // old by the time it's published, the 365d NAV lookback needs its
+      // own margin, and the 12-month replay (startRotationReplay) needs
+      // 365d + 51 weeks behind its first frame. The MCP server's cutoff
+      // (mcp_server/src/lib/sectorRotation.ts) stays 730d: no replay there.
+      cutoff.setUTCDate(cutoff.getUTCDate() - 760);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       // ~6,600+ rows for the full 26-series/370-day window (26 series x
       // ~254 trading days/yr) -- well past PostgREST's 1000-row cap, so
@@ -5142,6 +5326,7 @@ async function main() {
         const splitAdjusted = adjustForSplits(paired);
         const navSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.nav }));
         const sharesSeries = splitAdjusted.map((p) => ({ date: p.date, value: p.shares }));
+        ROT_HIST.set(symbol, { nav: navSeries, sh: sharesSeries.filter((p) => p.value != null) });
         const latestNav = navSeries[navSeries.length - 1];
         const latestShares = sharesSeries[sharesSeries.length - 1];
         const navReturn = {};
